@@ -8,6 +8,7 @@
 | Extiende a | `SRS.md` v1.1 (SRS-SIGEC-CAMPO-001) |
 | Complementa a | `GUIA_ENTRENAMIENTO_MODELOS.md` v1.1 · `modelo-datos-cnel/` |
 | Estado | Borrador para aprobación — define el punto de partida de `PLAN_IMPLEMENTACION.md` |
+| Cambios v1.3 | Resueltas D2 (ArcGIS Desktop **Advanced** disponible), D9 (Oracle **11.2.0.4**, dentro del soporte de Esri) y D11: el agente escribe **solo los campos del proceso**, y los calculados por auto-actualizadores de ArcFM quedan fuera de su alcance por decisión explícita, no por limitación. Ver sección 5.5. |
 | Cambios v1.2 | La integración con el GIS pasa a un **agente arcpy** (Python 2.7 / ArcMap 10.8.1) que es el único componente que toca la geodatabase, en ambos sentidos (ADR-008). Con ello los feature services con sync dejan de ser prerrequisito y R-N2/D5 salen del camino crítico. Confirmado que la aplicación de lotes se automatiza con arcpy, sin ArcObjects. |
 | Cambios v1.1 | El motor es **Oracle 11g R2 sin la opción Spatial**, dedicado a la geodatabase ArcSDE. La base operativa de la plataforma pasa a **PostgreSQL + PostGIS en servidor aparte** (ADR-006, sustituye a ADR-002). **El RAG normativo sale de v1** (ADR-007, sustituye a ADR-005). Se descarta expresamente el SDK de Esri en el móvil. La aplicación en ArcFM la ejecuta el equipo de la distribuidora. |
 
@@ -410,6 +411,26 @@ Se mantiene PMTiles para los paquetes offline aunque Martin esté disponible: PM
 
 ---
 
+### 5.5 Qué campos escribe el agente, y cuáles no
+
+Decisión del cliente (D11, resuelta): **el agente escribe los campos del proceso y nada más.** Los campos que calculan los auto-actualizadores de ArcFM no son su responsabilidad.
+
+Eso convierte una limitación técnica (H15: los AU no se disparan con arcpy) en un límite de alcance deliberado, que es una posición mucho más sólida. La regla operativa queda así:
+
+| Categoría de campo | ¿Lo escribe el agente? | Por qué |
+|---|---|---|
+| **Campos del proceso** — los que el técnico llena o confirma en el formulario, mapeados en el perfil | **Sí.** Son la razón de ser del sistema | Vienen del AMD, así que por construcción son exactamente los que el proceso de campo produce |
+| **Geometría** | **Sí**, por la ruta de staging | Un poste nuevo sin geometría no sirve de nada |
+| **Calculados por auto-actualizadores de ArcFM** | **No** | El agente no los reproduce ni los inventa. Los recalcula ArcFM o un trace, en el flujo propio del equipo GIS |
+| **Conectividad** (`ANCILLARYROLE`, `*CIRCUITSOURCEGUID`, `ENABLED`, `ELECTRICTRACEWEIGHT`) | **Nunca**, en ninguna ruta | ADR-001. Los mantiene el trace |
+| **Auditoría del GIS** (usuario y fecha de registro, categoría 🔧 Sistema) | **No** | Los pone la geodatabase |
+
+La consecuencia práctica es que **el perfil define el alcance de escritura**. Un campo que no está mapeado en el perfil no se escribe, y no hay forma de que el agente lo escriba: no existe en su vocabulario. Eso es la misma propiedad de ADR-004 aplicada a la seguridad de escritura, y se verifica en los tests del agente.
+
+El indicador `requires_arcfm` se mantiene, pero ahora significa algo más estrecho: un lote cuyo **campo de proceso** dependa de un cálculo de ArcFM para ser válido. Se espera que sea raro; si se vuelve frecuente, es señal de que un campo del proceso está mal clasificado y hay que revisarlo con el equipo GIS, no de que el agente deba hacer más.
+
+---
+
 ## 6. Voz y visión: ajustes respecto al SRS
 
 ### 6.1 Voz
@@ -608,12 +629,12 @@ Todo lo no listado sigue vigente sin cambios.
 | R-N2 | Habilitar Global IDs, archiving y versionado tradicional en la geodatabase productiva es intrusivo | Baja | Medio | **Degradado por ADR-008:** ya no es prerrequisito. El agente arcpy lee sin necesitar feature services con sync. Solo vuelve a aplicar si se elige la ruta REST |
 | R-N9 | El agente corre en **Python 2.7, sin soporte desde enero de 2020**, en una máquina Windows con ArcMap | Alta | Medio | Inevitable: es el único arcpy que edita redes geométricas (H12). Se acota manteniéndolo pequeño, sin dependencias fuera de la biblioteca estándar más `requests`, sin exposición a internet (solo habla hacia el backend) y sin datos en reposo |
 | R-N10 | `Append` sobre clases de red puede dejar la red lógica inconsistente si falta el parche de Esri (H14) | Media | Alto | Verificar los parches en I1; reconstruir conectividad tras cada lote; aplicar siempre en una versión de trabajo, nunca en DEFAULT; ensayar sobre copia antes de producción |
-| R-N11 | Los auto-actualizadores de ArcFM no se disparan con arcpy (H15), así que hay campos calculados que quedarán vacíos o desactualizados | Alta | Medio | El cliente, que conoce su configuración de ArcFM, define en I1 qué campos calculados importan. Los lotes que los necesiten se marcan *requiere ArcFM* y no se aplican automáticamente |
+| R-N11 | Los auto-actualizadores de ArcFM no se disparan con arcpy (H15), así que hay campos calculados que quedarán vacíos | Alta | **Bajo** | **Degradado por D11:** los campos calculados por AU están fuera del alcance del agente por decisión. Escribe los campos del proceso; el resto los recalcula ArcFM o un trace en el flujo del equipo GIS (sección 5.5). Deja de ser un riesgo y pasa a ser un límite documentado |
 | R-N3 | La revisión GIS manual (ADR-001) se convierte en cuello de botella | Media | Medio | Aprobación por lotes, agrupación por zona, prellenado con IA, métrica de tiempo de ciclo desde el piloto. Si se satura, habilitar escritura directa por clase (RF-345) |
 | R-N4 | El perfil de mapeo se vuelve tan complejo que "configurar" cuesta más que programar | Media | Alto | Mantener el AMD deliberadamente pequeño; importador con coincidencia asistida; la prueba del perfil alterno en CI es la señal de alarma temprana |
 | R-N5 | ~~Oracle sin `pgvector` complica el RAG~~ | — | — | **Cerrado** por ADR-007: sin RAG en v1, el riesgo desaparece |
 | R-N7 | **Oracle 11g R2 está en Sustaining Support desde diciembre de 2020: no recibe parches de seguridad.** Aloja la geodatabase corporativa | Alta | Alto | Fuera del alcance de este proyecto resolverlo, pero sí de no empeorarlo: ADR-006 evita añadir una sola tabla nueva ahí. La plataforma solo consume feature services, así que una migración futura del motor (a 19c o a la versión que exija ArcGIS Pro) **no la afecta**. Conviene que la distribuidora lo tenga en su plan de riesgos de TI |
-| R-N8 | El parche de Oracle podría ser anterior a **11.2.0.4**, único 11g R2 que ArcGIS 10.8.x soporta | Media | Medio | Verificación de una línea en I1 (`SELECT * FROM v$version`). Si es anterior, la instalación está fuera de soporte de Esri y hay que escalarlo antes de construir sobre ella |
+| ~~R-N8~~ | ~~El parche de Oracle podría ser anterior a 11.2.0.4~~ | — | — | **Cerrado:** confirmado 11.2.0.4, dentro del soporte de Esri para ArcGIS 10.8.x |
 | R-N6 | El sync propio (ADR-003) es la pieza de mayor riesgo técnico del proyecto | Alta | Alto | Se ataca primero (I1 e I3); simulador de feature service en CI; pruebas de corte de red e idempotencia desde el inicio |
 
 ### 10.2 Decisiones pendientes
@@ -621,10 +642,10 @@ Todo lo no listado sigue vigente sin cambios.
 | # | Decisión | Por qué importa | Necesaria antes de |
 |---|---|---|---|
 | ~~D1~~ | ~~Versión exacta de Oracle~~ | **Resuelta:** Oracle 11g R2, sin la opción Spatial, dedicado a la geodatabase ArcSDE. Resultado: ADR-006 y ADR-007 | — |
-| D9 | ¿El parche de Oracle es **11.2.0.4**? (H8, R-N8) | Determina si la instalación está dentro del soporte de Esri | I1 |
+| ~~D9~~ | ~~¿El parche de Oracle es 11.2.0.4?~~ | **Resuelta: es 11.2.0.4**, el único 11g R2 que ArcGIS 10.8.x soporta (H8). La instalación está dentro del soporte de Esri y el riesgo R-N8 queda cerrado | — |
 | D10 | Servidor para PostgreSQL: ¿se provisiona una máquina nueva, una VM, o contenedores en infraestructura existente? ¿Quién lo administra? | ADR-006 depende de ello; es el único recurso nuevo que pide la arquitectura | I0 |
-| D2 | **Máquina para el agente arcpy:** ¿hay un Windows con **ArcGIS Desktop 10.8.1 nivel Standard o Advanced** disponible para un proceso desatendido? Con Basic no se pueden editar redes geométricas (H16) | Sin ella no hay integración con el GIS. Es el requisito de infraestructura más duro del proyecto | I1 |
-| D11 | ¿Qué campos calculados por **auto-actualizadores de ArcFM** son imprescindibles en los elementos nuevos? (R-N11) | Define qué lotes puede aplicar el agente solo y cuáles requieren ArcFM | I1 |
+| ~~D2~~ | ~~Máquina y licencia para el agente arcpy~~ | **Resuelta:** hay **ArcGIS Desktop Advanced**, que cubre la edición de redes geométricas (H16). Queda por confirmar solo el detalle operativo: qué máquina Windows aloja el proceso desatendido | — |
+| ~~D11~~ | ~~¿Qué campos calculados por auto-actualizadores de ArcFM son imprescindibles?~~ | **Resuelta:** el agente escribe **solo los campos del proceso**; los calculados por AU quedan fuera de su alcance por decisión, no por limitación. Ver sección 5.5. R-N11 se degrada de Alto a Bajo | — |
 | D3 | Nombre, tecnología y API del **sistema de órdenes de trabajo** corporativo, y si es maestro o satélite | Define el adaptador RF-120 y quién emite el número de OT | I2 |
 | D4 | ¿Existen ya **controles de calidad del SIG** (Data Reviewer, scripts, checklist)? ¿Cuáles son las reglas reales? | Define el alcance de RF-350 | I4 |
 | D5 | ¿La geodatabase productiva ya tiene **Global IDs y archiving**? ¿Está versionada? | **Degradada:** ya no bloquea (ADR-008). Sigue importando el versionado, porque el agente aplica lotes en una versión de trabajo | I1 |

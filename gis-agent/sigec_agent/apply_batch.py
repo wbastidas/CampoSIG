@@ -24,6 +24,7 @@ from __future__ import unicode_literals
 
 from .guards import (
     assert_not_geometric_network_insert,
+    assert_within_profile_scope,
     writable_attributes,
 )
 
@@ -67,18 +68,23 @@ class BatchApplier(object):
         self.arcpy = arcpy_module
 
     # -- staging ----------------------------------------------------------------
-    def stage_rows(self, staging_class, field_names, proposals):
+    def stage_rows(self, staging_class, field_names, proposals, profile_fields=None):
         """Insert proposals into the staging class, which must be outside the network.
 
         :param staging_class: staging feature class name.
         :param field_names: real field names, already resolved from the profile.
         :param proposals: list of dicts with ``proposal_id`` and ``attributes``.
+        :param profile_fields: every field the profile maps for this asset type; when
+            given, fields outside it are refused (D11).
         :returns: (staged_proposal_ids, outcomes_for_the_ones_that_failed)
         """
-        # Belt and braces: the staging class must never be a network class, and no
-        # connectivity field may be written.
+        # Three checks before a single row moves: the staging class must be outside the
+        # network, no connectivity field may be written, and every field must be one the
+        # profile maps — the agent writes process fields only (D11).
         assert_not_geometric_network_insert(staging_class, False)
         writable_attributes(dict.fromkeys(field_names))
+        if profile_fields is not None:
+            assert_within_profile_scope(field_names, profile_fields)
 
         staged = []
         failures = []
@@ -136,7 +142,8 @@ class BatchApplier(object):
         """Apply a whole batch and return one outcome per proposal.
 
         :param batch: dict with ``staging_class``, ``target_class``, ``field_names``,
-            ``geometric_network`` (may be ``None``) and ``proposals``.
+            ``geometric_network`` (may be ``None``), ``proposals`` and optionally
+            ``profile_fields`` (the write scope, per D11).
         :returns: list of :class:`ProposalOutcome`.
         """
         proposals = batch["proposals"]
@@ -161,7 +168,10 @@ class BatchApplier(object):
             return outcomes
 
         staged, failures = self.stage_rows(
-            batch["staging_class"], batch["field_names"], pending
+            batch["staging_class"],
+            batch["field_names"],
+            pending,
+            profile_fields=batch.get("profile_fields"),
         )
         outcomes.extend(failures)
 

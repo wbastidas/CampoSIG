@@ -16,6 +16,7 @@ from sigec_agent.guards import (
     assert_no_autoupdater_suppression,
     assert_no_connectivity_fields,
     assert_not_geometric_network_insert,
+    assert_within_profile_scope,
     writable_attributes,
 )
 
@@ -89,3 +90,35 @@ class TestRf348NeverTouchesArcfmCom(object):
         with pytest.raises(GuardViolation) as excinfo:
             assert_no_autoupdater_suppression([name])
         assert "requiere ArcFM" in str(excinfo.value)
+
+
+class TestD11ProfileDefinesWriteScope(object):
+    """D11 — the agent writes process fields only; the profile is the scope.
+
+    Fields computed by ArcFM's auto-updaters are out of scope by decision, and the way
+    that is enforced is simply that they are not in the profile.
+    """
+
+    def test_mapped_fields_pass(self):
+        assert_within_profile_scope(
+            ["CODIGO", "MATERIAL"], ["CODIGO", "MATERIAL", "ALTURA"]
+        )
+
+    def test_unmapped_field_is_refused(self):
+        with pytest.raises(GuardViolation) as excinfo:
+            assert_within_profile_scope(["CODIGO", "AU_CALCULADO"], ["CODIGO"])
+        assert "AU_CALCULADO" in str(excinfo.value)
+        assert "D11" in str(excinfo.value)
+
+    def test_all_unmapped_fields_are_reported(self):
+        with pytest.raises(GuardViolation) as excinfo:
+            assert_within_profile_scope(["A", "B", "C"], ["A"])
+        message = str(excinfo.value)
+        assert "B" in message and "C" in message
+
+    def test_empty_scope_refuses_everything(self):
+        with pytest.raises(GuardViolation):
+            assert_within_profile_scope(["CODIGO"], [])
+
+    def test_writing_nothing_is_allowed(self):
+        assert_within_profile_scope([], ["CODIGO"])

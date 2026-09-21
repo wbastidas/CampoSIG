@@ -65,8 +65,11 @@ con ArcSDE.
 - **Nunca escribe** campos de conectividad (`ANCILLARYROLE`, `*CIRCUITSOURCEGUID`, `ENABLED`,
   `ELECTRICTRACEWEIGHT`). Se mantiene la regla de ADR-001 sin excepción.
 - **Nunca usa `InsertCursor` directo** sobre una clase de la red geométrica: siempre staging + `Append`.
-- **Nunca desactiva los auto-actualizadores de ArcFM.** Si un lote necesitara que corran, el agente lo
-  marca como *requiere ArcFM* y lo deja para el equipo del cliente. El agente no toca COM ni ArcObjects.
+- **Nunca desactiva los auto-actualizadores de ArcFM.** El agente no toca COM ni ArcObjects.
+- **Escribe solo los campos del proceso** (decisión D11, resuelta): los que el perfil mapea, que por
+  construcción son los que el formulario de campo produce. Los campos calculados por auto-actualizadores
+  de ArcFM están **fuera de su alcance por decisión**, no por limitación: los recalcula ArcFM o un trace
+  en el flujo del equipo GIS. Ver addendum 5.5.
 - **Idempotente por `proposal_id`**: reprocesar un lote no duplica nada.
 - Toda corrida deja bitácora con el detalle por propuesta.
 
@@ -87,11 +90,12 @@ con ArcSDE.
 - **Python 2.7, fin de vida desde enero de 2020.** Es inevitable: es el único arcpy que edita redes
   geométricas. Se mitiga manteniendo el agente deliberadamente pequeño, sin dependencias fuera de la
   biblioteca estándar más `requests`, y sin exponerlo a internet: solo habla hacia el backend.
-- **Una máquina Windows con ArcGIS Desktop licenciado**, nivel Standard o Advanced — el nivel Basic no
-  puede editar redes geométricas. Es un requisito de infraestructura nuevo (decisión D2, reformulada).
-- **Los auto-actualizadores de ArcFM siguen sin dispararse.** arcpy sustituye el trabajo manual, no las
-  reglas de ArcFM. Qué campos calculados por AU importan de verdad, y qué hacer con ellos, lo decide el
-  cliente, que es quien conoce su configuración.
+- **Una máquina Windows con ArcGIS Desktop licenciado.** Confirmado disponible en nivel **Advanced**
+  (D2, resuelta), que cubre la edición de redes geométricas; el nivel Basic no la permite. Queda por
+  definir qué máquina aloja el proceso desatendido.
+- **Los auto-actualizadores de ArcFM siguen sin dispararse**, y eso quedó resuelto como límite de
+  alcance: el agente escribe los campos del proceso y el resto no es su responsabilidad (D11). Eso
+  convierte lo que era el riesgo R-N11 en una frontera documentada.
 - Hay que verificar que la instalación tenga los parches de Esri para `Append` sobre redes geométricas, y
   reconstruir conectividad tras cada lote.
 - Dos lenguajes y dos versiones de Python en el proyecto. Se acota con un contrato HTTP estrecho y

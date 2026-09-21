@@ -192,3 +192,27 @@ class TestEditSession(object):
         applier.apply(batch([proposal("p1")]))
         # A leaked edit session would hold locks on the production geodatabase.
         assert arcpy.da.Editor.session_open is False
+
+
+class TestD11WriteScopeInBatches(object):
+    """The write scope applies to whole batches, not just to individual calls."""
+
+    def test_batch_within_scope_applies(self, applier):
+        payload = batch([proposal("p1")])
+        payload["profile_fields"] = FIELDS
+        outcomes = applier.apply(payload)
+        assert [o.status for o in outcomes] == [APPLIED]
+
+    def test_batch_outside_scope_is_refused(self, applier):
+        payload = batch([proposal("p1")])
+        payload["field_names"] = FIELDS + ["AU_CALCULADO"]
+        payload["profile_fields"] = FIELDS
+        with pytest.raises(GuardViolation):
+            applier.apply(payload)
+        assert TARGET not in arcpy._APPENDED
+
+    def test_scope_is_optional_for_backwards_compatibility(self, applier):
+        # Omitting profile_fields keeps the older behaviour; the connectivity and
+        # network guards still apply, so nothing unsafe becomes possible.
+        outcomes = applier.apply(batch([proposal("p1")]))
+        assert [o.status for o in outcomes] == [APPLIED]

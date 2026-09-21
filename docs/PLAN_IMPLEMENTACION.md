@@ -6,6 +6,7 @@
 | Versión | 1.1 |
 | Fecha | 21 de septiembre de 2026 |
 | Base | `SRS.md` v1.1 · `ADDENDUM-01-ArcGIS-FieldMaps-Oracle.md` v1.1 · `GUIA_ENTRENAMIENTO_MODELOS.md` v1.1 |
+| Cambios v1.3 | Resueltas D2, D9 y D11, así que I1 pierde sus tres bloqueos y se concentra en medir. El alcance de escritura del agente queda fijado: solo campos del proceso. |
 | Cambios v1.2 | I1 pasa a ser prueba de concepto del **agente arcpy** (ADR-008); habilitar sync en la geodatabase deja de ser prerrequisito. I0 añade el esqueleto del agente. D10 resuelta: el cliente tiene DBA. |
 | Cambios v1.1 | I0 vuelve a PostgreSQL + PostGIS (ADR-006); I12 pierde el RAG y gana alcance en agentes (ADR-007); I0 deja de estar bloqueado por D1, ya resuelta; I6 precisa que la aplicación en ArcFM es del cliente |
 | Reemplaza a | Sección 10.2 del SRS (épicas E0–E12) |
@@ -31,7 +32,7 @@ Los cuatro primeros incrementos (`I0`–`I3`) son el arranque completo que se ap
 | Inc. | Nombre | Dur. ref. | Depende de | Marca |
 |---|---|---|---|---|
 | **I0** | Fundaciones | 2 sem | — | — |
-| **I1** | Prueba de concepto del agente arcpy | 3 sem | I0 | 🔴 📋 D2 D9 D11 |
+| **I1** | Prueba de concepto del agente arcpy | 3 sem | I0 | 🔴 |
 | **I2** | Capa de abstracción del modelo de datos | 4 sem | I1 | 🔴 |
 | **I3** | Núcleo de OT, planificadores y asignación | 5 sem | I2 | 🟢 📋 D3 |
 | **I4** | Móvil offline: mapa, base cifrada y sync | 6 sem | I3 | 🔴 🟢 |
@@ -76,17 +77,17 @@ Se trabaja **sobre una copia** de la geodatabase, nunca sobre producción, y **e
 
 | Entregable | Detalle |
 |---|---|
-| **Verificación de entorno** | Tres comprobaciones que se responden en minutos y pueden cambiar la conversación: `SELECT * FROM v$version` debe dar **11.2.0.4** (D9, R-N8); el nivel de licencia de ArcGIS Desktop debe ser **Standard o Advanced** (D2, H16); y deben estar los parches de Esri para `Append` sobre redes geométricas (R-N10) |
+| **Verificación de entorno** | Oracle **11.2.0.4** y ArcGIS Desktop **Advanced** ya están confirmados (D9, D2). Queda una sola comprobación, y es la que ahora puede cambiar la conversación: que estén los parches de Esri para `Append` sobre redes geométricas (R-N10) |
 | Agente de bajada | `metadata.py` y `extract.py`: `ListDomains`, `Describe` de subtipos y relaciones, y `da.SearchCursor` por zona → GeoJSON. Subida al backend por el contrato HTTP |
 | Agente de subida | `apply_batch.py` con el algoritmo obligado por H13 y H14: staging fuera de la red → `arcpy.da.Editor` → `Append_management` → verificar y reconstruir conectividad → reportar por propuesta |
 | **Informe de medición** | Tiempo y volumen de extracción por zona y alimentador; viabilidad del incremento por fecha de modificación clase por clase; tiempo de aplicación de un lote de 50 elementos; tiempo de reconstrucción de conectividad; qué ocurre exactamente al intentar escribir conectividad |
-| **Campos de auto-actualizadores** | Con el equipo del cliente, lista de campos calculados por AU de ArcFM que son imprescindibles en elementos nuevos, y decisión por cada uno: lo calcula el agente, lo recalcula un trace, o el lote se marca *requiere ArcFM* (D11, R-N11) |
+| **Alcance de escritura verificado** | Confirmar en la copia que escribir solo los campos del proceso (D11, addendum 5.5) deja elementos utilizables: que el trace los reconozca y que ArcFM pueda completar lo suyo después. Es la validación de que el límite de alcance elegido funciona en la práctica |
 | Verificación de hipótesis | Cada hallazgo H1–H16 del addendum 5.1 confirmado, corregido o refutado, con evidencia |
 | Doble de prueba de arcpy | `tools/arcpy-double`: implementación mínima de la superficie de arcpy que usa el agente, para que sus tests corran en CI sin ArcMap. Es lo que permite desarrollar el agente sin depender de la máquina Windows |
 
 **Aceptación:** existe un informe firmado con el equipo GIS que responde, con números medidos: ¿se puede leer la geodatabase con arcpy y a qué costo?, ¿se puede aplicar un lote sin dejar la red inconsistente?, ¿qué campos de AU quedan sin calcular y qué se hace con ellos?, ¿cuánto tarda el ciclo completo? Los tests del agente pasan en CI contra el doble de prueba. Si alguna respuesta invalida el diseño, se revisa el addendum **antes** de I2.
 
-**Decisiones necesarias:** D2 (máquina Windows con ArcGIS Desktop Standard/Advanced), D9, D11.
+**Sin decisiones bloqueantes.** D2, D9 y D11 quedaron resueltas. Solo hace falta el acceso: la máquina con ArcGIS Desktop Advanced y la copia de la geodatabase.
 
 > **Punto de no retorno.** Dos salidas posibles si algo falla. Si `Append` no resulta fiable sobre las clases de red, la aplicación de esas clases vuelve a ser manual en ArcFM (ADR-001 original) y el agente se queda con la bajada y con las clases fuera de la red — el resto del plan sobrevive intacto. Si arcpy no resulta viable en absoluto, se recupera la ruta de feature services REST, que exige habilitar Global IDs, archiving y versionado (R-N2 vuelve a ser alto) pero no cambia nada más: el contrato del backend con el móvil es el mismo.
 
@@ -318,9 +319,9 @@ La del SRS 10.3, con tres adiciones del addendum:
 
 El orden inmediato, para empezar de a poco:
 
-1. **Conseguir la máquina del agente (D2):** un Windows con ArcGIS Desktop 10.8.1 nivel **Standard o Advanced** y arcpy, disponible para un proceso desatendido. Con nivel Basic no se pueden editar redes geométricas. Es el requisito de infraestructura más duro del proyecto y lo único que bloquea I1.
-2. **Pedir al equipo GIS** la copia de la geodatabase, el `SELECT * FROM v$version` (D9, se responde en un minuto) y la lista de campos calculados por auto-actualizadores de ArcFM que son imprescindibles (D11).
-3. **I0 en marcha**, que no depende de nada de lo anterior: monorepo, Docker Compose, esquema PostgreSQL, esqueleto del agente con sus invariantes, y CI con las tres verificaciones.
-4. Con I0 listo, **lanzar I1** y tratar su informe como puerta: si invalida una hipótesis, se corrige el addendum antes de tocar I2.
+1. **I0 está cerrado** y en la rama: monorepo, Docker Compose, esquema PostgreSQL, agente con sus invariantes y CI con las tres verificaciones, todas probadas en negativo.
+2. **Acceso para I1:** la máquina Windows con ArcGIS Desktop Advanced (ya licenciado) preparada para un proceso desatendido, y una copia de la geodatabase. Es lo único que falta para arrancar I1.
+3. **Mientras tanto, I2**, que no depende de arcpy: importador de metadatos, generador de formularios y el diagnóstico de completitud del perfil.
+4. Con acceso, **lanzar I1** y tratar su informe como puerta: si invalida una hipótesis, se corrige el addendum antes de continuar.
 
 Los seis tipos de activo del piloto (estructura de soporte, transformador de distribución, luminaria, seccionador fusible, tramo y punto de carga) y los seis formularios (F-TR-01, F-TR-02, F-OP-01, F-MT-01, F-AP-01, F-IC-03) son el alcance vertical de I2 a I7. Conviene no ampliarlo antes del piloto.

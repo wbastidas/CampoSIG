@@ -13,6 +13,12 @@ geodatabase that has already been observed in practice:
     geometric network (H13), so inserts must go through a staging class plus Append.
   * ArcFM's auto-updaters can be suppressed from Python over COM. We never do: that
     would bypass the customer's business rules without anyone noticing (H15).
+
+Scope of writes (decision D11): the agent writes the *process* fields — the ones the
+profile maps, which by construction are the ones the field form produces — and nothing
+else. Fields computed by ArcFM's auto-updaters are out of scope by decision, not by
+limitation; ArcFM or a trace recomputes them afterwards. ``assert_within_profile_scope``
+below is what makes that a check rather than an intention.
 """
 
 from __future__ import unicode_literals
@@ -84,6 +90,27 @@ def assert_no_autoupdater_suppression(module_names):
             "El agente nunca desactiva los auto-actualizadores de ArcFM ni usa COM: %s. "
             "Los lotes que los necesiten se marcan 'requiere ArcFM' y quedan para el "
             "equipo del cliente (ADR-008, H15)." % ", ".join(offending)
+        )
+
+
+def assert_within_profile_scope(field_names, profile_fields):
+    """Reject any field the profile does not map (decision D11).
+
+    The profile defines the write scope: a field absent from it is not part of the field
+    process, so the agent has no business writing it. This is ADR-004's property applied
+    to write safety — the agent cannot write what is not in its vocabulary.
+
+    :param field_names: field names about to be written.
+    :param profile_fields: the real field names the active profile maps for this type.
+    :raises GuardViolation: if a field is outside the profile's scope.
+    """
+    allowed = set(profile_fields)
+    outside = sorted(name for name in field_names if name and name not in allowed)
+    if outside:
+        raise GuardViolation(
+            "Fuera del alcance del perfil: %s. El agente escribe solo los campos del "
+            "proceso que el perfil mapea; lo calculado por ArcFM no es su "
+            "responsabilidad (D11)." % ", ".join(outside)
         )
 
 
