@@ -31,7 +31,28 @@ ArcGIS Field Maps e integrada con ArcGIS Enterprise 10.8.1 + ArcFM sobre ArcSDE 
 
 ## Estado
 
-En definición. El código arranca con el incremento I0; ver [`docs/PLAN_IMPLEMENTACION.md`](docs/PLAN_IMPLEMENTACION.md).
+Construido y ejecutado: I0, I2, I3, I5, I6, I7 y la parte de I11 que no necesita modelos, más el
+despliegue a cuadrillas. El detalle por incremento está en
+[`docs/PLAN_IMPLEMENTACION.md`](docs/PLAN_IMPLEMENTACION.md).
+
+| Módulo | Qué es | Pruebas |
+|---|---|---|
+| `backend/app/model_profile/` | La única parte del código que conoce nombres reales, a través del perfil (ADR-004) | |
+| `backend/app/forms/` | Formularios generados de los metadatos y compuestos de bloques; nunca codificados | |
+| `backend/app/workorders/`, `sync/`, `dispatch/` | OT, contrato de sincronización y tablero de despliegue | |
+| `backend/app/responses/`, `review/`, `gis_gateway/` | Captura, evidencias, revisión y *staging* as-built hacia el GIS | |
+| [`backend/app/voice/`](backend/app/voice/README.md) | Voz → formulario: normalizador es-EC, léxico, gramática GBNF | |
+| [`backend/app/vision/`](backend/app/vision/README.md) | Taxonomía, prellenado y comparador antes/después | |
+| `android/core/sync/` | Motor de sincronización offline, Kotlin puro sin Android (ADR-010) | 52 |
+| `gis-agent/` | Agente arcpy, Python 2.7, el único que toca el GIS (ADR-008) | 44 |
+| `web/src/features/` | Asignación gráfica y tablero de despliegue | 40 |
+
+El backend suma **511 tests** que corren contra PostgreSQL 16 + PostGIS real y **bajo los dos
+perfiles de modelo de datos**, que es la forma de comprobar que la independencia del modelo no es
+una aspiración.
+
+Lo que todavía no se ha ejecutado: la app Android (falta el SDK), el agente contra un ArcMap real
+(falta la máquina) y los modelos de voz y visión (faltan los pesos y las fotos del piloto).
 
 Antes de escribir código conviene leer [`CLAUDE.md`](CLAUDE.md), en particular las reglas 4, 5 y 6:
 no filtrar nombres del modelo de datos al código, no escribir campos de conectividad, y mantener el
