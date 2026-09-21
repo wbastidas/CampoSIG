@@ -141,9 +141,38 @@ class TestRf102DeltaPull:
     def test_a_change_after_the_cursor_is_returned(self, session: Session, unit, device):
         make_order(session, unit)
         _, cursor = pull_work_orders(session, device)
+
         later = make_order(session, unit)
+        # PostgreSQL's now() is the *transaction* timestamp, so rows created in one
+        # transaction share an updated_at. Production gives each request its own transaction;
+        # the timestamp is advanced explicitly here so this test exercises that case rather
+        # than the tie-break, which has its own test below.
+        later.updated_at = datetime.now(UTC) + timedelta(seconds=1)
+        session.flush()
+
         orders, _ = pull_work_orders(session, device, cursor=cursor)
         assert [o.id for o in orders] == [later.id]
+
+    def test_rows_sharing_a_timestamp_are_not_skipped(self, session: Session, unit, device):
+        """Why the cursor is a tuple and not a timestamp.
+
+        Two work orders created in the same transaction carry an identical updated_at. A
+        timestamp-only cursor would either skip the second or return the first again; the
+        (updated_at, id) tuple walks them deterministically.
+        """
+        first = make_order(session, unit)
+        second = make_order(session, unit)
+        shared = datetime.now(UTC)
+        first.updated_at = shared
+        second.updated_at = shared
+        session.flush()
+
+        page_one, cursor = pull_work_orders(session, device, limit=1)
+        assert len(page_one) == 1
+        page_two, _ = pull_work_orders(session, device, cursor=cursor, limit=1)
+        assert len(page_two) == 1
+        # Both seen, neither twice.
+        assert {page_one[0].id, page_two[0].id} == {first.id, second.id}
 
     def test_work_of_another_user_is_not_sent(self, session: Session, unit, device):
         make_order(session, unit, user_sub="tecnico.b")

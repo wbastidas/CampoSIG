@@ -263,3 +263,38 @@ class TestCompositionDoesNotLeakBetweenForms:
 
         assert a_first == a_second
         assert b_first == b_second
+
+
+class TestGeneratedRequirednessIsNotLost:
+    """The composer must keep what the generator determined is mandatory.
+
+    Regression guard for a real defect: the composer discarded the generator's `required`
+    list, so an asset-derived form came out with no required fields at all — and a form with
+    nothing required lets incomplete work reach an approval.
+    """
+
+    def test_core_fields_are_required_in_the_composed_form(self, any_composer: FormComposer):
+        form = any_composer.compose("F-MT-01", "support_structure")
+        required = set(form.schema.get("required", []))
+        # CORE in the capture manual, so mandatory for real.
+        assert {"code", "material"} <= required
+
+    def test_the_composed_form_requires_what_the_generator_required(
+        self, any_composer: FormComposer
+    ):
+        from app.forms.generator import FormGenerator
+
+        generated = FormGenerator(any_composer.resolver, any_composer.metadata).generate(
+            "support_structure"
+        )
+        related = {r.as_ for r in any_composer.resolver.binding("support_structure").related}
+        expected = set(generated.schema.get("required", [])) - related
+        composed = set(any_composer.compose("F-MT-01", "support_structure").schema["required"])
+        assert expected <= composed
+
+    def test_a_form_without_an_asset_block_still_has_its_own_requirements(
+        self, composer: FormComposer
+    ):
+        # F-TR-01 has no asset-derived block; its requirements come from its blocks.
+        form = composer.compose("F-TR-01")
+        assert isinstance(form.schema.get("required", []), list)

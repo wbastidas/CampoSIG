@@ -92,6 +92,11 @@ class FormComposer:
         ui_groups: list[dict[str, Any]] = []
         rules: list[dict[str, Any]] = []
         warnings: list[str] = []
+        #: Accumulated across blocks and applied at the end. A field can appear in a static
+        #: block and in the asset-derived section — `feeder_code` does — and the first
+        #: definition wins. Its requiredness must not be lost with the discarded definition:
+        #: being mandatory is a property of the field, not of the block that declared it.
+        asset_required: list[str] = []
 
         resolved_asset = self._resolve_asset_type(definition, asset_type_key, warnings)
 
@@ -110,8 +115,11 @@ class FormComposer:
             # afterwards. That bug is invisible in a single compose and obvious in a suite.
             block_properties = copy.deepcopy(block.fields)
             if block.block.source is BlockSource.ASSET_METADATA:
-                generated, generation_warnings = self._asset_properties(resolved_asset)
+                generated, generated_required, generation_warnings = self._asset_properties(
+                    resolved_asset
+                )
                 block_properties.update(generated)
+                asset_required.extend(generated_required)
                 warnings.extend(generation_warnings)
 
             group_keys: list[str] = []
@@ -133,6 +141,11 @@ class FormComposer:
                 {"block": block.code, "title": block.block.title, "fields": group_keys}
             )
             rules.extend(rule.model_dump(exclude_none=True) for rule in block.rules)
+
+        # What the generator determined is mandatory: a field the capture manual marks CORE,
+        # or one the geodatabase declares non-nullable. Applied against the whole form so a
+        # field defined by an earlier block still carries it.
+        required.extend(key for key in asset_required if key in properties)
 
         properties = self._apply_photo_minimums(definition, properties, warnings)
 
@@ -184,15 +197,28 @@ class FormComposer:
             warnings.append(f"'{definition.code}' no declara aplicar al tipo '{asset_type_key}'")
         return asset_type_key
 
-    def _asset_properties(self, asset_type_key: str | None) -> tuple[dict[str, Any], list[str]]:
-        """Properties derived from the unit's real metadata, for an asset-derived block."""
+    def _asset_properties(
+        self, asset_type_key: str | None
+    ) -> tuple[dict[str, Any], list[str], list[str]]:
+        """Properties, required keys and warnings derived from the unit's real metadata.
+
+        The required keys travel with the properties deliberately: they are what the capture
+        manual marks CORE and what the geodatabase declares non-nullable, and losing them
+        would hand back a form with nothing mandatory at all.
+
+        :returns: (properties, required_keys, warnings)
+        """
         if asset_type_key is None:
-            return {}, []
+            return {}, [], []
         if self._generator is None:
-            return {}, [
-                "sin metadatos sincronizados de esta unidad: las secciones derivadas del "
-                "activo quedan vacías hasta que su agente arcpy corra"
-            ]
+            return (
+                {},
+                [],
+                [
+                    "sin metadatos sincronizados de esta unidad: las secciones derivadas del "
+                    "activo quedan vacías hasta que su agente arcpy corra"
+                ],
+            )
         generated = self._generator.generate(asset_type_key)
         # Related tables stay out: a work form captures the asset's condition, not its
         # full related-record structure, which belongs to the as-built flow.
@@ -202,7 +228,8 @@ class FormComposer:
             for key, value in generated.schema["properties"].items()
             if key not in related
         }
-        return properties, generated.warnings
+        required = [key for key in generated.schema.get("required", []) if key not in related]
+        return properties, required, generated.warnings
 
     @staticmethod
     def _required_fields(block: FormBlock, group_keys: list[str]) -> list[str]:

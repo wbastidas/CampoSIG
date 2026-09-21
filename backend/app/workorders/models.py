@@ -27,6 +27,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -207,8 +208,10 @@ class DeviceCustody(Base):
     until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     reason: Mapped[str | None] = mapped_column(String(500))
     #: True when the previous holder still had unsynced captured data (RF-322).
+    # text("false"), not func.false(): the latter renders as the invalid SQL `false()`.
+    # Only a real database catches this — offline SQL rendering and mypy both accept it.
     had_unsynced_data: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default=func.false()
+        Boolean, nullable=False, server_default=text("false")
     )
     granted_by: Mapped[str | None] = mapped_column(String(255))
     context: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)

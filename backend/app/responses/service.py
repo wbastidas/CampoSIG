@@ -1,0 +1,356 @@
+"""Validate and store form responses, evidence and provenance (RF-043 to RF-048, M07).
+
+Validation runs on the server as well as on the device, deliberately. The device validates so
+a technician is told immediately; the server validates because the device is not trusted —
+an old app version, a corrupted local database or a replayed payload must not be able to store
+answers that violate the form.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import uuid
+from datetime import UTC, datetime
+from typing import Any
+
+import jsonschema
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.forms.composer import ComposedForm, FormComposer
+from app.org.models import BusinessUnit
+from app.org.service import context_for_unit
+from app.responses.models import (
+    Evidence,
+    EvidenceStage,
+    FieldProvenance,
+    FormResponse,
+    ResponseState,
+    ValueOrigin,
+)
+from app.workorders.models import WorkOrder
+
+
+class AnswerValidationError(Exception):
+    """Raised when answers do not satisfy the form they claim to answer."""
+
+    def __init__(self, problems: list[str]) -> None:
+        super().__init__("; ".join(problems))
+        self.problems = problems
+
+
+class NotEditableError(Exception):
+    """Raised when a response is edited after it stopped being the device's to change."""
+
+
+class IntegrityError(Exception):
+    """Raised when an uploaded file does not match the hash the device recorded."""
+
+
+def compose_for(session: Session, unit: BusinessUnit, order: WorkOrder) -> ComposedForm:
+    """The form a work order executes with, for its business unit."""
+    resolver, metadata = context_for_unit(session, unit)
+    return FormComposer(resolver, metadata).compose(order.form_code, order.asset_type_key)
+
+
+# --- validation --------------------------------------------------------------------
+def validate_answers(form: ComposedForm, answers: dict[str, Any]) -> list[str]:
+    """Check answers against the composed schema and the form's rules.
+
+    Returns problems in Spanish, phrased for the person who has to fix them rather than for a
+    developer reading a stack trace.
+    """
+    problems: list[str] = []
+
+    validator = jsonschema.Draft202012Validator(form.schema)
+    for error in sorted(validator.iter_errors(answers), key=lambda e: list(e.path)):
+        location = ".".join(str(part) for part in error.path) or "(raíz)"
+        problems.append(f"{location}: {error.message}")
+
+    problems.extend(_evaluate_rules(form, answers))
+    return problems
+
+
+def _evaluate_rules(form: ComposedForm, answers: dict[str, Any]) -> list[str]:
+    """Evaluate the form's conditional rules (JSON Logic subset).
+
+    A deliberately small evaluator covering the operators the block library actually uses.
+    A full JSON Logic library would be more general; it would also accept expressions the
+    mobile renderer cannot evaluate, and a rule that behaves differently on the phone than on
+    the server is a rule nobody can trust.
+    """
+    problems: list[str] = []
+    for rule in form.rules:
+        condition = rule.get("when")
+        required = rule.get("require") or []
+        if not condition or not required:
+            continue
+        if not _evaluate_condition(condition, answers):
+            continue
+        for field in required:
+            value = answers.get(field)
+            if value is None or value == "" or value == []:
+                problems.append(rule.get("message") or f"{field}: es obligatorio en este caso")
+    return problems
+
+
+def _evaluate_condition(condition: dict[str, Any], answers: dict[str, Any]) -> bool:
+    """Evaluate one JSON Logic condition. Unknown operators evaluate to False.
+
+    False rather than raising: an unrecognised operator must not block a technician from
+    submitting a day's work. It is surfaced by the catalogue validation instead, before the
+    form ever reaches a phone.
+    """
+    if "==" in condition:
+        left, right = condition["=="]
+        return bool(_resolve(left, answers) == _resolve(right, answers))
+    if "!=" in condition:
+        left, right = condition["!="]
+        return bool(_resolve(left, answers) != _resolve(right, answers))
+    if "in" in condition:
+        needle, haystack = condition["in"]
+        resolved = _resolve(haystack, answers)
+        if not isinstance(resolved, (list, tuple, str)):
+            return False
+        return bool(_resolve(needle, answers) in resolved)
+    if "and" in condition:
+        return all(_evaluate_condition(part, answers) for part in condition["and"])
+    if "or" in condition:
+        return any(_evaluate_condition(part, answers) for part in condition["or"])
+    return False
+
+
+def _resolve(token: Any, answers: dict[str, Any]) -> Any:
+    """Resolve a JSON Logic operand: `{"var": "x"}` reads an answer, anything else is literal."""
+    if isinstance(token, dict) and "var" in token:
+        return answers.get(token["var"])
+    return token
+
+
+# --- responses ---------------------------------------------------------------------
+def save_answers(
+    session: Session,
+    unit: BusinessUnit,
+    order: WorkOrder,
+    *,
+    answers: dict[str, Any],
+    device_key: str | None = None,
+    captured_by: str | None = None,
+    captured_at: datetime | None = None,
+    submit: bool = False,
+) -> FormResponse:
+    """Store answers, validating them against the form the work order executes with.
+
+    :param submit: True when the technician closed the form in the field. A submitted
+        response stops being the device's to change.
+    :raises AnswerValidationError: if the answers do not satisfy the form.
+    :raises NotEditableError: if the response is no longer editable.
+    """
+    response = session.scalars(
+        select(FormResponse).where(
+            FormResponse.work_order_id == order.id, FormResponse.form_code == order.form_code
+        )
+    ).first()
+
+    if response is not None and not response.is_editable:
+        raise NotEditableError(
+            f"la respuesta está en estado '{response.state}' y ya no se puede modificar "
+            "desde el dispositivo"
+        )
+
+    form = compose_for(session, unit, order)
+    if submit:
+        # Drafts are saved as they are: a technician halfway through a form must not be
+        # blocked by a field they have not reached yet. Submission is where it must hold.
+        problems = validate_answers(form, answers)
+        if problems:
+            raise AnswerValidationError(problems)
+
+    if response is None:
+        response = FormResponse(
+            business_unit_id=unit.id,
+            work_order_id=order.id,
+            form_code=order.form_code,
+            form_version=order.form_version or form.version,
+            answers=answers,
+            device_key=device_key,
+            captured_by=captured_by,
+            captured_at=captured_at,
+        )
+        session.add(response)
+    else:
+        response.answers = answers
+        response.device_key = device_key or response.device_key
+        response.captured_by = captured_by or response.captured_by
+        response.captured_at = captured_at or response.captured_at
+
+    if submit:
+        response.state = ResponseState.SUBMITTED
+        response.submitted_at = datetime.now(UTC)
+
+    session.flush()
+    return response
+
+
+def record_provenance(
+    session: Session,
+    response: FormResponse,
+    *,
+    field_key: str,
+    origin: str,
+    final_value: Any,
+    proposed_value: Any = None,
+    model_name: str | None = None,
+    model_version: str | None = None,
+    confidence: float | None = None,
+    confirmed_by: str | None = None,
+    reviewer_level: str = "tecnico",
+    source_transcript: str | None = None,
+) -> FieldProvenance:
+    """Record where a field's value came from (RF-052, RF-140).
+
+    The comparison between proposal and final value is the training signal, so it is computed
+    here rather than left for an analyst to reconstruct later.
+    """
+    accepted_unchanged = proposed_value is not None and proposed_value == final_value
+
+    existing = session.scalars(
+        select(FieldProvenance).where(
+            FieldProvenance.response_id == response.id, FieldProvenance.field_key == field_key
+        )
+    ).first()
+
+    if existing is not None:
+        existing.origin = origin
+        existing.final_value = _wrap(final_value)
+        existing.proposed_value = _wrap(proposed_value)
+        existing.accepted_unchanged = accepted_unchanged
+        existing.confirmed_by = confirmed_by or existing.confirmed_by
+        existing.confirmed_at = datetime.now(UTC) if confirmed_by else existing.confirmed_at
+        existing.reviewer_level = reviewer_level
+        session.flush()
+        return existing
+
+    entry = FieldProvenance(
+        response_id=response.id,
+        field_key=field_key,
+        origin=origin,
+        proposed_value=_wrap(proposed_value),
+        final_value=_wrap(final_value),
+        model_name=model_name,
+        model_version=model_version,
+        confidence=confidence,
+        accepted_unchanged=accepted_unchanged,
+        confirmed_by=confirmed_by,
+        confirmed_at=datetime.now(UTC) if confirmed_by else None,
+        reviewer_level=reviewer_level,
+        source_transcript=source_transcript,
+    )
+    session.add(entry)
+    session.flush()
+    return entry
+
+
+def _wrap(value: Any) -> dict[str, Any] | None:
+    """Wrap a value for JSONB storage.
+
+    Wrapped in an object because a field may hold a scalar, a list or an object, and a JSONB
+    column holding bare scalars is awkward to query consistently.
+    """
+    return None if value is None else {"v": value}
+
+
+def unconfirmed_ai_values(session: Session, response: FormResponse) -> list[FieldProvenance]:
+    """AI proposals nobody confirmed yet.
+
+    The SRS is explicit that no AI value is definitive without human confirmation (rule 0.5),
+    so this is what stands between a proposal and a submitted response.
+    """
+    return [
+        entry
+        for entry in response.provenance
+        if entry.origin in (ValueOrigin.VOICE, ValueOrigin.VISION) and entry.confirmed_by is None
+    ]
+
+
+# --- evidence ----------------------------------------------------------------------
+def register_evidence(
+    session: Session,
+    response: FormResponse,
+    *,
+    kind: str,
+    storage_key: str,
+    content_hash: str,
+    stage: str = EvidenceStage.NOT_APPLICABLE,
+    size_bytes: int = 0,
+    mime_type: str | None = None,
+    latitude: float | None = None,
+    longitude: float | None = None,
+    gps_accuracy_m: float | None = None,
+    captured_at: datetime | None = None,
+    framing: str | None = None,
+    vision_result: dict[str, Any] | None = None,
+) -> Evidence:
+    """Register a piece of evidence against a response."""
+    evidence = Evidence(
+        response_id=response.id,
+        kind=kind,
+        stage=stage,
+        storage_key=storage_key,
+        content_hash=content_hash,
+        size_bytes=size_bytes,
+        mime_type=mime_type,
+        latitude=latitude,
+        longitude=longitude,
+        gps_accuracy_m=gps_accuracy_m,
+        captured_at=captured_at,
+        framing=framing,
+        vision_result=vision_result,
+    )
+    session.add(evidence)
+    session.flush()
+    return evidence
+
+
+def verify_integrity(evidence: Evidence, content: bytes) -> bool:
+    """Confirm an uploaded file is the one the device recorded.
+
+    A photograph whose hash does not match is not the photograph that was taken, and marking
+    it verified would turn a picture into evidence it is not.
+    """
+    digest = hashlib.sha256(content).hexdigest()
+    evidence.integrity_verified = digest == evidence.content_hash
+    return evidence.integrity_verified
+
+
+def photo_counts(response: FormResponse) -> dict[str, int]:
+    """Photographs per stage, for checking a form's minimums (SRS 4.8)."""
+    counts = {EvidenceStage.BEFORE.value: 0, EvidenceStage.AFTER.value: 0}
+    for item in response.evidence:
+        if item.kind == "foto" and item.stage in counts:
+            counts[item.stage] += 1
+    return counts
+
+
+def missing_photos(form: ComposedForm, response: FormResponse) -> list[str]:
+    """Which photo minimums a response still fails (SRS 4.8)."""
+    counts = photo_counts(response)
+    required = form.definition.form.min_photos
+    problems: list[str] = []
+    if counts[EvidenceStage.BEFORE.value] < required.before:
+        problems.append(
+            f"faltan fotos ANTES: {counts[EvidenceStage.BEFORE.value]} de {required.before}"
+        )
+    if counts[EvidenceStage.AFTER.value] < required.after:
+        problems.append(
+            f"faltan fotos DESPUÉS: {counts[EvidenceStage.AFTER.value]} de {required.after}"
+        )
+    return problems
+
+
+def duplicate_of(session: Session, content_hash: str) -> uuid.UUID | None:
+    """Whether this exact file already exists, so it is stored once."""
+    existing = session.scalars(
+        select(Evidence).where(Evidence.content_hash == content_hash)
+    ).first()
+    return existing.id if existing else None

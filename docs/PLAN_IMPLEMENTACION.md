@@ -36,8 +36,8 @@ Los cuatro primeros incrementos (`I0`–`I3`) son el arranque completo que se ap
 | **I2** | Capa de abstracción del modelo de datos | 4 sem | I1 | 🔴 en curso |
 | **I3** | Núcleo de OT, planificadores y asignación | 5 sem | I2 | 🟢 📋 D3 |
 | **I4** | Móvil offline: mapa, base cifrada y sync | 6 sem | I3 | 🔴 🟢 en curso |
-| **I5** | Motor de formularios y evidencias | 5 sem | I4 | 🟢 |
-| **I6** | Revisión web y staging as-built | 4 sem | I5 | 🟢 📋 D4 |
+| **I5** | Motor de formularios y evidencias | 5 sem | I4 | 🟢 backend listo |
+| **I6** | Revisión web y staging as-built | 4 sem | I5 | 🟢 backend listo · 📋 D4 |
 | **I7** | Voz → formulario | 6 sem | I5 | 🟢 |
 | **I8** | Integraciones corporativas | 4 sem | I3 | 📋 D3 |
 | **I9** | **Piloto 1** | 8 sem | I6, I7, I8 | 🟢 📋 D6 |
@@ -334,6 +334,29 @@ Sin RAG (ADR-007). El nodo de normativa funciona con parámetros y reglas, no co
 **Aceptación:** criterios del SRS 10.4 para agentes — recall de inconsistencias ≥ 0,85, kappa supervisor–agente ≥ 0,6 en la muestra ciega, −30 % de tiempo de revisión. Sin vulnerabilidades críticas ni altas. Cero observaciones sin evidencia citada. Todo límite regulatorio evaluado sale de `regulatory_parameter`, ninguno codificado.
 
 ---
+
+## Nota sobre el estado de verificación
+
+Los tests de integración **se ejecutaron contra PostgreSQL 16 + PostGIS 3.4 real**, no solo en CI:
+326 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las seis migraciones
+aplicadas y revertidas sobre una base limpia (24 tablas).
+
+Eso destapó cuatro defectos que ni el lint, ni `mypy --strict`, ni el renderizado de SQL offline
+podían ver:
+
+1. `server_default=func.false()` genera el SQL inválido `false()`. Solo falla al crear el
+   esquema de verdad.
+2. La tabla de staging `asbuilt_proposal` se buscaba en `Base.metadata` sin estar declarada ahí,
+   porque no tiene modelo ORM. Ahora es una tabla Core en los metadatos, que es lo que siempre
+   pretendió ser.
+3. El composer descartaba la lista `required` que el generador calculaba, de modo que un
+   formulario derivado del activo salía **sin ningún campo obligatorio**. Es la vía por la que
+   trabajo incompleto habría llegado a una aprobación.
+4. `now()` de PostgreSQL es el tiempo de **transacción**, así que todas las filas creadas en una
+   transacción comparten `updated_at`. El cursor delta ya lo manejaba —por eso es una tupla— pero
+   ahora hay un test que documenta ese caso.
+
+Lo que sigue sin verificar: la app Android (falta el SDK) y la pantalla de revisión en la web.
 
 ## Definition of Done (todo incremento)
 
