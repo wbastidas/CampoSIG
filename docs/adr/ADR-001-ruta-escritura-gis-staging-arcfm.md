@@ -51,6 +51,19 @@ sobrevive bien a una migración futura a ArcGIS Pro y Utility Network.
 posible cuello de botella — riesgo R-N3, mitigado con aprobación por lotes, agrupación por zona y
 alimentador, prellenado con IA, y medición del tiempo de ciclo desde el piloto.
 
+## Reparto de responsabilidades (precisado 2026-09-21)
+
+La aplicación del lote **en ArcFM la ejecuta el equipo de la distribuidora**, que es quien conoce sus
+auto-actualizadores, su base de conocimientos y sus procedimientos de edición.
+
+Por tanto este proyecto **no construye** un complemento de ArcMap/ArcFM ni automatiza la edición dentro
+de ArcFM. Su frontera es entregar el lote aprobado en un formato que el editor pueda consumir
+directamente (GeoJSON y CSV de trabajo, con una fila por elemento, su acción, sus atributos y el enlace
+a la OT, las fotos y las detecciones que lo sustentan), más la bandeja de revisión que produce ese lote.
+
+Esto reduce el alcance de RF-344 a la exportación y el seguimiento del estado de cada propuesta, y
+elimina del plan cualquier desarrollo sobre el SDK de ArcObjects.
+
 ## Alternativas descartadas
 
 | Alternativa | Por qué no |

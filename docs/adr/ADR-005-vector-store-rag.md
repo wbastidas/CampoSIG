@@ -2,10 +2,16 @@
 
 | Campo | Valor |
 |---|---|
-| Estado | Propuesta — pendiente de D1 |
+| Estado | **Sustituida por [ADR-007](ADR-007-sin-rag-en-v1.md)** |
 | Fecha | 2026-09-21 |
 | Decide | Dónde viven los embeddings del RAG normativo (M18 del SRS) |
-| Depende de | ADR-002 |
+| Depende de | ADR-002 (también sustituida) |
+
+> **Nota de sustitución (2026-09-21).** Esta decisión daba por sentado que el RAG hacía falta y solo
+> discutía dónde alojar los vectores. Al cuestionarse la premisa, la respuesta fue que el RAG **no se
+> justifica en v1**: la validación normativa que el sistema necesita es aritmética contra parámetros con
+> vigencia, no recuperación semántica. Ver **ADR-007** y la sección 6.3 del addendum. Sin RAG, la
+> pregunta de esta ADR desaparece.
 
 ## Contexto
 

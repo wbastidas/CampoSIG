@@ -1,13 +1,14 @@
-# Addendum 01 — Plataforma de campo tipo Field Maps sobre ArcGIS 10.8.1 y Oracle
+# Addendum 01 — Plataforma de campo tipo Field Maps sobre ArcGIS 10.8.1
 
 | Campo | Valor |
 |---|---|
 | Código | ADD-SIGEC-001 |
-| Versión | 1.0 |
+| Versión | 1.1 |
 | Fecha | 21 de septiembre de 2026 |
 | Extiende a | `SRS.md` v1.1 (SRS-SIGEC-CAMPO-001) |
 | Complementa a | `GUIA_ENTRENAMIENTO_MODELOS.md` v1.1 · `modelo-datos-cnel/` |
 | Estado | Borrador para aprobación — define el punto de partida de `PLAN_IMPLEMENTACION.md` |
+| Cambios v1.1 | El motor es **Oracle 11g R2 sin la opción Spatial**, dedicado a la geodatabase ArcSDE. La base operativa de la plataforma pasa a **PostgreSQL + PostGIS en servidor aparte** (ADR-006, sustituye a ADR-002). **El RAG normativo sale de v1** (ADR-007, sustituye a ADR-005). Se descarta expresamente el SDK de Esri en el móvil. La aplicación en ArcFM la ejecuta el equipo de la distribuidora. |
 
 ## 0. Por qué existe este documento
 
@@ -15,9 +16,9 @@ El SRS v1.1 especifica la plataforma asumiendo **PostgreSQL/PostGIS** como base 
 
 Ese punto ya está resuelto y con ello cambian tres cimientos de la arquitectura:
 
-1. El GIS corporativo es **ArcGIS 10.8.1 con ArcFM sobre geodatabase SDE en Oracle**, con el modelo de datos nacional de CNEL EP documentado en `modelo-datos-cnel/` (47 clases, 196 dominios, 79 relaciones, red geométrica `Electrico_RedGeom`).
-2. La base operativa de la plataforma será **Oracle** (esquema aparte), no PostgreSQL.
-3. La experiencia de usuario se modela sobre **ArcGIS Field Maps**: mapa primero, asignación de trabajo a dispositivos, formularios derivados del esquema de las capas, y todo funcionando sin conexión.
+1. El GIS corporativo es **ArcGIS 10.8.1 con ArcFM sobre geodatabase ArcSDE en Oracle 11g R2**, con el modelo de datos nacional de CNEL EP documentado en `modelo-datos-cnel/` (47 clases, 196 dominios, 79 relaciones, red geométrica `Electrico_RedGeom`).
+2. Ese Oracle **queda dedicado a la geodatabase**. No aloja datos de la plataforma, y se accede solo a través de ArcSDE y los feature services — nunca por SQL directo (ADR-006).
+3. La experiencia de usuario se modela sobre **ArcGIS Field Maps**: mapa primero, asignación de trabajo a dispositivos, formularios derivados del esquema de las capas, y todo funcionando sin conexión. Pero **sin usar software de Esri en el móvil**: la app es Kotlin nativo y open source (ADR-003).
 
 Además se incorporan requerimientos nuevos que el SRS no cubría: independencia real del modelo de datos, carga de trabajos desde un sistema de órdenes externo **y desde revisiones de calidad del SIG**, reasignación de trabajo entre dispositivos, y planificadores múltiples.
 
@@ -71,10 +72,12 @@ Registradas como ADR en `docs/adr/`. Resumen y consecuencias:
 | # | Decisión | Consecuencia principal |
 |---|---|---|
 | **ADR-001** | Los cambios de red llegan al GIS por **staging + revisión en ArcFM**, nunca por escritura directa | El GIS conserva su integridad y sus auto-actualizadores; se necesita una bandeja de revisión GIS y un rol de editor GIS |
-| **ADR-002** | La plataforma vive en **Oracle, esquema aparte** del SDE | Se usa `SDO_GEOMETRY` (libre desde 19c); se pierde `pgvector` → el RAG necesita otro almacén (ADR-005) |
+| **ADR-002** | ~~La plataforma vive en Oracle, esquema aparte del SDE~~ | **Sustituida por ADR-006** al conocerse que el motor es 11g R2 sin la opción Spatial |
+| **ADR-006** | La plataforma vive en **PostgreSQL 16 + PostGIS en servidor aparte**; Oracle 11g R2 queda dedicado a la geodatabase ArcSDE, de solo lectura y solo vía feature services | Restaura el stack original del SRS: PostGIS, JSONB y Martin vuelven a estar disponibles. Un servidor más que operar |
 | **ADR-003** | Sync **híbrido**: el móvil habla solo con nuestro backend; el backend mantiene la réplica ArcGIS | El móvil queda 100 % open source y simple; toda la complejidad ArcGIS se concentra en un servicio del backend |
 | **ADR-004** | **Capa de abstracción del modelo de datos** (Asset Model Descriptor + perfiles de mapeo) | La plataforma no conoce `EstructuraSoporte` ni `PuestoTransfDistribucion`: conoce *tipos de activo* resueltos en tiempo de ejecución |
-| **ADR-005** | Vector store del RAG: **Oracle 23ai si está disponible, Qdrant si el motor es 19c** | Decisión pendiente de confirmar la versión de Oracle (sección 10) |
+| **ADR-005** | ~~Vector store del RAG~~ | **Sustituida por ADR-007**: la pregunta correcta no era dónde poner los vectores, sino si el RAG hace falta |
+| **ADR-007** | **Sin RAG en v1.** El cumplimiento normativo se resuelve con `regulatory_parameter` + reglas deterministas + búsqueda de texto completo con enlace al numeral | Elimina el vector store, el pipeline de ingesta y los conjuntos dorados de normativa. Se reconsidera después del piloto, con datos de uso real |
 
 ---
 
@@ -282,7 +285,14 @@ Esto se verificó contra documentación de Esri antes de diseñar. Cada punto ti
 | H6 | **ArcMap 10.8.x se retiró el 1 de marzo de 2026** — ya pasó. ArcGIS Enterprise 10.8.1 sigue siendo versión de partida soportada para actualizar a 11.x | Riesgo nuevo R-N1 (sección 10). El diseño debe sobrevivir a la migración a Utility Network |
 | H7 | El **ArcGIS Maps SDK for Kotlin** sincroniza con feature services de **Enterprise 10.2.2 o posterior** (10.8.1 califica), pero exige **licencia Esri nivel Standard por dispositivo** para editar y sincronizar offline | Compatible técnicamente, pero incompatible con la política de licencias del SRS (0.7). Motiva ADR-003 |
 
-De H1 + H4 se sigue la conclusión central: **ArcGIS 10.8.1 con ArcFM y red geométrica puede leerse con seguridad y no puede escribirse con seguridad desde una app de campo.** Todo el diseño de integración parte de ahí.
+| H8 | **ArcGIS 10.8.x soporta Oracle 11g R2 en la versión 11.2.0.4** (junto con 12c R1/R2, 18c y 19c). Los clientes ArcGIS que conectan a Oracle deben usar cliente 12c o posterior | La combinación instalada **es soportada por Esri**, con una condición: el parche debe ser 11.2.0.4. Verificar en I1; un 11.2.0.3 o anterior quedaría fuera de soporte incluso para Esri |
+| H9 | El **Soporte Extendido de Oracle 11.2.0.4 terminó en diciembre de 2020** (Market Driven Support hasta diciembre de 2022 como máximo). Desde entonces está en Sustaining Support: **sin parches de seguridad nuevos** | Riesgo R-N7. Es el argumento principal para **no** alojar datos nuevos ahí: cada tabla que añadamos amplía la superficie expuesta de un motor que ya no recibe parches |
+| H10 | **`python-oracledb` en modo *thin* exige Oracle Database 12.1 o posterior.** Para 11.2 hace falta modo *thick* con las librerías de Oracle Instant Client | Conectarse a 11g R2 desde Python obliga a meter librerías nativas en los contenedores. Con ADR-006 el problema desaparece: no nos conectamos por SQL |
+| H11 | **Oracle Locator** —subconjunto de Spatial que incluye el tipo `SDO_GEOMETRY`— **viene de serie en las ediciones Standard y Enterprise**, sin licencia adicional. La opción *Spatial* de pago añade funciones avanzadas | Dato útil para el equipo GIS: puede que sí haya `SDO_GEOMETRY` disponible vía Locator aunque no se tenga la opción Spatial. Nosotros no dependemos de ello: leemos por feature service |
+
+De H1 + H4 se sigue la conclusión central sobre la escritura: **ArcGIS 10.8.1 con ArcFM y red geométrica puede leerse con seguridad y no puede escribirse con seguridad desde una app de campo.**
+
+De H9 + H10 se sigue la conclusión central sobre el almacenamiento: **el Oracle 11g R2 existente sirve perfectamente para lo que ya hace —ser la geodatabase— y no sirve para alojar la plataforma nueva.** Ambas conclusiones son la base de ADR-001 y ADR-006.
 
 ### 5.2 Ruta de escritura por clase, decidida por metadatos
 
@@ -301,7 +311,7 @@ El conector no tiene lógica especial por clase. Deriva la ruta del perfil:
 
 ```mermaid
 flowchart LR
-  subgraph GIS[ArcGIS Enterprise 10.8.1 + ArcFM · Oracle SDE]
+  subgraph GIS[ArcGIS Enterprise 10.8.1 + ArcFM · ArcSDE en Oracle 11g R2]
     FS[Feature Services<br/>sync habilitado<br/>versionado tradicional]
     GDB[(Geodatabase Electrico<br/>Electrico_RedGeom)]
     FS --- GDB
@@ -314,9 +324,9 @@ flowchart LR
     PKG[offline_package_builder<br/>PMTiles + datos + formularios]
     API[API móvil propia]
   end
-  subgraph ORA[Oracle · esquema SIGEC]
+  subgraph PGS[PostgreSQL 16 + PostGIS · servidor aparte]
     OPS[OT · formularios · respuestas · evidencias]
-    CACHE[Caché de red<br/>SDO_GEOMETRY]
+    CACHE[Caché de red<br/>PostGIS]
     SREV[Bandeja de revisión GIS]
   end
   subgraph MOV[Android Kotlin]
@@ -341,7 +351,7 @@ flowchart LR
 **Bajada (GIS → plataforma → móvil), programada e incremental:**
 
 1. `metadata_sync` refresca dominios, subtipos y relaciones. Los tres dominios volátiles por Unidad de Negocio se refrescan siempre; los demás por cambio de versión.
-2. `arcgis_connector` mantiene una **réplica de solo lectura** por zona vía `createReplica` / `synchronizeReplica`, y la materializa en la caché Oracle (`SDO_GEOMETRY`).
+2. `arcgis_connector` mantiene una **réplica de solo lectura** por zona vía `createReplica` / `synchronizeReplica`, y la materializa en la caché PostGIS.
 3. `offline_package_builder` arma el paquete por zona: teselas PMTiles, activos de la zona, historial del activo, formularios vigentes, catálogos y el manifiesto de modelos IA (RF-102 del SRS).
 4. El móvil descarga el paquete de **nuestro** backend. No conoce ArcGIS.
 
@@ -355,19 +365,22 @@ flowchart LR
 
 **Idempotencia y trazabilidad:** cada propuesta as-built lleva `proposal_id` (UUID del móvil), el `GLOBALID` del elemento GIS cuando existe, la OT de origen, y el resultado de la aplicación. Reenviar no duplica; un lote rechazado vuelve con motivo al supervisor.
 
-### 5.4 Mapas offline sin PostGIS
+### 5.4 Mapas y consultas espaciales
 
-El SRS proponía Martin (teselas vectoriales desde PostGIS). Con Oracle esa pieza no aplica. Sustitución:
+Con ADR-006 el stack geoespacial del SRS vuelve a estar disponible íntegro. La geometría **entra** por el feature service (EsriJSON/GeoJSON) y **se almacena y consulta** en PostGIS:
 
 | Necesidad | Solución | Licencia |
 |---|---|---|
-| Teselas de la red para móvil y web | Extracción de la caché Oracle a GeoJSON → `tippecanoe` → **PMTiles** por zona | BSD / Apache 2.0 |
-| Servir teselas | Archivo PMTiles estático sobre el almacenamiento de objetos, con rangos HTTP | — |
+| Lectura de geometría del GIS | Feature service REST de ArcGIS 10.8.1. **Nunca** SQL contra ArcSDE: la geometría puede estar como `ST_GEOMETRY` de Esri o como `SDO_GEOMETRY`, y el formato es un detalle interno de la geodatabase | — |
+| Caché de red y consultas espaciales | **PostGIS** en el servidor de la plataforma | GPL-2 (servicio, no enlazado) |
+| Paquetes offline por zona | GeoJSON desde PostGIS → `tippecanoe` → **PMTiles** | BSD / Apache 2.0 |
+| Teselas en vivo para la web | **Martin** desde PostGIS (vuelve a ser opción) | Apache 2.0 |
 | Mapa base offline | PMTiles de cartografía propia u OpenStreetMap, por zona | ODbL (atribución) |
 | Renderizado | **MapLibre GL JS** (web) y **MapLibre Native** (Android) | BSD-3 |
-| Consultas espaciales del backend | `SDO_GEOMETRY` + operadores Oracle Spatial | Incluido en todas las ediciones desde 19c |
 
-Ventaja lateral: PMTiles es un archivo único e inmutable, lo que hace el paquete offline verificable por hash y cacheable — encaja con el manifiesto firmado del SRS 7.5.
+Se mantiene PMTiles para los paquetes offline aunque Martin esté disponible: PMTiles es un archivo único e inmutable, así que el paquete es verificable por hash y cacheable, lo que encaja con el manifiesto firmado del SRS 7.5. Martin sirve las capas vivas de la web, donde la inmutabilidad no aporta nada.
+
+> **Por qué no leer ArcSDE por SQL.** Sería tentador: la geodatabase está en Oracle y Oracle habla SQL. Pero el esquema físico de ArcSDE (tablas A y D de versionado, `ST_GEOMETRY` o `SDO_GEOMETRY`, blobs comprimidos) es interno de Esri y puede cambiar entre versiones, y leer una clase versionada por SQL sin resolver el árbol de versiones devuelve datos incorrectos, no un error. El feature service resuelve la versión, la proyección y el formato, y es el contrato que Esri sí mantiene estable.
 
 ---
 
@@ -403,21 +416,54 @@ Tres precisiones que conviene fijar por escrito:
 2. **La verificación de licencia es parte del pipeline,** no un trámite previo. La publicación de un paquete de modelos falla si un dataset de licencia no aprobada participó en el entrenamiento (checklist sección 14 de la guía).
 3. **El detector aprende del perfil.** La taxonomía de visión (Anexo B del SRS) se enlaza al AMD: una clase visual `insulator` apunta al tipo canónico, y de ahí al campo real del modelo. Añadir una Unidad de Negocio no obliga a reentrenar visión.
 
+### 6.3 Por qué el RAG normativo sale de v1
+
+El SRS incluía un módulo completo (M18) de base de conocimiento con recuperación semántica: embeddings `bge-m3`, índice vectorial, ingesta segmentada por numeral, y un asistente que responde preguntas de normativa con citas. Revisado con cuidado, **no se sostiene para v1**, y conviene decir por qué con precisión.
+
+**Lo que el RAG realmente aportaba eran dos cosas distintas**, y conviene separarlas porque tienen soluciones muy distintas:
+
+| Necesidad | ¿La resuelve el RAG? | Alternativa determinista |
+|---|---|---|
+| **Hacer cumplir** un límite regulatorio: tiempo máximo de reposición de APG, umbral de interrupción no computable, resistencia de puesta a tierra admisible | Mal. Un LLM puede equivocarse al leer una tabla y el error es silencioso | **`regulatory_parameter`**, que el SRS ya exige en su sección 1.4: el valor, su vigencia y la referencia a la norma, como dato parametrizado. Una regla lo evalúa y el resultado es verificable |
+| **Consultar** dónde dice algo la norma o el manual interno | Sí, es su caso de uso legítimo | Búsqueda de texto completo de PostgreSQL sobre los documentos, con enlace al numeral y la página exactos |
+
+El punto importante es el primero: **la validación normativa que el sistema necesita no es semántica, es aritmética.** "¿Se repuso la luminaria dentro del plazo?" es una resta contra un parámetro, no una pregunta a un modelo de lenguaje. El propio SRS lo dice en su nota de la sección 1.4: los valores regulatorios *no se codifican*, se parametrizan con vigencia y referencia. Eso ya resuelve el cumplimiento, y lo resuelve mejor que un LLM porque es auditable.
+
+**Lo que costaba el RAG**, según la propia guía de entrenamiento: un conjunto dorado de 100 a 200 preguntas por área redactadas con los usuarios clave, métricas RAGAS con fidelidad ≥ 0,85 y recall de contexto ≥ 0,80, cero respuestas sin cita, reindexación en cada cambio de norma, y evaluación en CI. Es un programa de calidad propio, sostenido, para una función de consulta.
+
+**Dos razones más, específicas de este caso:**
+
+1. **Requiere conexión.** El asistente normativo no funciona offline, y el técnico necesita la norma justamente cuando está en el poste. Donde más valdría es donde no está disponible.
+2. **El riesgo es asimétrico.** Una respuesta equivocada pero con aire de autoridad sobre una norma de seguridad eléctrica es peor que no tener respuesta. El SRS ya lo detecta como riesgo de sobreexpectativa; en normativa de seguridad el costo del error es mayor.
+
+**Qué se hace en v1:**
+
+- `regulatory_parameter` con vigencia y referencia a la norma — ya estaba previsto.
+- Reglas deterministas en el nodo de normativa de los agentes (M17), que la propia guía de entrenamiento ya recomienda como primer paso: *"convertir los patrones fallidos en reglas deterministas antes de tocar el prompt o el modelo"*.
+- Repositorio de documentos con búsqueda de texto completo y enlace al numeral. Sin embeddings, sin vector store.
+
+**Cuándo reconsiderarlo.** Después del piloto, con una señal concreta: si los supervisores y técnicos hacen preguntas normativas abiertas con frecuencia suficiente, medida en el propio sistema, y si esas preguntas no se resuelven con la búsqueda de texto completo. Esa medición es gratis y es el insumo que hoy no existe. Sin ese dato, construir M18 sería decidir a ciegas.
+
+Esto se registra en ADR-007, con M18 marcado como *fuera de v1* y no como *descartado*.
+
 ---
 
 ## 7. Cambios en el stack
 
 ### 7.1 Sustituciones respecto al SRS 7.2
 
-| Pieza del SRS | Sustituto | Motivo |
+| Pieza del SRS | Estado | Motivo |
 |---|---|---|
-| PostgreSQL 16 + PostGIS | **Oracle** (esquema aparte) + `SDO_GEOMETRY` | ADR-002 |
-| `pgvector` | **Oracle 23ai AI Vector Search** o **Qdrant** (Apache 2.0) | ADR-005; `VECTOR` exige 23ai con `COMPATIBLE ≥ 23.4` |
-| Alembic + SQLAlchemy/PostGIS | SQLAlchemy 2.0 con `oracledb` (modo *thin*) + Alembic | Driver Oracle, sin cliente nativo |
-| Martin (teselas desde PostGIS) | `tippecanoe` → **PMTiles** | Sección 5.4 |
-| Conector GIS genérico (RF-121) | **`arcgis_connector` + staging** | Sección 5.3 |
+| PostgreSQL 16 + PostGIS | **Se mantiene**, en servidor aparte del Oracle de la geodatabase | ADR-006 |
+| `pgvector` | **Se retira de v1** junto con el RAG | ADR-007 |
+| Alembic + SQLAlchemy 2.0 + GeoAlchemy2 | **Se mantiene** | Sin driver Oracle: nada de la plataforma habla SQL con Oracle |
+| Martin (teselas desde PostGIS) | **Se mantiene** para las capas vivas de la web; los paquetes offline usan PMTiles | Sección 5.4 |
+| Conector GIS genérico (RF-121) | **Sustituido** por `arcgis_connector` + staging | Sección 5.3 |
+| M18 — Base de conocimiento y RAG normativo | **Fuera de v1** | ADR-007 |
 
-Todo lo demás del stack 7.2 se mantiene: FastAPI, Celery/Redis, SeaweedFS, Keycloak, React + RJSF, MapLibre, Kotlin/Compose, Room + SQLCipher, sherpa-onnx, llama.cpp, ONNX Runtime, LangGraph, MLflow, DVC.
+Es decir: respecto al SRS v1.1 el stack **casi no cambia**. La versión 1.0 de este addendum había movido la plataforma a Oracle; al conocerse que el motor es 11g R2 sin la opción Spatial, esa decisión se revirtió y el stack original resultó ser el correcto. Se mantiene todo lo demás de 7.2: FastAPI, Celery/Redis, SeaweedFS, Keycloak, React + RJSF, MapLibre, Kotlin/Compose, Room + SQLCipher, sherpa-onnx, llama.cpp, ONNX Runtime, LangGraph, MLflow, DVC.
+
+**Lo que se añade** es un cliente ArcGIS en el backend (`httpx` sobre la API REST 10.8.1), `tippecanoe` para los paquetes offline, y nada más. Cero dependencias propietarias, cero librerías nativas de Oracle.
 
 ### 7.2 Componentes nuevos del backend
 
@@ -434,9 +480,12 @@ backend/app/
 │   ├── replica.py          # createReplica / synchronizeReplica
 │   └── staging.py          # propuestas as-built y aplicación de lotes
 ├── gis_review/             # controles de calidad → trabajos de verificación
-├── offline_package/         # constructor de paquetes por zona (PMTiles + datos)
-└── assignment/              # planificadores, custodia de OT, reasignación
+├── offline_package/        # constructor de paquetes por zona (PMTiles + datos)
+├── regulatory/             # parámetros con vigencia, reglas de cumplimiento, búsqueda documental
+└── assignment/             # planificadores, custodia de OT, reasignación
 ```
+
+El módulo `knowledge/` que el SRS 10.1 preveía para el RAG **no se construye en v1**; su parte útil vive en `regulatory/` sin recuperación semántica (ADR-007).
 
 ### 7.3 Refuerzos en CI
 
@@ -487,14 +536,17 @@ backend/app/
 
 | Sección del SRS | Estado | Reemplazo |
 |---|---|---|
-| 7.2 — PostgreSQL/PostGIS/pgvector | **Corregido** | Oracle + `SDO_GEOMETRY`; vector store según ADR-005 |
-| 7.2 — Martin (teselas) | **Corregido** | `tippecanoe` + PMTiles |
-| 7.6 — Docker Compose de desarrollo | **Corregido** | Oracle Free (o XE) en lugar de PostgreSQL; añadir `tools/arcgis-mock` |
+| 7.2 — PostgreSQL 16 + PostGIS | **Vigente** | Confirmado en servidor aparte del Oracle de la geodatabase (ADR-006) |
+| 7.2 — `pgvector` | **Retirado de v1** | ADR-007: sin RAG en v1 |
+| 7.2 — Martin (teselas) | **Vigente**, con matiz | Martin para capas vivas de la web; PMTiles para paquetes offline (5.4) |
+| 7.6 — Docker Compose de desarrollo | **Ampliado** | Añadir `tools/arcgis-mock` y `tools/legacy-ot-mock`. PostgreSQL se mantiene |
 | 8 — Modelo de datos | **Ampliado** | Entidades nuevas: `model_profile`, `asset_binding`, `asbuilt_proposal`, `gis_review_batch`, `assignment`, `device_custody` |
-| 11.3.2 — decisión pendiente del GIS | **Resuelto** | ArcGIS 10.8.1 + ArcFM sobre Oracle SDE |
+| 11.3.2 — decisión pendiente del GIS | **Resuelto** | ArcGIS 10.8.1 + ArcFM sobre ArcSDE en Oracle 11g R2 |
 | RF-121 — adaptador GIS genérico | **Sustituido** | RF-340 a RF-345 |
+| M18 y RF-190..RF-193 — RAG normativo | **Fuera de v1** | ADR-007. Se sustituye por `regulatory_parameter` + búsqueda de texto completo |
+| M17 — agentes | **Vigente, con alcance reducido** | El nodo de normativa pasa a reglas deterministas sobre `regulatory_parameter`, sin recuperación semántica |
 | 10.2 — épicas | **Reordenado** | Ver `PLAN_IMPLEMENTACION.md` |
-| 0.7 — licencias | **Vigente y reforzado** | ADR-003 evita la licencia Esri por dispositivo en el móvil |
+| 0.7 — licencias | **Vigente y reforzado** | ADR-003: ningún componente de Esri en el móvil, ni licencia por dispositivo |
 
 Todo lo no listado sigue vigente sin cambios.
 
@@ -510,14 +562,18 @@ Todo lo no listado sigue vigente sin cambios.
 | R-N2 | Habilitar Global IDs, archiving y versionado tradicional en la geodatabase productiva es intrusivo | Media | Alto | Spike I1 en copia de la geodatabase; ventana de mantenimiento acordada con el equipo GIS; nunca sobre producción sin ensayo |
 | R-N3 | La revisión GIS manual (ADR-001) se convierte en cuello de botella | Media | Medio | Aprobación por lotes, agrupación por zona, prellenado con IA, métrica de tiempo de ciclo desde el piloto. Si se satura, habilitar escritura directa por clase (RF-345) |
 | R-N4 | El perfil de mapeo se vuelve tan complejo que "configurar" cuesta más que programar | Media | Alto | Mantener el AMD deliberadamente pequeño; importador con coincidencia asistida; la prueba del perfil alterno en CI es la señal de alarma temprana |
-| R-N5 | Oracle sin `pgvector` complica el RAG | Baja | Medio | ADR-005; Qdrant es sidecar liviano y Apache 2.0 |
+| R-N5 | ~~Oracle sin `pgvector` complica el RAG~~ | — | — | **Cerrado** por ADR-007: sin RAG en v1, el riesgo desaparece |
+| R-N7 | **Oracle 11g R2 está en Sustaining Support desde diciembre de 2020: no recibe parches de seguridad.** Aloja la geodatabase corporativa | Alta | Alto | Fuera del alcance de este proyecto resolverlo, pero sí de no empeorarlo: ADR-006 evita añadir una sola tabla nueva ahí. La plataforma solo consume feature services, así que una migración futura del motor (a 19c o a la versión que exija ArcGIS Pro) **no la afecta**. Conviene que la distribuidora lo tenga en su plan de riesgos de TI |
+| R-N8 | El parche de Oracle podría ser anterior a **11.2.0.4**, único 11g R2 que ArcGIS 10.8.x soporta | Media | Medio | Verificación de una línea en I1 (`SELECT * FROM v$version`). Si es anterior, la instalación está fuera de soporte de Esri y hay que escalarlo antes de construir sobre ella |
 | R-N6 | El sync propio (ADR-003) es la pieza de mayor riesgo técnico del proyecto | Alta | Alto | Se ataca primero (I1 e I3); simulador de feature service en CI; pruebas de corte de red e idempotencia desde el inicio |
 
 ### 10.2 Decisiones pendientes
 
 | # | Decisión | Por qué importa | Necesaria antes de |
 |---|---|---|---|
-| D1 | **Versión exacta de Oracle** (19c, 21c, 23ai) y edición | Define si el vector store es nativo o Qdrant (ADR-005), y las capacidades de JSON y particionado | I0 |
+| ~~D1~~ | ~~Versión exacta de Oracle~~ | **Resuelta:** Oracle 11g R2, sin la opción Spatial, dedicado a la geodatabase ArcSDE. Resultado: ADR-006 y ADR-007 | — |
+| D9 | ¿El parche de Oracle es **11.2.0.4**? (H8, R-N8) | Determina si la instalación está dentro del soporte de Esri | I1 |
+| D10 | Servidor para PostgreSQL: ¿se provisiona una máquina nueva, una VM, o contenedores en infraestructura existente? ¿Quién lo administra? | ADR-006 depende de ello; es el único recurso nuevo que pide la arquitectura | I0 |
 | D2 | ¿Hay licencias de **ArcGIS Pro** y equipo GIS con capacidad de revisar lotes? ¿Cuántas personas y con qué disponibilidad? | Dimensiona ADR-001 y el riesgo R-N3 | I1 |
 | D3 | Nombre, tecnología y API del **sistema de órdenes de trabajo** corporativo, y si es maestro o satélite | Define el adaptador RF-120 y quién emite el número de OT | I2 |
 | D4 | ¿Existen ya **controles de calidad del SIG** (Data Reviewer, scripts, checklist)? ¿Cuáles son las reglas reales? | Define el alcance de RF-350 | I4 |

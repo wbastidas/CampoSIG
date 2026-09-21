@@ -3,9 +3,10 @@
 | Campo | Valor |
 |---|---|
 | Código | PLAN-SIGEC-001 |
-| Versión | 1.0 |
+| Versión | 1.1 |
 | Fecha | 21 de septiembre de 2026 |
-| Base | `SRS.md` v1.1 · `ADDENDUM-01-ArcGIS-FieldMaps-Oracle.md` v1.0 · `GUIA_ENTRENAMIENTO_MODELOS.md` v1.1 |
+| Base | `SRS.md` v1.1 · `ADDENDUM-01-ArcGIS-FieldMaps-Oracle.md` v1.1 · `GUIA_ENTRENAMIENTO_MODELOS.md` v1.1 |
+| Cambios v1.1 | I0 vuelve a PostgreSQL + PostGIS (ADR-006); I12 pierde el RAG y gana alcance en agentes (ADR-007); I0 deja de estar bloqueado por D1, ya resuelta; I6 precisa que la aplicación en ArcFM es del cliente |
 | Reemplaza a | Sección 10.2 del SRS (épicas E0–E12) |
 
 ## Cómo leer este plan
@@ -28,8 +29,8 @@ Los cuatro primeros incrementos (`I0`–`I3`) son el arranque completo que se ap
 
 | Inc. | Nombre | Dur. ref. | Depende de | Marca |
 |---|---|---|---|---|
-| **I0** | Fundaciones y Oracle | 2 sem | — | 📋 D1 |
-| **I1** | Prueba de concepto ArcGIS 10.8.1 | 3 sem | I0 | 🔴 📋 D2 D5 D7 |
+| **I0** | Fundaciones | 2 sem | — | 📋 D10 |
+| **I1** | Prueba de concepto ArcGIS 10.8.1 | 3 sem | I0 | 🔴 📋 D2 D5 D7 D9 |
 | **I2** | Capa de abstracción del modelo de datos | 4 sem | I1 | 🔴 |
 | **I3** | Núcleo de OT, planificadores y asignación | 5 sem | I2 | 🟢 📋 D3 |
 | **I4** | Móvil offline: mapa, base cifrada y sync | 6 sem | I3 | 🔴 🟢 |
@@ -40,28 +41,28 @@ Los cuatro primeros incrementos (`I0`–`I3`) son el arranque completo que se ap
 | **I9** | **Piloto 1** | 8 sem | I6, I7, I8 | 🟢 📋 D6 |
 | **I10** | MLOps y paquetes de modelos | 4 sem (‖ I9) | I7 | — |
 | **I11** | Visión on-device | 6 sem | I9, I10 | 🟢 |
-| **I12** | Agentes, RAG y endurecimiento | 8 sem | I11 | 🟢 |
+| **I12** | Agentes y endurecimiento | 7 sem | I11 | 🟢 |
 
-Duración de referencia: **11 a 14 meses**. Equipo del SRS 10.2, con dos ajustes: el frontend web pasa a tiempo completo (el diseñador de perfiles y la bandeja GIS son trabajo de web sustancial) y se requiere **un enlace formal con el equipo GIS** desde I1, no como consulta ocasional.
+Duración de referencia: **11 a 13 meses** (retirar el RAG ahorra del orden de tres semanas en I12 y el programa de calidad que lo acompañaba). Equipo del SRS 10.2, con dos ajustes: el frontend web pasa a tiempo completo (el diseñador de perfiles y la bandeja GIS son trabajo de web sustancial) y se requiere **un enlace formal con el equipo GIS** desde I1, no como consulta ocasional.
 
 ---
 
-## I0 — Fundaciones y Oracle · 2 semanas
+## I0 — Fundaciones · 2 semanas
 
 **Objetivo:** el equipo puede levantar todo el entorno con un comando y el CI protege las reglas desde el primer commit.
 
 | Entregable | Detalle |
 |---|---|
 | Monorepo | Estructura del SRS 10.1, con los módulos nuevos del addendum 7.2 |
-| Docker Compose de desarrollo | Oracle Free, Redis, SeaweedFS, Keycloak con realm de prueba, backend, web, `llama.cpp` con Qwen2.5-1.5B tras la pasarela de modelos |
-| Esquema Oracle base | Esquema `SIGEC` separado del SDE, migraciones Alembic con `oracledb` *thin*, `SDO_GEOMETRY` probado con un ida y vuelta |
-| CI | Lint, tests, verificación de licencias, `THIRD_PARTY_LICENSES.md` automático, **prueba de fuga de modelo de datos** (RF-305) desde el día uno |
+| Docker Compose de desarrollo | PostgreSQL 16 + PostGIS, Redis, SeaweedFS, Keycloak con realm de prueba, backend, web, `llama.cpp` con Qwen2.5-1.5B tras la pasarela de modelos, `tools/arcgis-mock` y `tools/legacy-ot-mock` |
+| Esquema base | Migraciones Alembic sobre PostgreSQL; PostGIS y JSONB con índice GIN probados con un ida y vuelta. **Ninguna conexión a Oracle**: el backend no lleva driver Oracle (ADR-006) |
+| CI | Lint, tests, verificación de licencias, `THIRD_PARTY_LICENSES.md` automático, **prueba de fuga de modelo de datos** (RF-305) y **rechazo de artefactos `com.esri.*`** en el módulo Android (ADR-003), desde el día uno |
 | Autenticación | Keycloak con OIDC y el flujo de login corporativo (RF-001), federación LDAP/AD documentada aunque se conecte después |
-| ADR | Los cinco ADR del addendum versionados en el repo |
+| ADR | Los siete ADR del addendum versionados en el repo, con los sustituidos marcados |
 
-**Aceptación:** un desarrollador nuevo clona, ejecuta un comando y tiene el entorno corriendo con login funcional. El CI rechaza un commit que introduzca el literal `PuestoTransfDistribucion` en `backend/app/`.
+**Aceptación:** un desarrollador nuevo clona, ejecuta un comando y tiene el entorno corriendo con login funcional. El CI rechaza tres cosas: un commit con el literal `PuestoTransfDistribucion` en `backend/app/`, una dependencia `com.esri.*` en Android, y una dependencia con licencia AGPL o GPL en el binario distribuido.
 
-**Decisión necesaria:** D1 (versión y edición de Oracle). Sin ella se asume 19c y el vector store se resuelve con Qdrant.
+**Decisión necesaria:** D10 (servidor y administración de PostgreSQL). Es el único recurso nuevo que pide la arquitectura.
 
 ---
 
@@ -73,17 +74,18 @@ Se trabaja **sobre una copia** de la geodatabase, nunca sobre producción.
 
 | Entregable | Detalle |
 |---|---|
+| **Verificación de versión** | `SELECT * FROM v$version`: confirmar que el parche es **11.2.0.4**, el único 11g R2 que ArcGIS 10.8.x soporta (D9, R-N8). Es lo primero del incremento porque si falla, cambia la conversación |
 | Inventario de habilitación | Qué clases del modelo tienen Global IDs, archiving y versionado; qué falta y qué cuesta habilitarlo (riesgo R-N2, decisión D5) |
 | Feature services publicados | Publicación con sync habilitado desde la copia, con versionado tradicional en el feature dataset `Electrico` |
 | Cliente ArcGIS mínimo | `rest_client.py` + `replica.py`: token de Portal, `query`, `createReplica`, `synchronizeReplica` |
 | **Informe de medición** | Tiempo y tamaño de `createReplica` por zona y por alimentador; tiempo de sync incremental; comportamiento con las clases de `Electrico_RedGeom`; qué pasa exactamente al intentar editar conectividad |
 | `tools/arcgis-mock` | Simulador de feature service 10.8.1 para el CI, con los mismos rechazos que el real |
 | Verificación de las hipótesis H1–H7 | Cada hallazgo del addendum 5.1 confirmado, corregido o refutado, con evidencia |
-| Ruta de aplicación en ArcFM | Ensayo del flujo: lote de propuestas → editor aplica en ArcMap/ArcFM → auto-actualizadores y trace corren. Medición del tiempo por elemento (alimenta R-N3) |
+| Ruta de aplicación en ArcFM | Ensayo del flujo: lote de propuestas → **el editor del cliente** aplica en ArcMap/ArcFM → auto-actualizadores y trace corren. Nosotros entregamos el lote y acompañamos la medición del tiempo por elemento (alimenta R-N3). No se desarrolla nada dentro de ArcFM (ADR-001) |
 
 **Aceptación:** existe un informe firmado con el equipo GIS que responde: ¿se puede sincronizar?, ¿a qué costo?, ¿qué clases sí y cuáles no?, ¿cuánto tarda un editor en aplicar un lote de 50 elementos? Si alguna respuesta invalida el diseño, se revisa el addendum **antes** de I2.
 
-**Decisiones necesarias:** D2, D5, D7.
+**Decisiones necesarias:** D2, D5, D7, D9.
 
 > **Punto de no retorno.** Si aquí se descubre que la geodatabase no puede habilitarse para sync, el plan cambia a un modelo de exportación periódica (ETL a la caché Oracle, sin réplica). El resto de los incrementos sobrevive; solo cambia `arcgis_connector`.
 
@@ -177,10 +179,10 @@ Aquí se materializa ADR-003: el móvil no conoce ArcGIS.
 | Acta PDF | WeasyPrint con fotos, firmas, resumen y QR de verificación (RF-115) |
 | `staging_asbuilt` | RF-342: propuestas con `proposal_id`, `GLOBALID` de origen, OT, y resultado de aplicación |
 | **Bandeja de revisión GIS** | RF-343: agrupación por zona y alimentador, antes/después, aprobación por lotes, rol de editor GIS |
-| Exportación para ArcFM | RF-344: lote aprobado como GeoJSON/CSV de trabajo, con instrucciones por elemento |
+| Exportación para ArcFM | RF-344: lote aprobado como GeoJSON y CSV de trabajo, una fila por elemento con su acción, atributos y enlace a la OT, fotos y detecciones. **La aplicación en ArcFM la ejecuta el equipo de la distribuidora**; no se construye complemento de ArcMap ni se usa ArcObjects (ADR-001) |
 | Controles de calidad del SIG | RF-350 y RF-351: reglas sobre el AMD → trabajos de verificación en campo |
 
-**Aceptación:** una OT con un poste nuevo recorre todo el camino: captura offline → sync → revisión del supervisor → staging → bandeja GIS → lote exportado → editor lo aplica en ArcFM → el elemento existe en la geodatabase con su conectividad correcta. Se mide el tiempo del ciclo completo (insumo de R-N3).
+**Aceptación:** una OT con un poste nuevo recorre todo el camino: captura offline → sync → revisión del supervisor → staging → bandeja GIS → lote exportado → el editor del cliente lo aplica en ArcFM → el elemento existe en la geodatabase con su conectividad correcta. La plataforma registra el resultado de cada propuesta (aplicada, rechazada, pendiente) para cerrar la traza. Se mide el tiempo del ciclo completo (insumo de R-N3).
 
 **Decisión necesaria:** D4.
 
@@ -275,20 +277,23 @@ Sigue la guía de entrenamiento sin cambios de fondo; el aporte del addendum es 
 
 ---
 
-## I12 — Agentes, RAG y endurecimiento · 8 semanas 🟢
+## I12 — Agentes y endurecimiento · 7 semanas 🟢
 
 **Objetivo:** el supervisor revisa con ayuda, y la plataforma queda lista para producción.
+
+Sin RAG (ADR-007). El nodo de normativa funciona con parámetros y reglas, no con recuperación semántica.
 
 | Entregable | Detalle |
 |---|---|
 | Pasarela de modelos y planificador de GPU | M19: alias lógicos, colas día/noche, degradación a lote nocturno según perfil |
-| Base de conocimiento y RAG | M18 con el vector store de ADR-005; ingesta normativa segmentada por numeral |
-| Grafo de pre-revisión | M17: coherencia, catálogos y normativa, evidencia visual, anomalías, consolidador. Reglas deterministas primero |
+| **Cumplimiento normativo determinista** | `regulatory_parameter` con vigencia y referencia a la norma; reglas de cumplimiento (plazos de APG, umbral de interrupción no computable, resistencia de tierra admisible); repositorio documental con búsqueda de texto completo y enlace al numeral |
+| Grafo de pre-revisión | M17: coherencia, catálogos y normativa, evidencia visual, anomalías, consolidador. Reglas deterministas primero; el LLM solo interpreta texto libre y redacta observaciones |
 | Informe en la revisión | RF-111 con observaciones enlazadas a su evidencia, y RF-111a (muestra ciega) |
-| Evaluación en CI | Conjuntos dorados, DeepEval, RAGAS, promptfoo, *red teaming* |
+| Evaluación en CI | Conjuntos dorados de coherencia, evidencia visual, anomalías y seguridad; DeepEval, promptfoo, *red teaming*. **Sin RAGAS**: no hay recuperación que medir |
+| **Instrumentación para decidir sobre M18** | Registrar las consultas normativas que hacen técnicos y supervisores y cuáles no resuelve la búsqueda de texto completo. Es el dato que falta para decidir si el RAG se justifica después (ADR-007) |
 | Endurecimiento | Pentest, rendimiento, evaluación de impacto LOPDP, documentación de operación, despliegue escalonado |
 
-**Aceptación:** criterios del SRS 10.4 para agentes — recall de inconsistencias ≥ 0,85, kappa supervisor–agente ≥ 0,6 en la muestra ciega, −30 % de tiempo de revisión. Sin vulnerabilidades críticas ni altas. Cero observaciones sin evidencia citada.
+**Aceptación:** criterios del SRS 10.4 para agentes — recall de inconsistencias ≥ 0,85, kappa supervisor–agente ≥ 0,6 en la muestra ciega, −30 % de tiempo de revisión. Sin vulnerabilidades críticas ni altas. Cero observaciones sin evidencia citada. Todo límite regulatorio evaluado sale de `regulatory_parameter`, ninguno codificado.
 
 ---
 
@@ -312,9 +317,9 @@ La del SRS 10.3, con tres adiciones del addendum:
 
 El orden inmediato, para empezar de a poco:
 
-1. **Responder D1** (versión y edición de Oracle) — desbloquea I0 y cierra ADR-005.
-2. **Agendar con el equipo GIS** la copia de la geodatabase y la ventana para I1 — es el camino crítico real.
-3. **Arrancar I0**, que no depende de nadie más: monorepo, Docker Compose, esquema Oracle, CI con la prueba de fuga de modelo de datos y los cinco ADR.
+1. **Responder D10**: dónde se provisiona el PostgreSQL y quién lo administra. Es el único recurso nuevo que pide la arquitectura y lo único que bloquea I0.
+2. **Agendar con el equipo GIS** la copia de la geodatabase y la ventana para I1 — es el camino crítico real. Pedir de paso el `SELECT * FROM v$version` (D9), que se responde en un minuto y puede cambiar la conversación.
+3. **Arrancar I0**, que no depende de nada más: monorepo, Docker Compose, esquema PostgreSQL, CI con las tres verificaciones (fuga de modelo de datos, artefactos Esri, licencias) y los siete ADR.
 4. Con I0 corriendo, **lanzar I1** y tratar su informe como puerta: si invalida una hipótesis, se corrige el addendum antes de tocar I2.
 
 Los seis tipos de activo del piloto (estructura de soporte, transformador de distribución, luminaria, seccionador fusible, tramo y punto de carga) y los seis formularios (F-TR-01, F-TR-02, F-OP-01, F-MT-01, F-AP-01, F-IC-03) son el alcance vertical de I2 a I7. Conviene no ampliarlo antes del piloto.
