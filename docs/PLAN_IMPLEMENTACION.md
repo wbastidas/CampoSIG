@@ -173,8 +173,18 @@ Aquí se materializa ADR-003: el móvil no conoce ArcGIS.
 | Resolución de conflictos device/servidor y compuerta de liberación (RF-322) | Listo, 16 tests |
 | Contrato del servidor: enrolamiento, bloqueo remoto, pull delta, push idempotente | Listo |
 | Paquete offline por zona con hash de contenido y partes reanudables | Listo |
+| **Registro de entrega por dispositivo** y tablero de despliegue en la web | Listo, 15 tests + 19 en la web |
+| Construcción de teselas PMTiles (`tools/tiles/build_pmtiles.sh`) | Listo; ejecutarlo necesita tippecanoe y pmtiles instalados |
 | App Android: Room + SQLCipher, WorkManager, Compose, MapLibre Native, CameraX | Pendiente |
 | Traspaso directo entre dispositivos (RF-323) | Pendiente |
+
+**Asignar no es entregar.** Hasta ahora la plataforma sabía a quién estaba asignada una OT,
+pero no si el teléfono la tenía. Son preguntas distintas y a las seis de la mañana solo
+importa la segunda: una OT asignada que nunca llegó al dispositivo es una cuadrilla que sale
+sin trabajo. `work_order_delivery` registra cada entrega en el momento en que ocurre —dentro
+del propio endpoint de bajada, no después— con la versión entregada, de modo que el tablero
+también distingue el segundo modo de fallo: la cuadrilla tiene la OT, pero en la versión que
+el planificador cambió anoche.
 
 `core:sync` es un módulo Kotlin/JVM sin dependencias de Android (ADR-010), así que sus 52 tests
 corren sin SDK, emulador ni dispositivo. La capa Android lo envuelve y no contiene decisiones.
@@ -357,8 +367,9 @@ Sin RAG (ADR-007). El nodo de normativa funciona con parámetros y reglas, no co
 ## Nota sobre el estado de verificación
 
 Los tests de integración **se ejecutaron contra PostgreSQL 16 + PostGIS 3.4 real**, no solo en CI:
-435 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las seis migraciones
-aplicadas y revertidas sobre una base limpia (24 tablas).
+450 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las siete
+migraciones aplicadas y revertidas sobre una base limpia (21 tablas de la aplicación, más
+`alembic_version` y las de PostGIS).
 
 Eso destapó cuatro defectos que ni el lint, ni `mypy --strict`, ni el renderizado de SQL offline
 podían ver:
@@ -376,6 +387,8 @@ podían ver:
    ahora hay un test que documenta ese caso.
 
 Lo que sigue sin verificar: la app Android (falta el SDK) y la pantalla de revisión en la web.
+El tablero de despliegue sí tiene su lógica probada (19 tests de `vitest`) pero el render de
+React no se ha ejecutado en un navegador.
 
 ## Definition of Done (todo incremento)
 

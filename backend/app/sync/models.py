@@ -27,6 +27,23 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infra.database import Base
+from app.workorders.models import WorkOrderState
+
+#: States whose work a device should hold. Anything else is not the device's business, and
+#: sending it would put closed work back on a technician's list.
+#:
+#: It lives with the models rather than with the sync service because two modules need it —
+#: the endpoint that sends the work and the board that reports on it — and a board that
+#: disagreed with the endpoint would be worse than no board.
+SYNCABLE_STATES = (
+    WorkOrderState.ASSIGNED,
+    WorkOrderState.DOWNLOADED,
+    WorkOrderState.EN_ROUTE,
+    WorkOrderState.ON_SITE,
+    WorkOrderState.IN_EXECUTION,
+    WorkOrderState.SUSPENDED,
+    WorkOrderState.RETURNED,
+)
 
 
 class DeviceStatus(StrEnum):

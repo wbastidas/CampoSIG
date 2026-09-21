@@ -20,22 +20,19 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.dispatch.service import record_delivery
 from app.forms.catalog import load_definitions
 from app.org.models import BusinessUnit
-from app.sync.models import Device, DeviceStatus, OfflinePackage, SyncOperationLog
-from app.workorders.models import WorkOrder, WorkOrderState
-
-#: States whose work a device should hold. Anything else is not the device's business, and
-#: sending it would put closed work back on a technician's list.
-SYNCABLE_STATES = (
-    WorkOrderState.ASSIGNED,
-    WorkOrderState.DOWNLOADED,
-    WorkOrderState.EN_ROUTE,
-    WorkOrderState.ON_SITE,
-    WorkOrderState.IN_EXECUTION,
-    WorkOrderState.SUSPENDED,
-    WorkOrderState.RETURNED,
+from app.sync.models import (
+    SYNCABLE_STATES,
+    Device,
+    DeviceStatus,
+    OfflinePackage,
+    SyncOperationLog,
 )
+from app.workorders.models import WorkOrder
+
+__all__ = ["SYNCABLE_STATES"]
 
 
 class DeviceBlockedError(Exception):
@@ -182,6 +179,12 @@ def pull_work_orders(
     )
     if not orders:
         return [], None
+
+    # The hand-over is recorded here, where it happens. Recording it anywhere else leaves a
+    # window in which the server believes a crew has work it was never sent — and "assigned"
+    # and "actually on the phone" are the two numbers a dispatcher compares every morning.
+    record_delivery(session, device, orders)
+
     last = orders[-1]
     return orders, encode_cursor(last.updated_at, last.id)
 
