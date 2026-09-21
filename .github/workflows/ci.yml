@@ -44,7 +44,10 @@ jobs:
           pip install pyyaml
           python scripts/check_dataset_licenses.py
 
+      # Subir el artefacto es una comodidad, no un resultado: si el almacén lo rechaza
+      # —un 403 del intermediario, por ejemplo— eso no dice nada sobre el código.
       - name: Publicar inventario de licencias
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: third-party-licenses
@@ -141,6 +144,7 @@ jobs:
         run: gradle :core:sync:test
       - name: Publicar informe de tests
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: android-core-sync-tests
@@ -161,6 +165,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Instalar pytest
+        run: python -m pip install --upgrade pip pytest
       - name: Tests del agente contra el doble de arcpy
         run: python -m pytest tests -v
       - name: Verificar compatibilidad con la sintaxis de Python 2.7

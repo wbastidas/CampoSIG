@@ -39,7 +39,11 @@ ml/**/*.gguf
 # GIS working files
 *.sde
 *.gdb/
-*.lock
+# Los .lock de ArcGIS, no los de gestores de paquetes: un patrón `*.lock` a secas se
+# tragaba `backend/uv.lock`, y sin ese archivo el paso de CI que instala el backend falla
+# antes de ejecutar una sola prueba. Los lockfiles de dependencias SÍ se versionan.
+*.gdb.lock
+*.sde.lock
 
 # OS
 .DS_Store
