@@ -25,6 +25,9 @@ dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "pytest-cov>=6.0",
+    # Randomised order: catches tests that leak state into one another, which is how the
+    # lru_cached profile objects bit us once already.
+    "pytest-randomly>=3.16",
     "ruff>=0.8",
     "mypy>=1.13",
 ]

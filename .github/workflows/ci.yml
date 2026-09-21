@@ -81,6 +81,12 @@ jobs:
       - name: Tests
         run: uv run pytest -v --cov=app --cov-report=term-missing
 
+      # Randomised order catches tests that leak state into one another. The lru_cached
+      # profile objects caused exactly that once; this makes a recurrence fail the build
+      # instead of showing up as intermittent CI.
+      - name: Tests en orden aleatorio
+        run: uv run pytest -q
+
       # ADR-004: la abstracción del modelo de datos no es una declaración de
       # intenciones, es una prueba. La suite completa debe pasar contra un perfil
       # de estructura deliberadamente distinta.

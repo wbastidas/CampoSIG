@@ -33,7 +33,7 @@ Los cuatro primeros incrementos (`I0`–`I3`) son el arranque completo que se ap
 |---|---|---|---|---|
 | **I0** | Fundaciones | 2 sem | — | — |
 | **I1** | Prueba de concepto del agente arcpy | 3 sem | I0 | 🔴 |
-| **I2** | Capa de abstracción del modelo de datos | 4 sem | I1 | 🔴 |
+| **I2** | Capa de abstracción del modelo de datos | 4 sem | I1 | 🔴 en curso |
 | **I3** | Núcleo de OT, planificadores y asignación | 5 sem | I2 | 🟢 📋 D3 |
 | **I4** | Móvil offline: mapa, base cifrada y sync | 6 sem | I3 | 🔴 🟢 |
 | **I5** | Motor de formularios y evidencias | 5 sem | I4 | 🟢 |
@@ -106,6 +106,23 @@ Se trabaja **sobre una copia** de la geodatabase, nunca sobre producción, y **e
 | Generador de formularios | Metadatos → JSON Schema + UI Schema, con las reglas del addendum 3.3: dominios a enum, `CORE` a requerido, relaciones a tabla repetible, subtipos a `if/then`, campos `Sistema` y `Conectividad` ocultos |
 | Importador con coincidencia asistida | Web `/admin/model-profile`: propone bindings, muestra huecos, valida y versiona el perfil |
 | **Perfil alterno de prueba** | Un segundo perfil sintético, con nombres y estructura deliberadamente distintos, que pasa los mismos tests. Es la prueba real de que la abstracción funciona |
+
+**Avance a la fecha.** Construido y en verde, sin depender de arcpy ni de acceso al GIS:
+
+| Pieza | Estado |
+|---|---|
+| Vocabulario canónico (AMD) con los seis tipos del piloto | Listo |
+| Perfil `cnel-gye` y perfil `alt-synthetic` de verificación | Listo |
+| `resolver.py`, único punto que conoce nombres reales | Listo |
+| Diagnóstico de completitud del perfil (RF-302) | Listo |
+| Generador de JSON Schema + UI Schema (RF-303) | Listo |
+| Contrato HTTP con el agente: ingesta de metadatos y resultados por propuesta | Listo |
+| Persistencia de snapshots de metadatos, versionada y no destructiva | Listo |
+| Importador web con coincidencia asistida (`/admin/model-profile`) | Pendiente |
+| Verificación contra metadatos reales de la geodatabase | Bloqueada por el acceso de I1 |
+
+Lo que falta de I2 es la pantalla de administración y la validación contra metadatos reales.
+El motor está completo y probado contra dos modelos de datos deliberadamente distintos.
 
 **Aceptación (RF-301):** partiendo del export de metadatos de otra Unidad de Negocio, un administrador funcional produce un perfil operativo y genera los formularios de los seis tipos **sin escribir código ni recompilar**. El CI ejecuta la suite completa dos veces, con el perfil CNEL y con el alterno, y ambas pasan.
 

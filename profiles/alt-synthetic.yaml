@@ -27,7 +27,7 @@ bindings:
       code:         {field: pole_id}
       material:     {field: mat_cd, value_map: material.support}
       height_m:     {field: hgt}
-      feeder_code:  {field: circuit, volatile_by_business_unit: true}
+      feeder_code:  {field: circuit, domain: CircuitCode, volatile_by_business_unit: true}
       install_date: {field: installed_on}
 
   distribution_transformer:
@@ -39,7 +39,7 @@ bindings:
       rated_kva:   {field: kva}
       phases:      {field: ph_cd, value_map: phases}
       mounting:    {field: mount_cd, value_map: mounting.transformer}
-      feeder_code: {field: circuit, volatile_by_business_unit: true}
+      feeder_code: {field: circuit, domain: CircuitCode, volatile_by_business_unit: true}
 
   street_light:
     layer: lights
@@ -49,7 +49,7 @@ bindings:
       code:        {field: light_id}
       technology:  {field: tech_cd, value_map: technology.lamp}
       power_w:     {field: watts}
-      feeder_code: {field: circuit, volatile_by_business_unit: true}
+      feeder_code: {field: circuit, domain: CircuitCode, volatile_by_business_unit: true}
 
   fuse_switch:
     layer: fuses
@@ -58,7 +58,7 @@ bindings:
     attributes:
       code:        {field: fuse_id}
       fuse_rating: {field: rating}
-      feeder_code: {field: circuit, volatile_by_business_unit: true}
+      feeder_code: {field: circuit, domain: CircuitCode, volatile_by_business_unit: true}
 
   line_segment:
     layer: conductors
@@ -67,7 +67,7 @@ bindings:
     attributes:
       code:          {field: span_id}
       voltage_level: {field: volt_cd, value_map: voltage_level}
-      feeder_code:   {field: circuit, volatile_by_business_unit: true}
+      feeder_code:   {field: circuit, domain: CircuitCode, volatile_by_business_unit: true}
 
   service_point:
     layer: services
@@ -75,7 +75,7 @@ bindings:
     write_path: direct
     attributes:
       code:        {field: svc_id}
-      feeder_code: {field: circuit, volatile_by_business_unit: true}
+      feeder_code: {field: circuit, domain: CircuitCode, volatile_by_business_unit: true}
 
 # Integer codes, to prove nothing assumes string enum values.
 value_maps:

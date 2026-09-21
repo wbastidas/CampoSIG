@@ -18,6 +18,23 @@ from app.model_profile.resolver import ModelResolver
 ALL_PROFILE_IDS = ["cnel-gye", "alt-synthetic"]
 
 
+@pytest.fixture(autouse=True)
+def _isolate_profile_caches():
+    """Clear the profile and AMD caches around every test.
+
+    `load_profile` and `load_asset_model` are lru_cached, so they hand back the same
+    mutable object to every caller. A test that modifies a profile to exercise a failure
+    path would otherwise corrupt every test that ran after it — order-dependent failures
+    that look like flakiness. Clearing here makes that impossible rather than merely
+    discouraged.
+    """
+    load_profile.cache_clear()
+    load_asset_model.cache_clear()
+    yield
+    load_profile.cache_clear()
+    load_asset_model.cache_clear()
+
+
 @pytest.fixture
 def active_profile_id() -> str:
     """The profile under test, honouring SIGEC_PROFILE as CI sets it."""
@@ -41,17 +58,36 @@ def amd():
 
 
 # --- GIS metadata fixtures ---------------------------------------------------------
-# Stand in for what the arcpy agent uploads (ADR-008). Every real name is DERIVED from
-# the profile rather than written here: the fixture then works for any profile, cannot
-# drift from the YAML, and keeps real field names out of test code (RF-305).
+# Stand in for what the arcpy agent uploads (ADR-008). Every real name is DERIVED from the
+# profile: the fixture works for any profile, cannot drift from the YAML, keeps real field
+# names out of test code (RF-305), and exports a layer and field for everything the profile
+# maps — which is what the agent really does, and what the completeness diagnostic expects.
+
+#: Canonical attributes treated as mandatory in the simulated capture manual.
+_CORE_ATTRIBUTES = frozenset({"code", "material", "feeder_code", "rated_kva", "technology"})
+
+_ALIASES = {
+    "code": "Código",
+    "material": "Material",
+    "height_m": "Altura",
+    "feeder_code": "Alimentador",
+    "install_date": "Fecha de instalación",
+    "rated_kva": "Potencia",
+    "phases": "Fases",
+    "mounting": "Tipo de montaje",
+    "technology": "Tecnología",
+    "power_w": "Potencia",
+    "fuse_rating": "Capacidad del fusible",
+    "voltage_level": "Voltaje",
+}
+
+#: Range domain injected on the one numeric attribute that should carry limits.
+_RANGE_DOMAIN = "HeightRange"
 
 
 def build_metadata(profile_id: str):
-    """GIS metadata matching a profile, as the agent would have exported it.
-
-    Derived from the profile so the fixture stays honest: if a profile renames a field,
-    this follows automatically instead of silently testing against a stale name.
-    """
+    """GIS metadata matching a profile, as the agent would have exported it."""
+    from app.model_profile.amd import AttributeType
     from app.model_profile.metadata import (
         DomainType,
         FieldCategory,
@@ -65,100 +101,109 @@ def build_metadata(profile_id: str):
     from app.model_profile.resolver import NEVER_WRITE_FIELDS
 
     profile = load_profile(profile_id)
-    binding = profile.bindings["support_structure"]
     resolver = ModelResolver(profile)
 
-    def real(attribute: str) -> str:
-        return resolver.field("support_structure", attribute)
+    gis_types = {
+        AttributeType.STRING: "String",
+        AttributeType.NUMBER: "Double",
+        AttributeType.INTEGER: "Integer",
+        AttributeType.BOOLEAN: "SmallInteger",
+        AttributeType.DATE: "Date",
+        AttributeType.ENUM: "String",
+    }
 
-    def domain_of(attribute: str) -> str | None:
-        bound = binding.attributes.get(attribute)
-        return bound.domain if bound else None
-
-    # Coded values come from the profile's own value_map, so the codes a test sees are
-    # exactly the ones the resolver can translate.
-    material_map = profile.value_maps.get("material.support", {})
-    material_domain = domain_of("material") or "MaterialDomain"
-    feeder_domain = domain_of("feeder_code") or "FeederDomain"
-    height_domain = "HeightRange"
-
+    # --- domains: one per value_map the profile declares, plus a range domain --------
     domains = [
         GisDomain(
-            name=material_domain,
+            name=map_name,
             domain_type=DomainType.CODED_VALUE,
-            coded_values={str(code): str(canonical) for canonical, code in material_map.items()},
-        ),
-        GisDomain(
-            name=feeder_domain,
-            domain_type=DomainType.CODED_VALUE,
-            coded_values={"04BH070T11": "Alimentador de ejemplo"},
-            volatile_by_business_unit=True,
-        ),
-        GisDomain(
-            name=height_domain,
-            domain_type=DomainType.RANGE,
-            range_min=6.0,
-            range_max=20.0,
-        ),
-    ]
-
-    fields = [
-        GisField(
-            name=real("code"),
-            alias="Código",
-            type="String",
-            nullable=False,
-            length=32,
-            category=FieldCategory.CORE,
-        ),
-        GisField(
-            name=real("material"),
-            alias="Material",
-            type="String",
-            domain=material_domain,
-            category=FieldCategory.CORE,
-        ),
-        GisField(
-            name=real("height_m"),
-            alias="Altura",
-            type="Double",
-            domain=height_domain,
-            category=FieldCategory.OTHER,
-        ),
-        GisField(
-            name=real("feeder_code"),
-            alias="Alimentador",
-            type="String",
-            domain=feeder_domain,
-            category=FieldCategory.CORE,
-        ),
-        # One field of each category a technician must never see. The connectivity field
-        # name is taken from the constant rather than written out, so this fixture needs
-        # no exemption from the leak check.
-        GisField(
-            name=sorted(NEVER_WRITE_FIELDS)[0],
-            type="SmallInteger",
-            category=FieldCategory.CONNECTIVITY,
-        ),
-        GisField(name="AUDIT_USER", type="String", category=FieldCategory.SYSTEM),
-    ]
-
-    relationships = [
-        GisRelationship(
-            name=related.relationship,
-            origin_layer=binding.layer,
-            destination_layer=related.target_layer,
-            cardinality="One To Many",
-            origin_primary_key="GLOBALID",
+            coded_values={str(code): str(canonical) for canonical, code in mapping.items()},
         )
-        for related in binding.related
+        for map_name, mapping in profile.value_maps.items()
     ]
+    domains.append(
+        GisDomain(name=_RANGE_DOMAIN, domain_type=DomainType.RANGE, range_min=6.0, range_max=20.0)
+    )
+
+    # Domains named directly by a binding (rather than through a value_map), marked
+    # volatile where the profile says so (RF-304).
+    seen = {d.name for d in domains}
+    for binding in profile.bindings.values():
+        for bound in binding.attributes.values():
+            if bound.domain and bound.domain not in seen:
+                seen.add(bound.domain)
+                domains.append(
+                    GisDomain(
+                        name=bound.domain,
+                        domain_type=DomainType.CODED_VALUE,
+                        coded_values={"04BH070T11": "Alimentador de ejemplo"},
+                        volatile_by_business_unit=bound.volatile_by_business_unit,
+                    )
+                )
+
+    # --- one layer per mapped asset type -------------------------------------------
+    layers = []
+    relationships = []
+    for asset_key, binding in profile.bindings.items():
+        asset_type = resolver.asset_type(asset_key)
+        fields = []
+        for attribute_key, bound in binding.attributes.items():
+            attribute = asset_type.attribute(attribute_key)
+            domain = bound.domain
+            if attribute is not None and attribute.enum_ref:
+                # Enum attributes sit on the value_map's domain, so the codes a test sees
+                # are exactly the ones the resolver can translate.
+                domain = bound.value_map or attribute.enum_ref
+            elif attribute_key == "height_m":
+                domain = _RANGE_DOMAIN
+            fields.append(
+                GisField(
+                    name=bound.field,
+                    alias=_ALIASES.get(attribute_key),
+                    type=gis_types[attribute.type] if attribute else "String",
+                    nullable=attribute_key not in _CORE_ATTRIBUTES,
+                    length=32 if attribute_key == "code" else None,
+                    domain=domain,
+                    category=(
+                        FieldCategory.CORE
+                        if attribute_key in _CORE_ATTRIBUTES
+                        else FieldCategory.OTHER
+                    ),
+                )
+            )
+
+        # One field of each category a technician must never see. The connectivity field
+        # name comes from the constant rather than being written out, so this fixture
+        # needs no exemption from the leak check.
+        fields.append(
+            GisField(
+                name=sorted(NEVER_WRITE_FIELDS)[0],
+                type="SmallInteger",
+                category=FieldCategory.CONNECTIVITY,
+            )
+        )
+        fields.append(GisField(name="AUDIT_USER", type="String", category=FieldCategory.SYSTEM))
+
+        layers.append(
+            GisLayerMetadata(
+                name=binding.layer,
+                geometry_type=asset_type.geometry.title(),
+                fields=fields,
+            )
+        )
+        relationships.extend(
+            GisRelationship(
+                name=related.relationship,
+                origin_layer=binding.layer,
+                destination_layer=related.target_layer,
+                cardinality="One To Many",
+                origin_primary_key="GLOBALID",
+            )
+            for related in binding.related
+        )
 
     return GisMetadata(
-        profile_id=profile_id,
-        domains=domains,
-        layers=[GisLayerMetadata(name=binding.layer, geometry_type="Point", fields=fields)],
-        relationships=relationships,
+        profile_id=profile_id, domains=domains, layers=layers, relationships=relationships
     )
 
 
@@ -169,11 +214,12 @@ def metadata_spec(active_profile_id: str) -> dict:
 
     profile = load_profile(active_profile_id)
     binding = profile.bindings["support_structure"]
+    material = binding.attributes["material"]
     return {
         "layer": binding.layer,
         "code_field": binding.attributes["code"].field,
-        "material_field": binding.attributes["material"].field,
-        "material_domain": binding.attributes["material"].domain or "MaterialDomain",
+        "material_field": material.field,
+        "material_domain": material.value_map or "material.support",
         "feeder_domain": binding.attributes["feeder_code"].domain or "FeederDomain",
     }
 

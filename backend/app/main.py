@@ -2,7 +2,7 @@
 
 from fastapi import FastAPI
 
-from app.api import health
+from app.api import gis, health
 from app.settings import get_settings
 
 
@@ -15,6 +15,7 @@ def create_app() -> FastAPI:
         debug=settings.debug,
     )
     app.include_router(health.router)
+    app.include_router(gis.router)
     return app
 
 

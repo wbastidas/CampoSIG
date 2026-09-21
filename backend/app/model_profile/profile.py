@@ -132,6 +132,17 @@ def validate_against_amd(profile: DataModelProfile, amd: AssetModel | None = Non
                             f"value_map '{map_name}' no cubre: {', '.join(sorted(missing))}"
                         )
 
+        # A field flagged volatile but with no domain is a profile inconsistency: the
+        # flag exists to stop a catalogue being cached, and without a domain there is no
+        # catalogue. Silent today, confusing later — so it is reported.
+        for attribute_key, bound in binding.attributes.items():
+            if bound.volatile_by_business_unit and not bound.domain:
+                problems.append(
+                    f"'{asset_type.key}.{attribute_key}' está marcado como volátil por "
+                    "Unidad de Negocio pero no declara dominio; el indicador no tiene "
+                    "efecto sin un dominio que refrescar"
+                )
+
     unknown = set(profile.bindings) - set(model.asset_type_keys)
     problems.extend(
         f"binding '{key}' no corresponde a ningún tipo canónico" for key in sorted(unknown)
