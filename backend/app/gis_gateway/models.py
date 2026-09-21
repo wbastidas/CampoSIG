@@ -29,6 +29,13 @@ class MetadataSnapshot(Base):
     __tablename__ = "gis_metadata_snapshot"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    #: Snapshots are keyed by business unit, not by profile. Units normally share one
+    #: profile because the schema is national, but each has its own domain contents:
+    #: its own feeder and substation codes. Keying by profile would let one unit's
+    #: catalogues overwrite another's.
+    business_unit_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("business_unit.id", ondelete="CASCADE"), nullable=False
+    )
     profile_id: Mapped[str] = mapped_column(String(64), nullable=False)
     agent_version: Mapped[str | None] = mapped_column(String(32))
     contract_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
@@ -52,11 +59,11 @@ class MetadataSnapshot(Base):
     superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (
-        Index("ix_metadata_snapshot_profile", "profile_id"),
+        Index("ix_metadata_snapshot_unit", "business_unit_id"),
         # Partial index: the "current snapshot" lookup happens on every form generation.
         Index(
             "ix_metadata_snapshot_current",
-            "profile_id",
+            "business_unit_id",
             postgresql_where="superseded_at IS NULL",
         ),
     )
@@ -72,6 +79,12 @@ class AsBuiltBatch(Base):
     __tablename__ = "asbuilt_batch"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    #: The unit whose geodatabase this batch is destined for. An agent only ever
+    #: receives and reports on batches of its own unit, which is a routing rule and a
+    #: security boundary at once (ADR-009).
+    business_unit_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("business_unit.id", ondelete="CASCADE"), nullable=False
+    )
     profile_id: Mapped[str] = mapped_column(String(64), nullable=False)
     asset_type_key: Mapped[str] = mapped_column(String(64), nullable=False)
     zone: Mapped[str | None] = mapped_column(String(64))
@@ -90,7 +103,11 @@ class AsBuiltBatch(Base):
         back_populates="batch", cascade="all, delete-orphan"
     )
 
-    __table_args__ = (Index("ix_asbuilt_batch_status", "status"),)
+    __table_args__ = (
+        Index("ix_asbuilt_batch_status", "status"),
+        # An agent polls for its own unit's ready batches; this is that query.
+        Index("ix_asbuilt_batch_unit_status", "business_unit_id", "status"),
+    )
 
 
 class ProposalResult(Base):

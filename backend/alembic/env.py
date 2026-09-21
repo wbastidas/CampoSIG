@@ -5,7 +5,7 @@ from logging.config import fileConfig
 from sqlalchemy import engine_from_config, pool
 
 from alembic import context
-from app.infra.database import Base
+from app.infra.database import Base, import_all_models
 from app.settings import get_settings
 
 config = context.config
@@ -13,6 +13,11 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 config.set_main_option("sqlalchemy.url", get_settings().database_url)
+
+# Import every model module before reading the metadata: without this, autogenerate
+# would compare against an incomplete picture and emit migrations that silently drop
+# tables it could not see.
+import_all_models()
 target_metadata = Base.metadata
 
 

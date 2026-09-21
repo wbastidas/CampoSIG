@@ -7,28 +7,64 @@ between two processes on different Python versions, so surprises here are expens
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.forms.generator import FormGenerator
 from app.gis_gateway.ingest import (
     ContractVersionError,
+    CrossUnitError,
     UnknownProfileError,
     current_snapshot,
     ingest_metadata,
     record_batch_results,
-    resolver_and_metadata,
 )
 from app.infra.database import get_session
 from app.model_profile.metadata import GisMetadata
-from app.settings import get_settings
+from app.org.models import AgentRegistration, BusinessUnit
+from app.org.service import (
+    AgentNotAuthorisedError,
+    UnknownBusinessUnitError,
+    context_for_unit,
+    get_business_unit_by_code,
+    resolve_agent,
+)
 
 router = APIRouter(prefix="/api/v1/gis", tags=["gis"])
 
 SessionDep = Annotated[Session, Depends(get_session)]
+
+#: Header the agent presents to identify itself. Its business unit comes from the
+#: registration behind this key, never from the request body — an agent is never asked
+#: which unit it serves, so it cannot claim a different one (ADR-009).
+AGENT_KEY_HEADER = "X-SIGEC-Agent-Key"
+
+
+def authorised_agent(
+    session: SessionDep,
+    agent_key: Annotated[str, Header(alias=AGENT_KEY_HEADER)],
+) -> AgentRegistration:
+    """Resolve and authorise the calling agent."""
+    try:
+        agent = resolve_agent(session, agent_key)
+    except AgentNotAuthorisedError as exc:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
+    agent.last_seen_at = datetime.now(UTC)
+    return agent
+
+
+AgentDep = Annotated[AgentRegistration, Depends(authorised_agent)]
+
+
+def _unit_by_code(session: Session, code: str) -> BusinessUnit:
+    try:
+        return get_business_unit_by_code(session, code)
+    except UnknownBusinessUnitError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
 
 
 # --- request / response models -----------------------------------------------------
@@ -42,6 +78,7 @@ class MetadataUpload(BaseModel):
 
 class MetadataAccepted(BaseModel):
     snapshot_id: uuid.UUID
+    business_unit_code: str
     profile_id: str
     domain_count: int
     layer_count: int
@@ -52,6 +89,7 @@ class MetadataAccepted(BaseModel):
 
 class SnapshotSummary(BaseModel):
     snapshot_id: uuid.UUID
+    business_unit_code: str
     profile_id: str
     agent_version: str | None
     domain_count: int
@@ -96,10 +134,15 @@ class GeneratedFormOut(BaseModel):
     status_code=status.HTTP_201_CREATED,
     summary="Recibir metadatos exportados por el agente arcpy",
 )
-def upload_metadata(payload: MetadataUpload, session: SessionDep) -> MetadataAccepted:
+def upload_metadata(
+    payload: MetadataUpload, session: SessionDep, agent: AgentDep
+) -> MetadataAccepted:
+    """Ingest a metadata export for the calling agent's own business unit."""
+    unit = agent.business_unit
     try:
         snapshot = ingest_metadata(
             session,
+            unit,
             payload.metadata,
             contract_version=payload.contract_version,
             agent_version=payload.agent_version,
@@ -107,12 +150,15 @@ def upload_metadata(payload: MetadataUpload, session: SessionDep) -> MetadataAcc
     except ContractVersionError as exc:
         # 409 rather than 400: the payload may be perfectly valid for a newer backend.
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    except CrossUnitError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
     except UnknownProfileError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
 
     session.commit()
     return MetadataAccepted(
         snapshot_id=snapshot.id,
+        business_unit_code=unit.code,
         profile_id=snapshot.profile_id,
         domain_count=snapshot.domain_count,
         layer_count=snapshot.layer_count,
@@ -126,17 +172,18 @@ def upload_metadata(payload: MetadataUpload, session: SessionDep) -> MetadataAcc
     response_model=SnapshotSummary,
     summary="Resumen de los metadatos vigentes de un perfil",
 )
-def get_current_metadata(session: SessionDep, profile_id: str | None = None) -> SnapshotSummary:
-    resolved = profile_id or get_settings().profile
-    snapshot = current_snapshot(session, resolved)
+def get_current_metadata(session: SessionDep, business_unit: str) -> SnapshotSummary:
+    unit = _unit_by_code(session, business_unit)
+    snapshot = current_snapshot(session, unit.id)
     if snapshot is None:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND,
-            f"no hay metadatos sincronizados para el perfil '{resolved}'; "
-            "el agente arcpy todavía no ha corrido",
+            f"no hay metadatos sincronizados para la unidad '{unit.code}'; "
+            "su agente arcpy todavía no ha corrido",
         )
     return SnapshotSummary(
         snapshot_id=snapshot.id,
+        business_unit_code=unit.code,
         profile_id=snapshot.profile_id,
         agent_version=snapshot.agent_version,
         domain_count=snapshot.domain_count,
@@ -153,13 +200,20 @@ def get_current_metadata(session: SessionDep, profile_id: str | None = None) -> 
     summary="Registrar el resultado por propuesta de un lote aplicado",
 )
 def report_batch_results(
-    batch_id: uuid.UUID, payload: BatchResultsIn, session: SessionDep
+    batch_id: uuid.UUID, payload: BatchResultsIn, session: SessionDep, agent: AgentDep
 ) -> BatchStatusOut:
+    """Record outcomes. The batch must belong to the calling agent's own unit."""
     try:
         batch = record_batch_results(
-            session, batch_id, [o.model_dump(mode="json") for o in payload.outcomes]
+            session,
+            batch_id,
+            [o.model_dump(mode="json") for o in payload.outcomes],
+            business_unit_id=agent.business_unit_id,
         )
     except LookupError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    except CrossUnitError as exc:
+        # 404, not 403: an agent probing for other units' batch ids learns nothing.
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
 
     session.commit()
@@ -180,16 +234,16 @@ def report_batch_results(
     summary="Generar una propuesta de formulario desde los metadatos vigentes",
 )
 def generate_form_proposal(
-    asset_type_key: str, session: SessionDep, profile_id: str | None = None
+    asset_type_key: str, session: SessionDep, business_unit: str
 ) -> GeneratedFormOut:
     """Generate a form proposal. Never publishes — a human approves first (SRS 0.5)."""
-    resolved = profile_id or get_settings().profile
-    resolver, metadata = resolver_and_metadata(session, resolved)
+    unit = _unit_by_code(session, business_unit)
+    resolver, metadata = context_for_unit(session, unit)
     if metadata is None:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            f"no hay metadatos sincronizados para '{resolved}'; ejecute el agente arcpy "
-            "antes de generar formularios",
+            f"no hay metadatos sincronizados para la unidad '{unit.code}'; ejecute su "
+            "agente arcpy antes de generar formularios",
         )
     try:
         form = FormGenerator(resolver, metadata).generate(asset_type_key)

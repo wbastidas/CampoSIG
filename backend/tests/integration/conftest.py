@@ -14,7 +14,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.infra.database import Base
+from app.infra.database import Base, import_all_models
 from app.settings import get_settings
 
 pytestmark = pytest.mark.integration
@@ -53,6 +53,8 @@ def _schema(engine: Engine) -> Iterator[None]:
     themselves are coherent. Whether the migrations match is checked separately, by
     running `alembic upgrade head` in CI.
     """
+    # Import every model module first, or create_all quietly builds a partial schema.
+    import_all_models()
     with engine.begin() as conn:
         conn.execute(text("CREATE EXTENSION IF NOT EXISTS postgis"))
         conn.execute(text('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"'))

@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from app.gis_gateway.models import AsBuiltBatch, MetadataSnapshot, ProposalResult
 from app.model_profile.metadata import GisMetadata
 from app.model_profile.profile import DataModelProfile, load_profile, validate_against_amd
-from app.model_profile.resolver import ModelResolver
+from app.org.models import BusinessUnit
 
 #: Contract versions this backend accepts from an agent. Rejecting an unknown version
 #: beats silently mis-parsing a payload from a newer agent.
@@ -34,20 +34,31 @@ class UnknownProfileError(Exception):
     """Raised when an agent reports metadata for a profile that is not configured."""
 
 
+class CrossUnitError(Exception):
+    """Raised when an operation would move data between business units."""
+
+
 def ingest_metadata(
     session: Session,
+    unit: BusinessUnit,
     metadata: GisMetadata,
     *,
     contract_version: int = 1,
     agent_version: str | None = None,
 ) -> MetadataSnapshot:
-    """Store a metadata export and run the completeness diagnostic (RF-302).
+    """Store a business unit's metadata export and run the diagnostic (RF-302).
 
-    Supersedes the previous snapshot for the same profile rather than deleting it: a form
-    generated earlier must stay traceable to the metadata it came from.
+    Snapshots are keyed by **business unit**, not by profile: units normally share one
+    profile because the schema is national, but each has its own domain contents — the
+    feeder and substation codes of its own network. Keying by profile would let one unit's
+    catalogues overwrite another's.
+
+    Supersedes the unit's previous snapshot rather than deleting it: a form generated
+    earlier must stay traceable to the metadata it came from.
 
     :raises ContractVersionError: if the agent's contract version is unsupported.
-    :raises UnknownProfileError: if the payload names a profile that is not configured.
+    :raises UnknownProfileError: if the unit's profile is not configured.
+    :raises CrossUnitError: if the payload claims a profile other than the unit's.
     """
     if contract_version not in SUPPORTED_CONTRACT_VERSIONS:
         supported = ", ".join(str(v) for v in sorted(SUPPORTED_CONTRACT_VERSIONS))
@@ -56,8 +67,17 @@ def ingest_metadata(
             f"este backend soporta: {supported}"
         )
 
+    # The unit's registration decides which profile applies — never the payload. An agent
+    # that reports a different profile is misconfigured, and silently accepting it would
+    # store one unit's catalogues under another unit's schema.
+    if metadata.profile_id != unit.profile_id:
+        raise CrossUnitError(
+            f"el agente de la unidad '{unit.code}' reportó metadatos del perfil "
+            f"'{metadata.profile_id}', pero la unidad usa '{unit.profile_id}'"
+        )
+
     try:
-        profile = load_profile(metadata.profile_id)
+        profile = load_profile(unit.profile_id)
     except FileNotFoundError as exc:
         raise UnknownProfileError(str(exc)) from exc
 
@@ -69,14 +89,15 @@ def ingest_metadata(
     session.execute(
         update(MetadataSnapshot)
         .where(
-            MetadataSnapshot.profile_id == metadata.profile_id,
+            MetadataSnapshot.business_unit_id == unit.id,
             MetadataSnapshot.superseded_at.is_(None),
         )
         .values(superseded_at=datetime.now(UTC))
     )
 
     snapshot = MetadataSnapshot(
-        profile_id=metadata.profile_id,
+        business_unit_id=unit.id,
+        profile_id=unit.profile_id,
         agent_version=agent_version,
         contract_version=contract_version,
         payload=metadata.model_dump(mode="json"),
@@ -135,39 +156,40 @@ def _parse_timestamp(value: str | None) -> datetime | None:
         return None
 
 
-def current_snapshot(session: Session, profile_id: str) -> MetadataSnapshot | None:
-    """The snapshot form generation should use for a profile."""
+def current_snapshot(session: Session, business_unit_id: uuid.UUID) -> MetadataSnapshot | None:
+    """The snapshot form generation should use for a business unit."""
     return session.scalars(
         select(MetadataSnapshot).where(
-            MetadataSnapshot.profile_id == profile_id,
+            MetadataSnapshot.business_unit_id == business_unit_id,
             MetadataSnapshot.superseded_at.is_(None),
         )
     ).first()
-
-
-def resolver_and_metadata(
-    session: Session, profile_id: str
-) -> tuple[ModelResolver, GisMetadata | None]:
-    """Everything the form generator needs for a profile."""
-    resolver = ModelResolver(load_profile(profile_id))
-    snapshot = current_snapshot(session, profile_id)
-    metadata = GisMetadata.model_validate(snapshot.payload) if snapshot else None
-    return resolver, metadata
 
 
 def record_batch_results(
     session: Session,
     batch_id: uuid.UUID,
     outcomes: list[dict[str, Any]],
+    *,
+    business_unit_id: uuid.UUID | None = None,
 ) -> AsBuiltBatch:
     """Record what the agent reported for each proposal (RF-353).
 
     Idempotent by (batch, proposal): the agent is allowed to retry a batch, and a retry
     must update the outcome rather than accumulate duplicates.
+
+    :param business_unit_id: when given, the batch must belong to this unit. Callers
+        serving an agent always pass it, so one unit's agent cannot report on another
+        unit's batch even if it learns the id.
+    :raises CrossUnitError: if the batch belongs to a different business unit.
     """
     batch = session.get(AsBuiltBatch, batch_id)
     if batch is None:
         raise LookupError(f"lote '{batch_id}' no existe")
+    if business_unit_id is not None and batch.business_unit_id != business_unit_id:
+        # Deliberately the same message as a missing batch would produce upstream: an
+        # agent probing for other units' batch ids learns nothing from the difference.
+        raise CrossUnitError(f"lote '{batch_id}' no pertenece a esta unidad de negocio")
 
     existing = {result.proposal_id: result for result in batch.results}
     for outcome in outcomes:

@@ -24,7 +24,7 @@ import pytest
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.schema import CreateTable
 
-from app.infra.database import Base
+from app.infra.database import Base, import_all_models
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 
@@ -32,9 +32,13 @@ BACKEND_ROOT = Path(__file__).resolve().parents[2]
 INFRASTRUCTURE_TABLES = {"spatial_ref_sys", "alembic_version", "geometry_columns"}
 
 
-def _import_models() -> None:
-    """Import every module that defines a model, so Base.metadata is complete."""
-    import app.gis_gateway.models  # noqa: F401
+def _import_models() -> list[str]:
+    """Import every module that defines a model, so Base.metadata is complete.
+
+    Uses the shared discovery helper rather than a list here: a guard that silently covers
+    less than it claims is worse than no guard.
+    """
+    return import_all_models()
 
 
 @pytest.fixture(scope="module")
@@ -59,23 +63,43 @@ def migration_sql() -> str:
 
 
 def _tables_in_sql(sql: str) -> dict[str, set[str]]:
-    """Table name -> column names, parsed from rendered CREATE TABLE statements."""
+    """Table name -> column names, as the migrations leave the schema.
+
+    Migrations are cumulative, so this replays them in order: CREATE TABLE establishes a
+    table, and later ALTER TABLE ADD/DROP COLUMN change it. Reading only the creates would
+    miss every column a later revision adds — which is most of them, once a schema starts
+    evolving.
+    """
     tables: dict[str, set[str]] = {}
-    for match in re.finditer(
-        r"CREATE TABLE (\w+) \((.*?)\n\);", sql, flags=re.DOTALL | re.IGNORECASE
-    ):
-        name = match.group(1).lower()
-        columns: set[str] = set()
-        for line in match.group(2).splitlines():
-            stripped = line.strip().rstrip(",")
-            if not stripped:
-                continue
-            first = stripped.split()[0].upper()
-            # Skip table-level constraint clauses; keep column definitions.
-            if first in {"PRIMARY", "FOREIGN", "UNIQUE", "CONSTRAINT", "CHECK"}:
-                continue
-            columns.add(stripped.split()[0].lower())
-        tables[name] = columns
+
+    # Statements in source order, so an ALTER always follows the CREATE it modifies.
+    statement_pattern = re.compile(
+        r"CREATE TABLE (?P<create>\w+) \((?P<body>.*?)\n\);"
+        r"|ALTER TABLE (?P<alter>\w+) ADD COLUMN (?P<added>\w+)"
+        r"|ALTER TABLE (?P<dropped_from>\w+) DROP COLUMN (?P<dropped>\w+)",
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+
+    for match in statement_pattern.finditer(sql):
+        if match.group("create"):
+            columns: set[str] = set()
+            for line in match.group("body").splitlines():
+                stripped = line.strip().rstrip(",")
+                if not stripped:
+                    continue
+                first = stripped.split()[0].upper()
+                # Skip table-level constraint clauses; keep column definitions.
+                if first in {"PRIMARY", "FOREIGN", "UNIQUE", "CONSTRAINT", "CHECK"}:
+                    continue
+                columns.add(stripped.split()[0].lower())
+            tables[match.group("create").lower()] = columns
+        elif match.group("alter"):
+            tables.setdefault(match.group("alter").lower(), set()).add(match.group("added").lower())
+        elif match.group("dropped_from"):
+            tables.setdefault(match.group("dropped_from").lower(), set()).discard(
+                match.group("dropped").lower()
+            )
+
     return tables
 
 
@@ -90,6 +114,19 @@ def _tables_in_models() -> dict[str, set[str]]:
         str(CreateTable(table).compile(dialect=dialect))
         tables[table.name.lower()] = {c.name.lower() for c in table.columns}
     return tables
+
+
+class TestModelDiscovery:
+    """The guard must actually see every model module, or it proves nothing."""
+
+    def test_discovery_finds_the_known_model_modules(self):
+        found = set(_import_models())
+        assert {"app.gis_gateway.models", "app.org.models"} <= found
+
+    def test_discovery_populates_metadata_with_their_tables(self):
+        _import_models()
+        tables = set(Base.metadata.tables)
+        assert {"business_unit", "organization", "gis_metadata_snapshot"} <= tables
 
 
 class TestSchemaParity:
