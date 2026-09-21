@@ -342,6 +342,33 @@ Ruta T y la Ruta W, el paquete de modelos del teléfono, la UI de revisión IA e
 
 **Aceptación:** metas de la guía 6.9 — mAP@0,5 ≥ 0,60, recall de elementos principales ≥ 0,90, **recall de estados críticos ≥ 0,80**, latencia p90 ≤ 2 s en el teléfono objetivo.
 
+### Avance de I11
+
+Construido y ejecutado, otra vez sin un solo peso en disco:
+
+| Entregable | Estado |
+|---|---|
+| Enlace taxonomía ↔ AMD | ✅ `profiles/amd/vision-taxonomy.yaml` + `app/vision/taxonomy.py`, **validada** contra el vocabulario canónico: un clasificador que propusiera un valor inexistente no carga |
+| Contratos del detector y del clasificador | ✅ `contracts.py` — `ObjectDetector`, `StateClassifier`, predicción con modelo, versión, confianza y recorte |
+| Pre-llenado desde `x-vision-source` (RF-083) | ✅ `prefill.py`, con umbral por clase aplicado en el servidor, no en el teléfono |
+| Hallazgos (RF-086) | ✅ separados de los valores de inventario: un poste inclinado no es un campo del activo |
+| Comparador antes/después | ✅ `comparator.py` — pares de resolución declarados; una ausencia no es una resolución |
+| Propuesta ≠ respuesta | ✅ `service.py`: procedencia sin confirmar, bloqueada por la compuerta de I6 |
+| **Registro de datasets con compuerta de licencia** | ✅ `ml/datasets/registry.yaml` + `scripts/check_dataset_licenses.py`, cuarta verificación obligatoria de CI, probada en negativo |
+| Detector, clasificador, OT sugeridas, resumen | Pendiente: son los modelos y los datos |
+
+**Sobre los datasets.** La conclusión de la investigación ahora es una aserción de la suite,
+no una nota al pie: todos los datasets públicos de activos eléctricos encontrados son
+NonCommercial (InsPLAD), copyleft (STN PLAD, GPL-3.0), de acceso restringido (IDID) o sin
+licencia declarada (CPLID). El modelo que se entrega se entrena con las fotografías de la
+propia distribuidora. A eso se suma la diferencia de dominio: lo público es imagen aérea de
+dron sobre transmisión, y lo nuestro es foto desde el suelo, con teléfono, en distribución
+urbana.
+
+De ahí una consecuencia operativa que conviene no postergar: **la app debe pedir encuadres
+guiados desde el primer día del piloto**, aunque el modelo todavía no exista. Sin esas fotos
+no hay dataset, y sin dataset no hay visión.
+
 ---
 
 ## I12 — Agentes y endurecimiento · 7 semanas 🟢
@@ -367,7 +394,7 @@ Sin RAG (ADR-007). El nodo de normativa funciona con parámetros y reglas, no co
 ## Nota sobre el estado de verificación
 
 Los tests de integración **se ejecutaron contra PostgreSQL 16 + PostGIS 3.4 real**, no solo en CI:
-450 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las siete
+511 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las siete
 migraciones aplicadas y revertidas sobre una base limpia (21 tablas de la aplicación, más
 `alembic_version` y las de PostGIS).
 

@@ -460,8 +460,8 @@ La guía de entrenamiento ya tiene la tabla de licencias verificadas (InsPLAD CC
 Tres precisiones que conviene fijar por escrito:
 
 1. **Diferencia de dominio.** Casi todo lo público es fotografía aérea de dron sobre líneas de transmisión. Nuestro caso es foto desde el suelo, con teléfono, en distribución urbana. El valor de los datasets públicos está en el **preentrenamiento y la comparación**, no en el despliegue.
-2. **La verificación de licencia es parte del pipeline,** no un trámite previo. La publicación de un paquete de modelos falla si un dataset de licencia no aprobada participó en el entrenamiento (checklist sección 14 de la guía).
-3. **El detector aprende del perfil.** La taxonomía de visión (Anexo B del SRS) se enlaza al AMD: una clase visual `insulator` apunta al tipo canónico, y de ahí al campo real del modelo. Añadir una Unidad de Negocio no obliga a reentrenar visión.
+2. **La verificación de licencia es parte del pipeline,** no un trámite previo. La publicación de un paquete de modelos falla si un dataset de licencia no aprobada participó en el entrenamiento (checklist sección 14 de la guía). Implementado: la tabla de arriba vive ahora en `ml/datasets/registry.yaml`, y `scripts/check_dataset_licenses.py` es la cuarta verificación obligatoria de CI. Está probada en negativo —un dataset NonCommercial promovido a `deployed`, un GPL en preentrenamiento, una licencia sin verificar con cualquier uso permitido— porque el modo de fallo real no es elegir mal hoy, es añadir un dataset dentro de seis meses y que nadie vuelva a leer la licencia.
+3. **El detector aprende del perfil.** La taxonomía de visión (Anexo B del SRS) se enlaza al AMD: una clase visual `insulator` apunta al tipo canónico, y de ahí al campo real del modelo. Añadir una Unidad de Negocio no obliga a reentrenar visión. Implementado en `profiles/amd/vision-taxonomy.yaml`, y **validado al cargar**: un clasificador que pueda proponer un valor que la enumeración canónica no tiene no es una predicción mala, es un valor que no se puede guardar en ninguna parte, así que el cargador falla en vez de arrancar.
 
 ### 6.3 Por qué el RAG normativo sale de v1
 

@@ -11,10 +11,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # The three mandatory gates of I0. They need no services and no build, so they run
-  # first and fail fast: an architectural violation should not wait for a test suite.
+  # The mandatory gates. They need no services and no build, so they run first and fail
+  # fast: an architectural violation should not wait for a test suite.
   guardrails:
-    name: Guardrails (modelo de datos · Esri · licencias)
+    name: Guardrails (modelo de datos · Esri · licencias · datasets)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,6 +35,14 @@ jobs:
 
       - name: SRS 0.7 — licencias de terceros
         run: python scripts/check_licenses.py
+
+      # Un dataset cuya licencia no lo permite no puede entrenar el modelo que se entrega.
+      # Corre en cada push porque el fallo real no es elegir mal hoy, es añadir un dataset
+      # dentro de seis meses y que nadie vuelva a leer la licencia (addendum 6.2).
+      - name: Addendum 6.2 — licencias de datasets de visión
+        run: |
+          pip install pyyaml
+          python scripts/check_dataset_licenses.py
 
       - name: Publicar inventario de licencias
         uses: actions/upload-artifact@v4
