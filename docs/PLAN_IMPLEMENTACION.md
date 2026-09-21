@@ -244,6 +244,25 @@ Sigue la guía de entrenamiento sin cambios de fondo; el aporte del addendum es 
 
 **Aceptación:** dictado de 60 s procesado en menos de 25 s (p90) en el teléfono objetivo, con validez JSON del 100 % bajo gramática, en modo avión. Cada valor de IA queda con origen, versión de modelo y confianza.
 
+### Avance de I7
+
+Construido y ejecutado (sin un solo modelo en disco, que es lo que hace que se pueda probar):
+
+| Entregable | Estado |
+|---|---|
+| Normalizador es-EC | ✅ `backend/app/voice/normalizer.py` — números, unidades, decimales, fechas, códigos deletreados y plegado de sonidos |
+| Léxico desde el perfil (RF-331, RF-332) | ✅ `lexicon.py` — *hotwords* con refuerzo, sinónimos canónicos, etiquetas de la unidad y catálogos de códigos de la OT abierta |
+| Gramática GBNF del sub-esquema | ✅ `grammar.py`, probada por lo que acepta y rechaza con un intérprete GBNF propio |
+| Extractor | ✅ línea base determinista `RuleBasedExtractor` + contrato con la pasarela. Los pesos (Qwen2.5-1.5B) son lo pendiente |
+| Propuesta ≠ respuesta | ✅ `service.py` + API: escribe `field_provenance` sin confirmar, y la compuerta de aprobación de I6 lo bloquea |
+| Vocabulario hablado canónico | ✅ `profiles/amd/voice-es-EC.yaml` — español del Ecuador, sin nombres reales del modelo de datos |
+
+Decisiones en [ADR-011](adr/ADR-011-voz-propuesta-con-gramatica.md).
+
+Pendiente, y todo depende de hardware o de audio real que aquí no hay: la elección entre la
+Ruta T y la Ruta W, el paquete de modelos del teléfono, la UI de revisión IA en la web,
+`tools/bench-app` y el informe de línea base.
+
 ---
 
 ## I8 — Integraciones corporativas · 4 semanas
@@ -338,7 +357,7 @@ Sin RAG (ADR-007). El nodo de normativa funciona con parámetros y reglas, no co
 ## Nota sobre el estado de verificación
 
 Los tests de integración **se ejecutaron contra PostgreSQL 16 + PostGIS 3.4 real**, no solo en CI:
-326 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las seis migraciones
+435 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las seis migraciones
 aplicadas y revertidas sobre una base limpia (24 tablas).
 
 Eso destapó cuatro defectos que ni el lint, ni `mypy --strict`, ni el renderizado de SQL offline
