@@ -1,0 +1,42 @@
+"""Application settings.
+
+Note on the database: the platform runs on PostgreSQL only. The corporate Oracle
+instance hosts the ArcSDE geodatabase and is reached exclusively through the arcpy
+agent (ADR-006, ADR-008) — there is deliberately no Oracle connection setting here,
+and adding one would violate rule 7 of CLAUDE.md.
+"""
+
+from functools import lru_cache
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="SIGEC_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
+
+    environment: str = "development"
+    debug: bool = False
+
+    database_url: str = "postgresql+psycopg://sigec:sigec@localhost:5432/sigec"
+    redis_url: str = "redis://localhost:6379/0"
+
+    # Identity (Keycloak / OIDC) — RF-001.
+    oidc_issuer: str = "http://localhost:8080/realms/sigec"
+    oidc_audience: str = "sigec-backend"
+
+    # Object storage for evidence (SeaweedFS, S3 API).
+    s3_endpoint_url: str = "http://localhost:8333"
+    s3_bucket: str = "sigec-evidence"
+
+    # Active data-model profile (ADR-004). Switching this must be enough to run
+    # against a different geodatabase schema, which the CI suite verifies.
+    profile: str = Field(default="cnel-gye", description="Data-model profile id under profiles/")
+    profiles_dir: str = "../profiles"
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

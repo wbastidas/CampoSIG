@@ -70,3 +70,11 @@ preferencia técnica a requisito:
 
 En consecuencia, la verificación de licencias en CI debe **fallar el build** si aparece cualquier
 artefacto `com.esri.*` entre las dependencias del módulo Android.
+
+## Refinada por ADR-008 (2026-09-21)
+
+El principio se mantiene y se extiende: el móvil no conoce ArcGIS, **y el backend tampoco conoce ArcSDE**.
+La geodatabase la toca únicamente el agente arcpy de [ADR-008](ADR-008-agente-arcpy.md), al otro lado de
+un contrato HTTPS. El backend pasa de ser *el que habla ArcGIS* a ser *el que orquesta al que habla
+ArcGIS*, lo que refuerza la decisión: ahora hay dos fronteras estrechas en lugar de una, y ninguna
+atraviesa el móvil.

@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+# Cancel superseded runs on the same ref to keep feedback fast.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The three mandatory gates of I0. They need no services and no build, so they run
+  # first and fail fast: an architectural violation should not wait for a test suite.
+  guardrails:
+    name: Guardrails (modelo de datos · Esri · licencias)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: RF-305 — sin fugas del modelo de datos
+        run: python scripts/check_data_model_leak.py
+
+      - name: ADR-003 — sin artefactos de Esri en el móvil
+        run: python scripts/check_no_esri_in_mobile.py
+
+      - name: Instalar dependencias del backend (para el cierre de licencias)
+        run: |
+          python -m pip install --upgrade pip
+          pip install ./backend
+
+      - name: SRS 0.7 — licencias de terceros
+        run: python scripts/check_licenses.py
+
+      - name: Publicar inventario de licencias
+        uses: actions/upload-artifact@v4
+        with:
+          name: third-party-licenses
+          path: THIRD_PARTY_LICENSES.md
+
+  backend:
+    name: Backend (lint · tipos · tests)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: sigec
+          POSTGRES_PASSWORD: sigec
+          POSTGRES_DB: sigec_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SIGEC_DATABASE_URL: postgresql+psycopg://sigec:sigec@localhost:5432/sigec_test
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - run: uv sync --all-extras
+      - name: Lint (ruff)
+        run: uv run ruff check .
+      - name: Formato (ruff)
+        run: uv run ruff format --check .
+      - name: Tipos (mypy)
+        run: uv run mypy app
+      - name: Migraciones
+        run: uv run alembic upgrade head
+      - name: Tests
+        run: uv run pytest -v --cov=app --cov-report=term-missing
+
+      # ADR-004: la abstracción del modelo de datos no es una declaración de
+      # intenciones, es una prueba. La suite completa debe pasar contra un perfil
+      # de estructura deliberadamente distinta.
+      - name: Tests con perfil alterno (ADR-004)
+        env:
+          SIGEC_PROFILE: alt-synthetic
+        run: uv run pytest -v -m "not integration"
+
+  gis-agent:
+    name: Agente arcpy (Python 2.7, sin ArcMap)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gis-agent
+    steps:
+      - uses: actions/checkout@v4
+      # The agent must run on ArcMap's Python 2.7 (ADR-008, H12). CI cannot install
+      # arcpy, so its tests run against tools/arcpy-double. Python 3.12 runs them here
+      # for tooling convenience; compileall below is what actually enforces that the
+      # source stays valid Python 2.7.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Tests del agente contra el doble de arcpy
+        run: python -m pytest tests -v
+      - name: Verificar compatibilidad con la sintaxis de Python 2.7
+        run: python ../scripts/check_py27_syntax.py sigec_agent

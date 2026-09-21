@@ -8,6 +8,7 @@
 | Extiende a | `SRS.md` v1.1 (SRS-SIGEC-CAMPO-001) |
 | Complementa a | `GUIA_ENTRENAMIENTO_MODELOS.md` v1.1 · `modelo-datos-cnel/` |
 | Estado | Borrador para aprobación — define el punto de partida de `PLAN_IMPLEMENTACION.md` |
+| Cambios v1.2 | La integración con el GIS pasa a un **agente arcpy** (Python 2.7 / ArcMap 10.8.1) que es el único componente que toca la geodatabase, en ambos sentidos (ADR-008). Con ello los feature services con sync dejan de ser prerrequisito y R-N2/D5 salen del camino crítico. Confirmado que la aplicación de lotes se automatiza con arcpy, sin ArcObjects. |
 | Cambios v1.1 | El motor es **Oracle 11g R2 sin la opción Spatial**, dedicado a la geodatabase ArcSDE. La base operativa de la plataforma pasa a **PostgreSQL + PostGIS en servidor aparte** (ADR-006, sustituye a ADR-002). **El RAG normativo sale de v1** (ADR-007, sustituye a ADR-005). Se descarta expresamente el SDK de Esri en el móvil. La aplicación en ArcFM la ejecuta el equipo de la distribuidora. |
 
 ## 0. Por qué existe este documento
@@ -75,6 +76,7 @@ Registradas como ADR en `docs/adr/`. Resumen y consecuencias:
 | **ADR-002** | ~~La plataforma vive en Oracle, esquema aparte del SDE~~ | **Sustituida por ADR-006** al conocerse que el motor es 11g R2 sin la opción Spatial |
 | **ADR-006** | La plataforma vive en **PostgreSQL 16 + PostGIS en servidor aparte**; Oracle 11g R2 queda dedicado a la geodatabase ArcSDE, de solo lectura y solo vía feature services | Restaura el stack original del SRS: PostGIS, JSONB y Martin vuelven a estar disponibles. Un servidor más que operar |
 | **ADR-003** | Sync **híbrido**: el móvil habla solo con nuestro backend; el backend mantiene la réplica ArcGIS | El móvil queda 100 % open source y simple; toda la complejidad ArcGIS se concentra en un servicio del backend |
+| **ADR-008** | Un **agente arcpy** (Python 2.7 / ArcMap) es el único componente que toca la geodatabase, tanto para leer metadatos y activos como para aplicar lotes as-built | Elimina los feature services con sync como prerrequisito; añade una máquina Windows con ArcGIS Desktop Standard/Advanced. Los auto-actualizadores de ArcFM siguen sin dispararse |
 | **ADR-004** | **Capa de abstracción del modelo de datos** (Asset Model Descriptor + perfiles de mapeo) | La plataforma no conoce `EstructuraSoporte` ni `PuestoTransfDistribucion`: conoce *tipos de activo* resueltos en tiempo de ejecución |
 | **ADR-005** | ~~Vector store del RAG~~ | **Sustituida por ADR-007**: la pregunta correcta no era dónde poner los vectores, sino si el RAG hace falta |
 | **ADR-007** | **Sin RAG en v1.** El cumplimiento normativo se resuelve con `regulatory_parameter` + reglas deterministas + búsqueda de texto completo con enlace al numeral | Elimina el vector store, el pipeline de ingesta y los conjuntos dorados de normativa. Se reconsidera después del piloto, con datos de uso real |
@@ -290,6 +292,14 @@ Esto se verificó contra documentación de Esri antes de diseñar. Cada punto ti
 | H10 | **`python-oracledb` en modo *thin* exige Oracle Database 12.1 o posterior.** Para 11.2 hace falta modo *thick* con las librerías de Oracle Instant Client | Conectarse a 11g R2 desde Python obliga a meter librerías nativas en los contenedores. Con ADR-006 el problema desaparece: no nos conectamos por SQL |
 | H11 | **Oracle Locator** —subconjunto de Spatial que incluye el tipo `SDO_GEOMETRY`— **viene de serie en las ediciones Standard y Enterprise**, sin licencia adicional. La opción *Spatial* de pago añade funciones avanzadas | Dato útil para el equipo GIS: puede que sí haya `SDO_GEOMETRY` disponible vía Locator aunque no se tenga la opción Spatial. Nosotros no dependemos de ello: leemos por feature service |
 
+| H12 | **Las redes geométricas son de solo lectura en ArcGIS Pro.** Para editarlas hay que usar ArcMap, cuyo arcpy corre sobre **Python 2.7.18 + NumPy 1.9.3** | El agente arcpy es forzosamente Python 2.7. No es una preferencia: es el único arcpy que edita redes geométricas (ADR-008) |
+| H13 | **`arcpy.da.InsertCursor` falla** al insertar en una clase que participa en una red geométrica (`SystemError('error return without exception set')`). El camino soportado es clase de staging fuera de la red + **`Append_management`** | Define el algoritmo exacto de aplicación de lotes del agente. No es opcional ni un detalle de estilo |
+| H14 | **`Append` sobre clases de red ha dejado la red lógica en estado inconsistente** (referencias liberadas antes de `stopEditing`). Esri publicó parches que lo previenen y que mejoran verificar, reparar y reconstruir conectividad | Verificar los parches en I1, y **reconstruir conectividad** tras cada lote. Es un paso obligatorio, no una precaución |
+| H15 | **Los auto-actualizadores de ArcFM son ArcObjects/COM.** Desde Python solo se pueden *controlar* por COM (`MMAutoupdaterDispatch`, `mmAUMNoEvents`), lo que confirma que con arcpy puro no se disparan | arcpy sustituye el trabajo manual, **no** las reglas de ArcFM. El cliente decide qué campos calculados por AU importan. El agente nunca toca COM |
+| H16 | Editar redes geométricas exige **ArcGIS Desktop nivel Standard o Advanced**; con Basic aparece "Not licensed to edit geometric networks" | Requisito de licencia para la máquina del agente (D2) |
+
+De H12 + H13 se sigue una consecuencia que no era evidente: **con arcpy disponible, los feature services con sync dejan de ser obligatorios para leer.** `arcpy.da.SearchCursor` lee ArcSDE directamente y `ListDomains`/`Describe` dan metadatos más ricos que el servicio REST. Eso saca del camino crítico el prerrequisito más intrusivo del proyecto —habilitar Global IDs, archiving y versionado en producción— que era el riesgo R-N2 y la decisión D5.
+
 De H1 + H4 se sigue la conclusión central sobre la escritura: **ArcGIS 10.8.1 con ArcFM y red geométrica puede leerse con seguridad y no puede escribirse con seguridad desde una app de campo.**
 
 De H9 + H10 se sigue la conclusión central sobre el almacenamiento: **el Oracle 11g R2 existente sirve perfectamente para lo que ya hace —ser la geodatabase— y no sirve para alojar la plataforma nueva.** Ambas conclusiones son la base de ADR-001 y ADR-006.
@@ -306,6 +316,20 @@ El conector no tiene lógica especial por clase. Deriva la ruta del perfil:
 | Campo con rol de conectividad (`ANCILLARYROLE`, `*CIRCUITSOURCEGUID`, `ENABLED`, `ELECTRICTRACEWEIGHT`) | **Prohibido escribir**, en cualquier ruta | — |
 
 > Por defecto, **todas** las rutas directas están apagadas en v1. Se encienden por clase, de forma explícita, tras validación del equipo GIS. Es una decisión de configuración, no de código.
+
+**Cómo aplica el agente cada lote** (ADR-008, obligado por H13 y H14):
+
+```
+Lote aprobado  →  clase de staging FUERA de la red geométrica   (da.InsertCursor)
+               →  arcpy.da.Editor sobre conexión SDE versionada
+               →  Append_management hacia la clase destino
+               →  verificar y reconstruir conectividad en la extensión afectada
+               →  reportar al backend el resultado de CADA propuesta
+```
+
+Nunca `InsertCursor` directo sobre una clase de la red: falla. Nunca campos de conectividad. Nunca COM ni
+desactivación de auto-actualizadores: si un lote los necesita, el agente lo marca *requiere ArcFM* y lo
+deja para el equipo del cliente.
 
 ### 5.3 Arquitectura del conector
 
@@ -348,10 +372,12 @@ flowchart LR
   STG -.->|clases habilitadas, sin red geométrica| FS
 ```
 
+> **Nota v1.2.** El diagrama muestra la ruta por feature services REST, que sigue siendo válida y se mantiene como opción. Desde ADR-008 la ruta **principal** es el agente arcpy: sustituye `createReplica`/`synchronizeReplica` por `da.SearchCursor` y `ListDomains`/`Describe`, y sustituye la aplicación manual en ArcFM por staging + `Append` + reconstrucción de conectividad. El resto del diagrama —backend como único interlocutor del móvil, staging, bandeja de revisión GIS— no cambia.
+
 **Bajada (GIS → plataforma → móvil), programada e incremental:**
 
-1. `metadata_sync` refresca dominios, subtipos y relaciones. Los tres dominios volátiles por Unidad de Negocio se refrescan siempre; los demás por cambio de versión.
-2. `arcgis_connector` mantiene una **réplica de solo lectura** por zona vía `createReplica` / `synchronizeReplica`, y la materializa en la caché PostGIS.
+1. El **agente arcpy** exporta metadatos con `ListDomains` y `Describe` (dominios, subtipos, relaciones) y los sube al backend. Los tres dominios volátiles por Unidad de Negocio se refrescan en cada corrida; los demás por cambio de versión.
+2. El agente extrae los activos por zona con `da.SearchCursor` (filtro espacial y por alimentador) y los sube como GeoJSON; el backend los materializa en la caché PostGIS. El incremento se resuelve por los campos de fecha de modificación que el modelo ya tiene (categoría 🔧 Sistema); si una clase no los tiene, se extrae completa.
 3. `offline_package_builder` arma el paquete por zona: teselas PMTiles, activos de la zona, historial del activo, formularios vigentes, catálogos y el manifiesto de modelos IA (RF-102 del SRS).
 4. El móvil descarga el paquete de **nuestro** backend. No conoce ArcGIS.
 
@@ -360,8 +386,8 @@ flowchart LR
 1. El outbox del móvil sube a nuestra API (RF-101 a RF-104 del SRS, sin cambios).
 2. Al aprobarse la OT (RF-112), las propuestas as-built se materializan en `staging_asbuilt`.
 3. La bandeja de revisión GIS agrupa por zona y alimentador, muestra el antes/después con fotos y detecciones, y el editor GIS aprueba el lote.
-4. El editor aplica el lote **en ArcMap/ArcFM**, asistido por un complemento o un GeoJSON/CSV de trabajo. Los auto-actualizadores y el trace corren donde deben.
-5. Solo para clases explícitamente habilitadas y sin red geométrica, el conector puede escribir directo al feature service, en una versión de trabajo propia, con reconcile/post programado.
+4. El **agente arcpy** aplica el lote con el algoritmo de la sección 5.2 y reporta el resultado de cada propuesta. Los lotes que requieran auto-actualizadores de ArcFM se marcan y quedan para el equipo del cliente.
+5. Solo para clases explícitamente habilitadas y sin red geométrica, el agente puede escribir directo sin pasar por staging.
 
 **Idempotencia y trazabilidad:** cada propuesta as-built lleva `proposal_id` (UUID del móvil), el `GLOBALID` del elemento GIS cuando existe, la OT de origen, y el resultado de la aplicación. Reenviar no duplica; un lote rechazado vuelve con motivo al supervisor.
 
@@ -474,11 +500,11 @@ backend/app/
 │   ├── profile.py          # carga y validación de perfiles
 │   ├── resolver.py         # ÚNICO punto que conoce nombres reales de campos
 │   └── form_generator.py   # metadatos → JSON Schema + UI Schema
-├── arcgis/
-│   ├── rest_client.py      # cliente httpx: token, query, applyEdits, replica
-│   ├── metadata_sync.py    # dominios, subtipos, relaciones
-│   ├── replica.py          # createReplica / synchronizeReplica
-│   └── staging.py          # propuestas as-built y aplicación de lotes
+├── gis_gateway/            # contrato HTTP con el agente arcpy — NO habla con ArcSDE
+│   ├── ingest.py           # recibe metadatos y activos que sube el agente
+│   ├── batches.py          # entrega lotes aprobados y recibe resultados por propuesta
+│   ├── staging.py          # propuestas as-built, idempotencia por proposal_id
+│   └── rest_client.py      # cliente httpx opcional para feature services (ruta alterna)
 ├── gis_review/             # controles de calidad → trabajos de verificación
 ├── offline_package/        # constructor de paquetes por zona (PMTiles + datos)
 ├── regulatory/             # parámetros con vigencia, reglas de cumplimiento, búsqueda documental
@@ -486,6 +512,19 @@ backend/app/
 ```
 
 El módulo `knowledge/` que el SRS 10.1 preveía para el RAG **no se construye en v1**; su parte útil vive en `regulatory/` sin recuperación semántica (ADR-007).
+
+Y fuera del backend, en su propio paquete porque corre en otra máquina y en otra versión de Python:
+
+```
+gis-agent/                  # Python 2.7 + arcpy de ArcMap 10.8.1 · máquina Windows
+├── sigec_agent/
+│   ├── client.py           # HTTPS hacia el backend, token, reintentos
+│   ├── metadata.py         # ListDomains, Describe de subtipos y relaciones
+│   ├── extract.py          # da.SearchCursor por zona → GeoJSON
+│   ├── apply_batch.py      # staging FC → Editor → Append → reconstruir conectividad
+│   └── guards.py           # invariantes: nunca conectividad, nunca InsertCursor en red
+└── tests/                  # ejecutables sin arcpy, con un doble de prueba
+```
 
 ### 7.3 Refuerzos en CI
 
@@ -526,6 +565,12 @@ El módulo `knowledge/` que el SRS 10.1 preveía para el RAG **no se construye e
 | RF-350 | Controles de calidad del SIG configurables sobre el AMD | S | B/W | 4.1 |
 | RF-351 | Trabajos de verificación en campo desde revisiones SIG | M | W/B/A | 4.1 |
 | RF-360 | Paquetes offline por zona con PMTiles, firmados y verificables | M | B/A | 5.4 |
+| RF-346 | Agente arcpy como único componente que toca la geodatabase, en ambos sentidos | M | Agente | ADR-008 |
+| RF-347 | Aplicación de lotes por staging fuera de la red + `Append` + reconstrucción de conectividad | M | Agente | 5.2 |
+| RF-348 | El agente nunca usa `InsertCursor` en clases de la red, nunca escribe conectividad y nunca toca COM ni desactiva auto-actualizadores | M | Agente | ADR-008 |
+| RF-349 | Exportación de metadatos con `ListDomains` y `Describe`, incluidos subtipos y relaciones | M | Agente | ADR-008 |
+| RF-352 | Extracción incremental de activos por zona usando los campos de fecha de modificación del modelo | S | Agente | ADR-008 |
+| RF-353 | Reporte del resultado por propuesta (aplicada, rechazada, error) e idempotencia por `proposal_id` | M | Agente/B | ADR-008 |
 | RF-330 | Español de Ecuador y Latinoamérica únicamente | M | A/W | 6.1 |
 | RF-331 | Léxico y *hotwords* derivados de los dominios del perfil | M | B/A | 6.1 |
 | RF-332 | *Hotwords* por contexto de OT | S | A | 6.1 |
@@ -542,7 +587,8 @@ El módulo `knowledge/` que el SRS 10.1 preveía para el RAG **no se construye e
 | 7.6 — Docker Compose de desarrollo | **Ampliado** | Añadir `tools/arcgis-mock` y `tools/legacy-ot-mock`. PostgreSQL se mantiene |
 | 8 — Modelo de datos | **Ampliado** | Entidades nuevas: `model_profile`, `asset_binding`, `asbuilt_proposal`, `gis_review_batch`, `assignment`, `device_custody` |
 | 11.3.2 — decisión pendiente del GIS | **Resuelto** | ArcGIS 10.8.1 + ArcFM sobre ArcSDE en Oracle 11g R2 |
-| RF-121 — adaptador GIS genérico | **Sustituido** | RF-340 a RF-345 |
+| RF-121 — adaptador GIS genérico | **Sustituido** | RF-340 a RF-353 |
+| 7.1 — vista lógica | **Ampliada** | Componente nuevo `gis-agent` (Python 2.7 + arcpy), fuera del backend |
 | M18 y RF-190..RF-193 — RAG normativo | **Fuera de v1** | ADR-007. Se sustituye por `regulatory_parameter` + búsqueda de texto completo |
 | M17 — agentes | **Vigente, con alcance reducido** | El nodo de normativa pasa a reglas deterministas sobre `regulatory_parameter`, sin recuperación semántica |
 | 10.2 — épicas | **Reordenado** | Ver `PLAN_IMPLEMENTACION.md` |
@@ -559,7 +605,10 @@ Todo lo no listado sigue vigente sin cambios.
 | ID | Riesgo | Prob. | Impacto | Mitigación |
 |---|---|---|---|---|
 | R-N1 | **ArcMap 10.8.x se retiró en marzo de 2026.** La distribuidora migrará a ArcGIS Pro y probablemente a Utility Network | Alta | Alto | Toda la dependencia de ArcGIS vive en `arcgis_connector` y en el perfil. La migración a Utility Network cambia el perfil y el conector, no el resto de la plataforma. La ruta staging es la que mejor sobrevive la migración |
-| R-N2 | Habilitar Global IDs, archiving y versionado tradicional en la geodatabase productiva es intrusivo | Media | Alto | Spike I1 en copia de la geodatabase; ventana de mantenimiento acordada con el equipo GIS; nunca sobre producción sin ensayo |
+| R-N2 | Habilitar Global IDs, archiving y versionado tradicional en la geodatabase productiva es intrusivo | Baja | Medio | **Degradado por ADR-008:** ya no es prerrequisito. El agente arcpy lee sin necesitar feature services con sync. Solo vuelve a aplicar si se elige la ruta REST |
+| R-N9 | El agente corre en **Python 2.7, sin soporte desde enero de 2020**, en una máquina Windows con ArcMap | Alta | Medio | Inevitable: es el único arcpy que edita redes geométricas (H12). Se acota manteniéndolo pequeño, sin dependencias fuera de la biblioteca estándar más `requests`, sin exposición a internet (solo habla hacia el backend) y sin datos en reposo |
+| R-N10 | `Append` sobre clases de red puede dejar la red lógica inconsistente si falta el parche de Esri (H14) | Media | Alto | Verificar los parches en I1; reconstruir conectividad tras cada lote; aplicar siempre en una versión de trabajo, nunca en DEFAULT; ensayar sobre copia antes de producción |
+| R-N11 | Los auto-actualizadores de ArcFM no se disparan con arcpy (H15), así que hay campos calculados que quedarán vacíos o desactualizados | Alta | Medio | El cliente, que conoce su configuración de ArcFM, define en I1 qué campos calculados importan. Los lotes que los necesiten se marcan *requiere ArcFM* y no se aplican automáticamente |
 | R-N3 | La revisión GIS manual (ADR-001) se convierte en cuello de botella | Media | Medio | Aprobación por lotes, agrupación por zona, prellenado con IA, métrica de tiempo de ciclo desde el piloto. Si se satura, habilitar escritura directa por clase (RF-345) |
 | R-N4 | El perfil de mapeo se vuelve tan complejo que "configurar" cuesta más que programar | Media | Alto | Mantener el AMD deliberadamente pequeño; importador con coincidencia asistida; la prueba del perfil alterno en CI es la señal de alarma temprana |
 | R-N5 | ~~Oracle sin `pgvector` complica el RAG~~ | — | — | **Cerrado** por ADR-007: sin RAG en v1, el riesgo desaparece |
@@ -574,10 +623,11 @@ Todo lo no listado sigue vigente sin cambios.
 | ~~D1~~ | ~~Versión exacta de Oracle~~ | **Resuelta:** Oracle 11g R2, sin la opción Spatial, dedicado a la geodatabase ArcSDE. Resultado: ADR-006 y ADR-007 | — |
 | D9 | ¿El parche de Oracle es **11.2.0.4**? (H8, R-N8) | Determina si la instalación está dentro del soporte de Esri | I1 |
 | D10 | Servidor para PostgreSQL: ¿se provisiona una máquina nueva, una VM, o contenedores en infraestructura existente? ¿Quién lo administra? | ADR-006 depende de ello; es el único recurso nuevo que pide la arquitectura | I0 |
-| D2 | ¿Hay licencias de **ArcGIS Pro** y equipo GIS con capacidad de revisar lotes? ¿Cuántas personas y con qué disponibilidad? | Dimensiona ADR-001 y el riesgo R-N3 | I1 |
+| D2 | **Máquina para el agente arcpy:** ¿hay un Windows con **ArcGIS Desktop 10.8.1 nivel Standard o Advanced** disponible para un proceso desatendido? Con Basic no se pueden editar redes geométricas (H16) | Sin ella no hay integración con el GIS. Es el requisito de infraestructura más duro del proyecto | I1 |
+| D11 | ¿Qué campos calculados por **auto-actualizadores de ArcFM** son imprescindibles en los elementos nuevos? (R-N11) | Define qué lotes puede aplicar el agente solo y cuáles requieren ArcFM | I1 |
 | D3 | Nombre, tecnología y API del **sistema de órdenes de trabajo** corporativo, y si es maestro o satélite | Define el adaptador RF-120 y quién emite el número de OT | I2 |
 | D4 | ¿Existen ya **controles de calidad del SIG** (Data Reviewer, scripts, checklist)? ¿Cuáles son las reglas reales? | Define el alcance de RF-350 | I4 |
-| D5 | ¿La geodatabase productiva ya tiene **Global IDs y archiving**? ¿Está versionada? | Determina el esfuerzo real de I1 y el riesgo R-N2 | I1 |
+| D5 | ¿La geodatabase productiva ya tiene **Global IDs y archiving**? ¿Está versionada? | **Degradada:** ya no bloquea (ADR-008). Sigue importando el versionado, porque el agente aplica lotes en una versión de trabajo | I1 |
 | D6 | Zonas y alimentadores del **piloto**, y número de dispositivos | Dimensiona los paquetes offline y la réplica | I3 |
 | D7 | ¿Se migrará a **ArcGIS Pro / Utility Network** y en qué plazo? | Decide cuánto invertir en la ruta de red geométrica | I1 |
 | D8 | Las nueve decisiones pendientes del SRS 11.3 que siguen abiertas | Ya listadas en el SRS | según cada una |

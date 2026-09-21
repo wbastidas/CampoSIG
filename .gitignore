@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Generated: rebuilt by scripts/check_licenses.py in CI
+THIRD_PARTY_LICENSES.md
+
+# Environment
+.env
+*.local
+
+# Node / web
+node_modules/
+dist/
+.vite/
+
+# Android
+android/.gradle/
+android/build/
+android/local.properties
+*.apk
+*.keystore
+
+# ML artifacts (versioned with DVC, not git)
+ml/**/data/
+ml/**/*.onnx
+ml/**/*.gguf
+*.pt
+*.pth
+
+# GIS working files
+*.sde
+*.gdb/
+*.lock
+
+# OS
+.DS_Store
+Thumbs.db

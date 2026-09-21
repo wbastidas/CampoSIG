@@ -1,0 +1,109 @@
+# Data-model profile: synthetic alternative (ADR-004 verification).
+#
+# Exists for one purpose: to prove the abstraction works. Its structure is deliberately
+# unlike cnel-gye — English names, different field names, a different geometry provider,
+# a different spatial reference, no geometric network at all, and enum codes that are
+# integers rather than Spanish mnemonics.
+#
+# The full test suite must pass against this profile as well as against cnel-gye. If it
+# ever stops passing, the platform has grown a dependency on one data model and RF-301
+# is no longer true — which is exactly the early warning risk R-N4 needs.
+#
+# Not a real customer. Never deployed.
+
+profile:
+  id: alt-synthetic
+  label: Perfil sintético de verificación
+  provider: geojson-file          # a different provider entirely: no arcpy, no ArcGIS
+  spatial_reference: 4326         # WGS84 geographic, not UTM
+  geometric_network: null         # no geometric network: every write path is direct
+
+bindings:
+  support_structure:
+    layer: poles
+    participates_in_geometric_network: false
+    write_path: direct
+    attributes:
+      code:         {field: pole_id}
+      material:     {field: mat_cd, value_map: material.support}
+      height_m:     {field: hgt}
+      feeder_code:  {field: circuit, volatile_by_business_unit: true}
+      install_date: {field: installed_on}
+
+  distribution_transformer:
+    layer: transformers
+    participates_in_geometric_network: false
+    write_path: direct
+    attributes:
+      code:        {field: xfmr_id}
+      rated_kva:   {field: kva}
+      phases:      {field: ph_cd, value_map: phases}
+      mounting:    {field: mount_cd, value_map: mounting.transformer}
+      feeder_code: {field: circuit, volatile_by_business_unit: true}
+
+  street_light:
+    layer: lights
+    participates_in_geometric_network: false
+    write_path: direct
+    attributes:
+      code:        {field: light_id}
+      technology:  {field: tech_cd, value_map: technology.lamp}
+      power_w:     {field: watts}
+      feeder_code: {field: circuit, volatile_by_business_unit: true}
+
+  fuse_switch:
+    layer: fuses
+    participates_in_geometric_network: false
+    write_path: direct
+    attributes:
+      code:        {field: fuse_id}
+      fuse_rating: {field: rating}
+      feeder_code: {field: circuit, volatile_by_business_unit: true}
+
+  line_segment:
+    layer: conductors
+    participates_in_geometric_network: false
+    write_path: direct
+    attributes:
+      code:          {field: span_id}
+      voltage_level: {field: volt_cd, value_map: voltage_level}
+      feeder_code:   {field: circuit, volatile_by_business_unit: true}
+
+  service_point:
+    layer: services
+    participates_in_geometric_network: false
+    write_path: direct
+    attributes:
+      code:        {field: svc_id}
+      feeder_code: {field: circuit, volatile_by_business_unit: true}
+
+# Integer codes, to prove nothing assumes string enum values.
+value_maps:
+  material.support:
+    concrete: 1
+    wood: 2
+    steel: 3
+    fiberglass: 4
+    other: 9
+  phases:
+    single: 1
+    two: 2
+    three: 3
+    bank: 4
+  mounting.transformer:
+    pole: 1
+    vault: 2
+    pad: 3
+    cabinet: 4
+  technology.lamp:
+    led: 1
+    sodium_hp: 2
+    mercury: 3
+    metal_halide: 4
+    other: 9
+  voltage_level:
+    low: 1
+    medium: 2
+    sub_transmission: 3
+
+never_write_fields: []
