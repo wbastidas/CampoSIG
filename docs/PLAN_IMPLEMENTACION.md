@@ -35,7 +35,7 @@ Los cuatro primeros incrementos (`I0`–`I3`) son el arranque completo que se ap
 | **I1** | Prueba de concepto del agente arcpy | 3 sem | I0 | 🔴 |
 | **I2** | Capa de abstracción del modelo de datos | 4 sem | I1 | 🔴 en curso |
 | **I3** | Núcleo de OT, planificadores y asignación | 5 sem | I2 | 🟢 📋 D3 |
-| **I4** | Móvil offline: mapa, base cifrada y sync | 6 sem | I3 | 🔴 🟢 |
+| **I4** | Móvil offline: mapa, base cifrada y sync | 6 sem | I3 | 🔴 🟢 en curso |
 | **I5** | Motor de formularios y evidencias | 5 sem | I4 | 🟢 |
 | **I6** | Revisión web y staging as-built | 4 sem | I5 | 🟢 📋 D4 |
 | **I7** | Voz → formulario | 6 sem | I5 | 🟢 |
@@ -164,6 +164,25 @@ Aquí se materializa ADR-003: el móvil no conoce ArcGIS.
 | Resolución de conflictos | RF-105 y **RF-322**: reasignación sin pérdida de lo capturado offline |
 | Traspaso entre dispositivos | RF-323: paquete firmado por QR o enlace local, probado en modo avión |
 | Gestión de dispositivos | Enrolamiento, bloqueo y borrado remoto (RF-004) |
+
+**Avance a la fecha.** El motor de decisión está construido y probado; la capa Android no.
+
+| Pieza | Estado |
+|---|---|
+| Outbox: prioridad de subida, presupuesto de transferencia, reintentos con jitter | Listo, 36 tests |
+| Resolución de conflictos device/servidor y compuerta de liberación (RF-322) | Listo, 16 tests |
+| Contrato del servidor: enrolamiento, bloqueo remoto, pull delta, push idempotente | Listo |
+| Paquete offline por zona con hash de contenido y partes reanudables | Listo |
+| App Android: Room + SQLCipher, WorkManager, Compose, MapLibre Native, CameraX | Pendiente |
+| Traspaso directo entre dispositivos (RF-323) | Pendiente |
+
+`core:sync` es un módulo Kotlin/JVM sin dependencias de Android (ADR-010), así que sus 52 tests
+corren sin SDK, emulador ni dispositivo. La capa Android lo envuelve y no contiene decisiones.
+
+**Nota de verificación:** el entorno de construcción tiene JDK 21 y Gradle 8.14 pero **no SDK de
+Android**, de modo que la app no se ha compilado. Las pruebas instrumentadas en modo avión —que
+son el criterio de aceptación real de este incremento— siguen pendientes y requieren un
+dispositivo.
 
 **Aceptación:** todo el ciclo probado **en modo avión** en el dispositivo de referencia. Un segundo sync sin cambios transfiere menos de 50 KB. Cortar la red al 50 % de una subida y reanudar no reinicia. Reasignar una OT con trabajo capturado offline no pierde un solo dato. Dos teléfonos en modo avión se traspasan una OT.
 
