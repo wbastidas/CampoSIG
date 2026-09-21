@@ -1,0 +1,31 @@
+# B5 Estado encontrado (SRS 4.2). El bloque que más valor saca del generador.
+#
+# `source: asset_metadata` significa que el composer inyecta aquí las propiedades que el
+# generador derivó de los dominios y campos reales del GIS de esa Unidad de Negocio. Por eso
+# una inspección en Guayaquil ofrece los valores del dominio de Guayaquil sin que nadie los
+# copie a mano, y una en otra unidad ofrece los suyos.
+block:
+  code: B05
+  title: Estado encontrado
+  required: true
+  source: asset_metadata
+fields:
+  general_condition:
+    type: string
+    title: Condición general
+    enum: [bueno, regular, malo, critico]
+    x-voice: true
+    x-vision-source: general_condition
+  description:
+    type: string
+    title: Descripción
+    maxLength: 2000
+    x-voice: true
+  defects:
+    type: array
+    title: Defectos observados
+    x-voice: true
+    x-vision-source: defects
+    items:
+      type: string
+      x-catalog-ref: defect

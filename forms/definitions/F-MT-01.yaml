@@ -1,0 +1,12 @@
+# F-MT-01 — Inspección preventiva de estructura o poste (SRS 4.5, 4.8).
+# El caso que mejor muestra el valor del generador: casi todo el formulario son atributos
+# del activo, derivados de los dominios reales de la Unidad de Negocio.
+form:
+  code: F-MT-01
+  version: 1.0.0
+  title: Inspección preventiva de estructura
+  area: mantenimiento
+  blocks: [B01, B02, B03, B05, B09, B10, B11, B12]
+  min_photos: {before: 2, after: 0}
+  requires_ats: true
+  applies_to_asset_types: [support_structure]

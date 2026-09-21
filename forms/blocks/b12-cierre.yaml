@@ -1,0 +1,24 @@
+# B12 Cierre (SRS 4.2). La causa es obligatoria cuando no se resolvió.
+block:
+  code: B12
+  title: Cierre
+  required: true
+fields:
+  final_state:
+    type: string
+    title: Estado final
+    enum: [resuelto, parcial, no_resuelto]
+    x-voice: true
+  unresolved_reason:
+    type: string
+    title: Causa de no resolución
+    x-catalog-ref: unresolved_reason
+    x-voice: true
+  crew_leader_signature: {type: string, format: uri, title: Firma del jefe de cuadrilla}
+  customer_signature: {type: string, format: uri, title: Firma del cliente}
+  customer_id: {type: string, title: Cédula del cliente, x-voice: true}
+rules:
+  # JSON Logic, misma semántica en backend, web y móvil (SRS stack 7.2).
+  - when: {"in": [{"var": "final_state"}, ["parcial", "no_resuelto"]]}
+    require: [unresolved_reason]
+    message: Indique la causa cuando el trabajo no quedó resuelto

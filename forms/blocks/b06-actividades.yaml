@@ -1,0 +1,28 @@
+# B6 Actividades realizadas (SRS 4.2). Tabla repetible, dictable en lote.
+block:
+  code: B06
+  title: Actividades realizadas
+  required: true
+fields:
+  activities:
+    type: array
+    title: Actividades
+    minItems: 1
+    x-repeatable-table: true
+    x-voice: true
+    items:
+      type: object
+      properties:
+        activity_code:
+          type: string
+          title: Actividad
+          x-catalog-ref: activity
+          x-voice: true
+        quantity: {type: number, title: Cantidad, minimum: 0, x-voice: true}
+        unit:
+          type: string
+          title: Unidad
+          x-catalog-ref: measurement_unit
+          x-voice: true
+        note: {type: string, title: Observación, maxLength: 500, x-voice: true}
+      required: [activity_code, quantity]

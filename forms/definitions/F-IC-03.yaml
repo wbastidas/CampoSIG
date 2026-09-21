@@ -1,0 +1,11 @@
+# F-IC-03 — Bitácora diaria de avance de obra (SRS 4.7, 4.8).
+# Pensado para dictado de la bitácora completa con extracción a tabla de UC.
+form:
+  code: F-IC-03
+  version: 1.0.0
+  title: Bitácora de avance de obra
+  area: ingenieria
+  blocks: [B01, B02, B03, B06, B09, B10, B12]
+  min_photos: {before: 2, after: 0}
+  requires_ats: false
+  applies_to_asset_types: []

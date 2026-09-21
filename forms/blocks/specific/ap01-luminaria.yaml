@@ -1,0 +1,41 @@
+# Bloque específico de atención de luminaria en falla (F-AP-01, SRS 4.6).
+block:
+  code: AP01
+  title: Luminaria en falla
+  required: true
+fields:
+  claim_number: {type: string, title: N.º de reclamo, x-voice: false}
+  claim_at: {type: string, format: date-time, title: Fecha-hora del reclamo, x-voice: false}
+  reported_failure:
+    type: string
+    title: Tipo de falla reportada
+    enum: [apagada_de_noche, encendida_de_dia, intermitente, danada_fisicamente]
+    x-voice: true
+  cause_found:
+    type: string
+    title: Causa encontrada
+    enum: [lampara_o_modulo, driver_o_balasto, fotocontrol, fusible, conexion, brazo, vandalismo, alimentacion]
+    x-voice: true
+  replaced_items:
+    type: array
+    title: Elementos reemplazados
+    x-repeatable-table: true
+    x-voice: true
+    items:
+      type: object
+      properties:
+        material_code: {type: string, title: Material, x-catalog-ref: material, x-voice: true}
+        quantity: {type: number, title: Cantidad, minimum: 0, x-voice: true}
+      required: [material_code, quantity]
+  operative_at_close:
+    type: boolean
+    title: Luminaria operativa al finalizar
+    x-voice: true
+    x-vision-source: lamp_lit
+  # Calculado: cierre menos reclamo, contra el máximo de regulatory_parameter (ADR-007).
+  restoration_hours:
+    type: number
+    title: Tiempo de reposición (h)
+    readOnly: true
+    x-computed: true
+    x-regulatory-parameter: apg.max_restoration_hours

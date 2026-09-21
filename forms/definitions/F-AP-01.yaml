@@ -1,0 +1,10 @@
+# F-AP-01 — Atención de luminaria en falla (SRS 4.6, 4.8).
+form:
+  code: F-AP-01
+  version: 1.0.0
+  title: Atención de luminaria en falla
+  area: apg
+  blocks: [B01, B02, B03, AP01, B06, B09, B10, B12]
+  min_photos: {before: 1, after: 1}
+  requires_ats: true
+  applies_to_asset_types: [street_light]

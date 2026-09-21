@@ -1,0 +1,12 @@
+# F-TR-01 — Análisis de Trabajo Seguro (SRS 4.3, 4.8).
+# Transversal: se ejecuta antes de cualquier trabajo y su aprobación es bloqueante.
+form:
+  code: F-TR-01
+  version: 1.0.0
+  title: Análisis de Trabajo Seguro
+  area: sso
+  blocks: [B01, B02, TR01, B09]
+  min_photos: {before: 1, after: 0}
+  # Sin ATS aprobado no se habilita el registro de ejecución (macroproceso etapa 6).
+  gates_execution: true
+  applies_to_asset_types: []
