@@ -95,6 +95,25 @@ jobs:
           SIGEC_PROFILE: alt-synthetic
         run: uv run pytest -v -m "not integration"
 
+  web:
+    name: Web (tipos · tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - name: Tipos
+        run: npx tsc --noEmit
+      - name: Tests
+        run: npx vitest run
+
   gis-agent:
     name: Agente arcpy (Python 2.7, sin ArcMap)
     runs-on: ubuntu-latest

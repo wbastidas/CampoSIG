@@ -44,3 +44,5 @@ ml/**/*.gguf
 # OS
 .DS_Store
 Thumbs.db
+
+# Web lockfile is committed; node_modules is not (already covered above)
