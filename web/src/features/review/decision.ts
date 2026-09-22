@@ -20,6 +20,9 @@ import type {
   QueueItem,
   ReviewDetail,
 } from '../../api/review';
+// Re-exportado: la pantalla lo usaba de aquí, y el valor de una respuesta se muestra igual en
+// la revisión, en la vista de formulario y en el acta.
+export { displayValue } from '../../forms/values';
 
 export type Attention = 'bloqueado' | 'revisar' | 'listo';
 
@@ -179,32 +182,6 @@ export function needsArcFm(tray: { proposals: { requires_arcfm: boolean }[] }): 
 }
 
 
-/**
- * Render any answer value for a table cell.
- *
- * `String(value)` is wrong here and the compiler accepts it: a provenance value or a regulatory
- * limit comes from JSONB, so it can be an object or an array — a repeatable table's row, a
- * range with a minimum and a maximum. `String({a: 1})` is `"[object Object]"`, and a supervisor
- * auditing that proposal would be shown nothing at all while believing they had been shown
- * something.
- */
-export function displayValue(value: unknown): string {
-  if (value === null || value === undefined) return '—';
-  if (typeof value === 'string') return value || '—';
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  if (Array.isArray(value)) {
-    return value.length === 0 ? '—' : value.map(displayValue).join(', ');
-  }
-  if (typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>);
-    if (entries.length === 0) return '—';
-    return entries.map(([key, inner]) => `${key}: ${displayValue(inner)}`).join('; ');
-  }
-  // Lo único que llega aquí es un symbol o una función, que no pueden venir de JSONB. Se
-  // nombra el tipo en vez de convertirlo: `String(Symbol())` lanza, y un valor sin
-  // representación honesta no debe fingir una.
-  return `(${typeof value})`;
-}
 
 /**
  * What the AI layer will not do here, worth showing and worth ordering (RF-204).

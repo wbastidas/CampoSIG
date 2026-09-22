@@ -54,6 +54,7 @@ function detail(overrides: Partial<ReviewDetail> = {}): ReviewDetail {
       title: 'Inspección preventiva de estructura',
       schema: {},
       ui_schema: {},
+      rules: [],
       warnings: [],
     },
     response: {

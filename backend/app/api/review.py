@@ -137,6 +137,9 @@ def detail(session: SessionDep, unit_code: str, order_id: uuid.UUID) -> dict[str
             "title": form.definition.form.title,
             "schema": form.schema,
             "ui_schema": form.ui_schema,
+            # The conditional rules travel too, so the form view can mark what the answers still
+            # owe with the same evaluator the phone runs (I5, shared corpus).
+            "rules": form.rules,
             "warnings": form.warnings,
         },
         "response": None

@@ -14,6 +14,8 @@
 
 import { Fragment, useCallback, useEffect, useState } from 'react';
 
+import { FormView } from '../../forms/FormView';
+
 import {
   ApprovalBlocked,
   type DecisionKind,
@@ -231,6 +233,16 @@ export function ReviewScreen({ businessUnit, reviewer, now = () => new Date() }:
             <ReviewHeader detail={detail} />
             <Blockers detail={detail} refused={refused} />
             <Degradations detail={detail} />
+            {/* La captura misma, antes de la auditoría: se revisa lo que la cuadrilla escribió,
+                no solo lo que la plataforma opina de ello (I6, vista de formulario). */}
+            <FormView
+              schema={detail.form.schema}
+              uiSchema={detail.form.ui_schema}
+              answers={detail.response?.answers ?? {}}
+              rules={detail.form.rules}
+              provenance={detail.provenance}
+              warnings={detail.form.warnings}
+            />
             <AiAudit detail={detail} />
             <Compliance detail={detail} />
             <BeforeAfter detail={detail} />

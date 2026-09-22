@@ -99,6 +99,8 @@ export interface ReviewDetail {
     title: string;
     schema: Record<string, unknown>;
     ui_schema: Record<string, unknown>;
+    /** Conditional rules, so the form view can mark what the answers still owe (I5). */
+    rules: unknown[];
     warnings: string[];
   };
   response: {

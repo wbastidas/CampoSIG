@@ -84,6 +84,7 @@ function detail(overrides: Partial<ReviewDetail> = {}): ReviewDetail {
       title: 'Inspección preventiva',
       schema: {},
       ui_schema: {},
+      rules: [],
       warnings: [],
     },
     response: {
@@ -304,7 +305,12 @@ describe('mostrar un valor de respuesta', () => {
   it('escalares y vacíos', () => {
     expect(displayValue('concrete')).toBe('concrete');
     expect(displayValue(11.5)).toBe('11.5');
-    expect(displayValue(true)).toBe('true');
+    // Sí/No, no `true`/`false`: la UI está en español del Ecuador (regla 11) y un supervisor
+    // leyendo `true` bajo «¿Quedó señalizado?» está viendo el formato de almacenamiento en vez de
+    // la respuesta. El acta imprime las mismas palabras, así que papel y pantalla concuerdan.
+    expect(displayValue(true)).toBe('Sí');
+    expect(displayValue(false)).toBe('No');
+    expect(displayValue('   ')).toBe('—');
     expect(displayValue(null)).toBe('—');
     expect(displayValue(undefined)).toBe('—');
     expect(displayValue('')).toBe('—');

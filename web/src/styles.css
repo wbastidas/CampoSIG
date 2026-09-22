@@ -416,3 +416,67 @@ fieldset {
   color: var(--texto-suave);
   margin: 0.25rem 0 0.5rem;
 }
+
+/* Vista del formulario capturado (I6). Dos columnas de definición: etiqueta y respuesta, que es
+   como se lee un formulario en papel y como el supervisor espera encontrarlo. */
+.form-view__fields {
+  display: grid;
+  grid-template-columns: minmax(10rem, 18rem) 1fr;
+  gap: 0.25rem 1rem;
+  margin: 0.25rem 0 0.75rem;
+}
+
+.form-view__fields dt {
+  color: var(--texto-suave);
+}
+
+.form-view__fields dd {
+  margin: 0;
+}
+
+.form-view__block {
+  color: var(--texto-suave);
+  font-weight: normal;
+  font-size: 0.85em;
+}
+
+/* La procedencia va pegada al valor, no en un anexo: la regla 8 pide que se pueda auditar, y un
+   anexo se lee después de haber creído el número. */
+.form-view__origin {
+  font-size: 0.85em;
+  color: var(--texto-suave);
+  font-style: italic;
+}
+
+.form-view__empty {
+  color: var(--texto-suave);
+}
+
+.form-view__owed {
+  font-weight: bold;
+}
+
+.form-view__owed-reason {
+  font-size: 0.9em;
+  color: var(--alarma);
+}
+
+.form-view__warnings {
+  border: 1px solid var(--borde);
+  background: var(--fondo-alterno);
+  border-radius: var(--radio);
+  padding: 0.25rem 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+@media (max-width: 40rem) {
+  /* En un teléfono o una ventana estrecha, dos columnas parten las etiquetas en tres líneas. */
+  .form-view__fields {
+    grid-template-columns: 1fr;
+    gap: 0 0;
+  }
+
+  .form-view__fields dd {
+    margin-bottom: 0.5rem;
+  }
+}

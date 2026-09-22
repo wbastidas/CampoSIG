@@ -328,8 +328,42 @@ establece ahora precisamente para que no pueda divergir al escribirlo.
 | Antes/después | ✅ con la misma foto enviada dos veces detectada por hash, y la evidencia cuyo hash no cuadra destacada |
 | Impedimentos antes de pulsar Aprobar | ✅ y si el servidor rechaza, devuelve la lista y la pantalla la muestra como lista |
 | Bandeja hacia el GIS | ✅ propuestas y lotes, con las que requieren ArcFM contadas aparte (ADR-001) |
-| Render en un navegador | ✅ 26 tests de lógica y 14 de render en jsdom |
+| Render en un navegador | ✅ 26 tests de lógica y 16 de render en jsdom |
 | Acta PDF con QR de verificación (RF-115) | ✅ `app/reports/`, WeasyPrint + segno |
+| **Vista de formulario** | ✅ `web/src/forms/FormView.tsx`: los bloques en su orden, la captura tal como la escribió la cuadrilla |
+
+### La vista de formulario, y lo que faltaba sin ella
+
+La pantalla de revisión mostraba todo *sobre* una captura —la auditoría de IA, los hallazgos
+normativos, las fotos antes y después, los impedimentos— y **nunca la captura**. Un supervisor podía
+aprobar una OT sin haber visto una sola vez las respuestas como las escribió la cuadrilla, que es la
+única vista de la que trata la decisión.
+
+Se compone del `schema` y del `ui_schema` generados, con los bloques en el orden del formulario, y
+no de una lista de campos escrita en el código: esa lista deja de mencionar el que un administrador
+funcional añade mañana y la pantalla sigue pareciendo completa. Es la misma regla que el acta aplica
+en papel.
+
+Es de **solo lectura** a propósito. Un supervisor corrige devolviendo la OT con una observación en el
+campo exacto (RF-112), no editando lo que otro registró: una aprobación vale porque dice que una
+persona revisó lo que la cuadrilla escribió, y una respuesta editada que nadie puede atribuir no vale
+nada. El renderizador editable pertenece a la captura de oficina y reutilizará esta disposición y
+estas reglas.
+
+Tres cosas se marcan sobre el campo, porque ninguna debería tener que inferirse: un valor que
+propuso un modelo —con modelo, versión, confianza y si alguien lo confirmó o lo corrigió (regla 8)—,
+un obligatorio vacío, y un campo que una regla condicional exige dadas las demás respuestas. Lo
+último sale de `rules.ts`, el mismo evaluador que corre el teléfono contra el corpus compartido, así
+que la pantalla marca exactamente lo que el servidor va a rechazar.
+
+Y **un campo huérfano se muestra**: uno que el esquema declara, la cuadrilla respondió y ningún
+bloque agrupa es la única forma en que esta vista puede perder datos en silencio, así que aparece
+bajo su propio encabezado como algo que alguien debe reportar.
+
+**Nota sobre RJSF.** El plan nombraba `react-jsonschema-form`. No se usó: el esquema que esta
+plataforma renderiza es un subconjunto que ella misma genera, y RJSF traería un árbol de
+dependencias para widgets que habría que sobrescribir de todos modos. La semántica compartida —que
+es lo que el entregable pide— la da el corpus de validación, no la biblioteca.
 
 ### El acta, y qué significa que un QR verifique (RF-115)
 
@@ -697,8 +731,8 @@ niveles:
 
 | Nivel | Qué prueba | Cuántos |
 |---|---|---|
-| Lógica pura | Orden, severidad, PKCE, sesión, importador, contrato de validación | 178 |
-| Render (jsdom) | Que las pantallas muestren lo que hay que ver | 60 |
+| Lógica pura | Orden, severidad, PKCE, sesión, importador, validación, disposición | 195 |
+| Render (jsdom) | Que las pantallas muestren lo que hay que ver | 72 |
 | Navegador real (Chromium) | Que **el artefacto que se despliega** cargue y la puerta de login aguante | 3 |
 
 `pnpm lint` también era un comando documentado que no existía: no había `eslint.config.js`, así
