@@ -115,9 +115,9 @@ def test_rf_301_el_documento_propuesto_resuelve_igual_que_el_original(profile_id
                 # Legítimo, y es la propiedad que importa: lo que la propuesta no resuelve
                 # sola queda sin decidir y aparece en la lista de huecos, en vez de
                 # resolverse a cara o cruz. Lo que no se admite es que falte en silencio.
-                assert any(
-                    asset_key in gap and attribute.key in gap for gap in proposal.gaps
-                ), f"'{asset_key}.{attribute.key}' se perdió sin quedar reportado"
+                assert any(asset_key in gap and attribute.key in gap for gap in proposal.gaps), (
+                    f"'{asset_key}.{attribute.key}' se perdió sin quedar reportado"
+                )
                 continue
             assert got.field == expected.field
 

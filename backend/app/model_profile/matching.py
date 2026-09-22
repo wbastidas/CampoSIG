@@ -97,9 +97,7 @@ class MatchingVocabulary(BaseModel):
 def load_matching_vocabulary(path: str | None = None) -> MatchingVocabulary:
     default = Path(__file__).resolve().parents[3] / "profiles" / "amd" / "matching-es-EC.yaml"
     location = Path(path) if path else default
-    return MatchingVocabulary.model_validate(
-        yaml.safe_load(location.read_text(encoding="utf-8"))
-    )
+    return MatchingVocabulary.model_validate(yaml.safe_load(location.read_text(encoding="utf-8")))
 
 
 # --- name folding ------------------------------------------------------------------
@@ -203,9 +201,7 @@ _TYPE_COMPATIBILITY: dict[AttributeType, frozenset[str]] = {
     AttributeType.BOOLEAN: frozenset({"smallinteger", "short", "integer", "string"}),
     AttributeType.DATE: frozenset({"date", "datetime", "timestamp"}),
     # An enum lives wherever its domain lives, which is a string or an integer code.
-    AttributeType.ENUM: frozenset(
-        {"string", "text", "integer", "smallinteger", "long", "short"}
-    ),
+    AttributeType.ENUM: frozenset({"string", "text", "integer", "smallinteger", "long", "short"}),
 }
 
 #: A code kept as a number is common and workable, but it is not what the canonical type
@@ -333,8 +329,7 @@ class AssetProposal(BaseModel):
         if self.ambiguous:
             names = ", ".join(c.layer for c in self.candidates[:2])
             problems.append(
-                f"'{self.asset_type_key}': dos clases puntúan casi igual ({names}); "
-                "hay que elegir"
+                f"'{self.asset_type_key}': dos clases puntúan casi igual ({names}); hay que elegir"
             )
         for attribute in self.attributes:
             if attribute.best is None and attribute.required:
@@ -972,9 +967,7 @@ def propose_asset_against(
     asset_type = model.asset_type(asset_type_key)
     layer = metadata.layer(layer_name)
     if layer is None:
-        raise DocumentError(
-            f"la clase '{layer_name}' no está en los metadatos sincronizados"
-        )
+        raise DocumentError(f"la clase '{layer_name}' no está en los metadatos sincronizados")
 
     scored = propose_layer(
         asset_type, layer, metadata, model, words, spoken.attribute_cues, spoken.enum_synonyms
