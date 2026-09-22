@@ -21,6 +21,9 @@ THIRD_PARTY_LICENSES.md
 node_modules/
 dist/
 
+# Caché incremental de `tsc -b`: un artefacto de una compilación concreta.
+*.tsbuildinfo
+
 # Salidas de Playwright: informes y trazas de una ejecución, no fuentes.
 test-results/
 playwright-report/
