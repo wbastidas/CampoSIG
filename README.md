@@ -43,16 +43,24 @@ despliegue a cuadrillas. El detalle por incremento está en
 | `backend/app/responses/`, `review/`, `gis_gateway/` | Captura, evidencias, revisión y *staging* as-built hacia el GIS | |
 | [`backend/app/voice/`](backend/app/voice/README.md) | Voz → formulario: normalizador es-EC, léxico, gramática GBNF | |
 | [`backend/app/vision/`](backend/app/vision/README.md) | Taxonomía, prellenado y comparador antes/después | |
+| `backend/app/regulatory/` | Parámetros con vigencia y reglas de cumplimiento deterministas (ADR-007) | |
+| `backend/app/integrations/` | Outbox transaccional y adaptadores de OT y call center (ADR-012) | |
 | `android/core/sync/` | Motor de sincronización offline, Kotlin puro sin Android (ADR-010) | 52 |
 | `gis-agent/` | Agente arcpy, Python 2.7, el único que toca el GIS (ADR-008) | 44 |
 | `web/src/features/` | Asignación gráfica y tablero de despliegue | 40 |
 
-El backend suma **511 tests** que corren contra PostgreSQL 16 + PostGIS real y **bajo los dos
+El backend suma **575 tests** que corren contra PostgreSQL 16 + PostGIS real y **bajo los dos
 perfiles de modelo de datos**, que es la forma de comprobar que la independencia del modelo no es
-una aspiración.
+una aspiración. Las integraciones se prueban **contra los simuladores de verdad**, levantados
+dentro del propio test.
 
 Lo que todavía no se ha ejecutado: la app Android (falta el SDK), el agente contra un ArcMap real
 (falta la máquina) y los modelos de voz y visión (faltan los pesos y las fotos del piloto).
+
+Y una advertencia que no es técnica: los valores de `seeds/regulatory-ec.yaml` están marcados
+**sin verificar** a propósito. Son la estructura y la referencia a la norma, no la cifra
+confirmada. Antes del piloto hay que abrir las resoluciones vigentes y cargarlos con el nombre de
+quien las leyó.
 
 Antes de escribir código conviene leer [`CLAUDE.md`](CLAUDE.md), en particular las reglas 4, 5 y 6:
 no filtrar nombres del modelo de datos al código, no escribir campos de conectividad, y mantener el

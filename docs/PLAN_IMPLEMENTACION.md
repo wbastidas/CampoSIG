@@ -289,6 +289,45 @@ Ruta T y la Ruta W, el paquete de modelos del teléfono, la UI de revisión IA e
 
 **Aceptación:** pruebas de contrato contra los simuladores; un reclamo entrante genera OT y se cierra automáticamente al aprobarse; la réplica de bajada corre sola durante una semana sin intervención.
 
+### Avance de I8
+
+| Entregable | Estado |
+|---|---|
+| Bus de eventos interno (RF-125) | ✅ `integration_event` como **outbox transaccional**: el evento se escribe en la transacción de la aprobación, así que no se puede perder ([ADR-012](adr/ADR-012-bus-de-eventos-transaccional.md)) |
+| Bitácora consultable con reintento manual | ✅ API + pantalla web; el botón reencola de verdad y reinicia el contador |
+| Adaptador de OT bidireccional (RF-120) | ✅ importación idempotente por referencia externa, y empuje de estado y resultado |
+| Adaptador de call center (RF-124) | ✅ reclamo → OT una sola vez; aprobar la OT encola el cierre del reclamo |
+| Simulador de call center | ✅ `tools/call-centre-mock`, en el Compose de desarrollo |
+| Pruebas de contrato contra los simuladores | ✅ los simuladores se **levantan dentro del test** y se verifica el ida y vuelta completo |
+| Conector ArcGIS de bajada programada (RF-340) | Pendiente: necesita el agente contra un ArcMap real (I1) |
+| *Worker* periódico de entrega | Pendiente: la entrega se invoca desde la API y los tests; pasa a un worker en I9 |
+
+**El fallo que esto impide.** Una cuadrilla repone la luminaria, el supervisor aprueba, todos
+consideran el caso cerrado — y el reclamo del cliente sigue abierto, porque cerrarlo era un
+efecto secundario que nadie garantizó. Ahora el cierre se escribe junto con la aprobación: si
+la aprobación se guardó, el evento existe.
+
+---
+
+## Cumplimiento normativo determinista (ADR-007)
+
+Lo que reemplazó al RAG normativo, y que hasta ahora era una promesa del addendum:
+
+| Entregable | Estado |
+|---|---|
+| `regulatory_parameter` con vigencia y referencia a la norma | ✅ nunca se sobrescribe: una resolución nueva cierra el período anterior, así que una aprobación de marzo sigue explicándose con el límite de marzo |
+| Reglas deterministas | ✅ plazo de reposición de APG, umbral de interrupción no computable y resistencia de puesta a tierra admisible |
+| Hallazgos citados | ✅ cada hallazgo trae medición, límite, norma y numeral; un hallazgo sin cita es una opinión |
+| Bloque de mediciones en los formularios | ✅ `B13`, con `x-regulatory-parameter` por campo — el **código** del parámetro, nunca su valor |
+| Compuerta en la aprobación | ✅ solo bloquea un incumplimiento alto y **verificado**: un parámetro que nadie cargó es una omisión de la oficina, no de la cuadrilla |
+| Valores confirmados contra el texto oficial | ⚠️ **Pendiente y deliberado.** `seeds/regulatory-ec.yaml` trae la estructura y la referencia, con todos los valores marcados `verified: false`. Nadie de este equipo ha leído las resoluciones vigentes, y una cifra inventada que se convierte en un veredicto de cumplimiento es peor que no tener la regla |
+| Repositorio documental con búsqueda de texto completo | Pendiente (I12) |
+
+Tres propiedades tienen su test porque cada una corresponde a una forma de equivocarse:
+un hecho ausente **no** es un cumplimiento, un límite ausente **tampoco**, y un límite sin
+verificar da un veredicto marcado como provisional en vez de una cita al texto oficial. Los
+parámetros de consecuencia legal —la puesta a tierra— no se evalúan en absoluto sin verificar.
+
 ---
 
 ## I9 — Piloto 1 · 8 semanas 🟢
@@ -394,8 +433,8 @@ Sin RAG (ADR-007). El nodo de normativa funciona con parámetros y reglas, no co
 ## Nota sobre el estado de verificación
 
 Los tests de integración **se ejecutaron contra PostgreSQL 16 + PostGIS 3.4 real**, no solo en CI:
-511 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las siete
-migraciones aplicadas y revertidas sobre una base limpia (21 tablas de la aplicación, más
+575 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las nueve
+migraciones aplicadas y revertidas sobre una base limpia (23 tablas de la aplicación, más
 `alembic_version` y las de PostGIS).
 
 Eso destapó cuatro defectos que ni el lint, ni `mypy --strict`, ni el renderizado de SQL offline

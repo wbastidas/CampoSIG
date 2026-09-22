@@ -32,6 +32,11 @@ fields:
     title: Luminaria operativa al finalizar
     x-voice: true
     x-vision-source: lamp_lit
+  restored_at:
+    type: string
+    format: date-time
+    title: Fecha-hora de reposición del servicio
+    x-voice: false
   # Calculado: cierre menos reclamo, contra el máximo de regulatory_parameter (ADR-007).
   restoration_hours:
     type: number

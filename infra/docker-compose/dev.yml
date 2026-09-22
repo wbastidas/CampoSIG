@@ -84,6 +84,12 @@ services:
       context: ../../tools/legacy-ot-mock
     ports: ["8182:8182"]
 
+  # Reclamos: una OT nace de un reclamo y el reclamo se cierra al aprobar la OT (RF-124).
+  call-centre-mock:
+    build:
+      context: ../../tools/call-centre-mock
+    ports: ["8183:8183"]
+
 volumes:
   postgres-data:
   seaweed-data:

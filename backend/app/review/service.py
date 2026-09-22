@@ -13,7 +13,11 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.integrations.callcentre_adapter import enqueue_claim_closure
+from app.integrations.workorder_adapter import enqueue_result_push, enqueue_status_push
 from app.org.models import BusinessUnit
+from app.regulatory import rules as compliance
+from app.regulatory.facts import facts_from
 from app.responses.models import FormResponse, ResponseState
 from app.responses.service import compose_for, missing_photos, unconfirmed_ai_values
 from app.review.models import Decision, FieldObservation, ReviewDecision
@@ -105,7 +109,33 @@ def approval_blockers(
     if response.state == ResponseState.DRAFT:
         reasons.append("la respuesta sigue en borrador; el técnico no la ha cerrado")
 
+    # Regulatory breaches, evaluated deterministically against the limit in force (ADR-007).
+    # Only a confirmed high-severity breach against a *verified* limit blocks: a parameter
+    # nobody loaded is the office's omission, and blocking the crew's approval over it would
+    # put the cost on the wrong person. The rest travel as findings for the supervisor.
+    for finding in compliance_findings(session, order, response):
+        if finding.blocking:
+            citation = (
+                f" ({finding.norm_ref}{f', {finding.article_ref}' if finding.article_ref else ''})"
+            )
+            reasons.append(f"incumplimiento normativo: {finding.message}{citation}")
+
     return reasons
+
+
+def compliance_findings(
+    session: Session, order: WorkOrder, response: FormResponse | None
+) -> list[compliance.Finding]:
+    """What the deterministic rules say about this capture (ADR-007, RF-350, RF-351).
+
+    Derived rather than stored, and that is deliberate: the facts live in the response and the
+    limit lives in `regulatory_parameter` with its period of force, so re-running this on an
+    order approved in March reproduces March's verdict exactly. A snapshot would be a second
+    copy of the truth, free to drift from the rule that produced it.
+    """
+    if response is None:
+        return []
+    return compliance.evaluate(session, facts_from(order, response.answers))
 
 
 def decide(
@@ -167,6 +197,20 @@ def decide(
         transition(session, order, WorkOrderState.APPROVED)
         if response is not None:
             response.state = ResponseState.APPROVED
+        # The outbound events are written here, in the approval's own transaction (RF-120,
+        # RF-124). That ordering is the point: a crew fixes the lamp, a supervisor approves,
+        # and the customer's claim stays open — that is what happens when telling the other
+        # system is a side effect nobody guaranteed. Delivery happens later and may fail,
+        # retry, or wait for a person; it cannot be lost.
+        enqueue_status_push(session, unit, order, state=WorkOrderState.APPROVED.value)
+        enqueue_result_push(
+            session,
+            unit,
+            order,
+            summary=(response.answers or {}).get("summary") if response else None,
+            evidence_keys=[item.storage_key for item in response.evidence] if response else [],
+        )
+        enqueue_claim_closure(session, unit, order)
     elif decision == Decision.RETURNED:
         transition(
             session,
