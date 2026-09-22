@@ -118,11 +118,56 @@ Se trabaja **sobre una copia** de la geodatabase, nunca sobre producción, y **e
 | Generador de JSON Schema + UI Schema (RF-303) | Listo |
 | Contrato HTTP con el agente: ingesta de metadatos y resultados por propuesta | Listo |
 | Persistencia de snapshots de metadatos, versionada y no destructiva | Listo |
-| Importador web con coincidencia asistida (`/admin/model-profile`) | Pendiente |
+| Importador web con coincidencia asistida (`/admin/model-profile`) | ✅ propone bindings con la evidencia de cada uno, versiona y publica |
 | Verificación contra metadatos reales de la geodatabase | Bloqueada por el acceso de I1 |
 
-Lo que falta de I2 es la pantalla de administración y la validación contra metadatos reales.
-El motor está completo y probado contra dos modelos de datos deliberadamente distintos.
+Lo que falta de I2 es la validación contra metadatos reales, que depende del acceso de I1. El
+motor y el importador están completos y probados contra dos modelos de datos deliberadamente
+distintos.
+
+### El importador: lo que propone, y lo que se niega a decidir
+
+Esto era el hueco de I2. Estaban el motor que usa el perfil y el validador que lo revisa, y
+ninguna forma de llegar a él: alguien tenía que escribir el YAML a mano adivinando cuál de
+doscientas clases es la que el `support_structure` canónico quiere decir.
+
+`model_profile/matching.py` lee un snapshot del agente y propone bindings **con la razón de
+cada uno escrita en castellano**: qué término del nombre coincidió, cuántos atributos
+canónicos encuentran campo, si la geometría es la que el tipo pide, y cuántos valores del
+enum canónico ofrece el dominio. La confianza se presenta en palabras, no como porcentaje:
+un «0,62» invita a tratar una conjetura como una medición.
+
+Tres reglas, y cada una viene de una forma de equivocarse:
+
+| Regla | El fallo que impide |
+|---|---|
+| Una propuesta no es un binding | Un importador que eligiera mal la clase produce un perfil que *funciona* —los formularios se generan, la sincronización corre— mientras los datos de campo aterrizan en la clase equivocada. No se nota en semanas |
+| La ambigüedad se reporta, no se resuelve | Preseleccionar una cara de la moneda y llamarlo valor por defecto es cómo un binding equivocado lo acepta alguien pasando pantallas |
+| Conectividad y auditoría nunca son candidatos | Un campo de la red geométrica se rechaza por categoría aunque el alias encaje perfecto (ADR-001), y también como anulación manual; y `OBJECTID` no es clave de negocio, que es lo que parecería si nadie lo impidiera |
+
+**Y una regla que descubrió la propia suite.** Con un snapshot de una sola clase puntual,
+cinco de los seis tipos canónicos recibían candidato: coincidir en `code` y `feeder_code`
+bastaba para pasar el piso de puntuación. Pero tener código y pertenecer a un alimentador lo
+cumple toda clase de una geodatabase eléctrica. Ahora la evidencia estructural solo cuenta si
+se apoya en atributos que **distinguen**, y el conjunto de los que distinguen se deriva del
+AMD. Consecuencia honesta: `service_point`, que no tiene ningún atributo propio, solo se
+identifica por el nombre de la clase, y eso se dice en vez de adivinarse.
+
+**Publicar tiene efecto y deja rastro.** `profile_draft` guarda versión, decisiones,
+documento y huecos; publicar **supersede** en vez de editar, porque un formulario generado en
+marzo tiene que seguir explicándose en septiembre. Dos índices parciales imponen un solo
+borrador abierto y una sola versión publicada por unidad y perfil — dos administradores en
+paralelo es cómo se pierde la mitad del trabajo de uno, y lo rechaza la base, no la pantalla.
+`resolver_for_unit` prefiere el perfil publicado con recaída al archivo, que es lo que hace
+verdadero el «sin recompilar»; el YAML se exporta igual, porque un mapeo de esquema que solo
+existió en una base de producción es uno que nadie puede diferenciar cuando los datos salen
+mal.
+
+La verificación más fuerte que se puede montar sin geodatabase: se generan los metadatos que
+el agente habría exportado de un perfil conocido, y la propuesta vuelve a ese mismo perfil
+—clase por clase y campo por campo—, con el resolver construido sobre lo propuesto
+contestando lo mismo que el original. Con los dos perfiles, que están en idiomas distintos,
+así que lo verificado es el mecanismo y no un diccionario afinado a un cliente.
 
 **Aceptación (RF-301):** partiendo del export de metadatos de otra Unidad de Negocio, un administrador funcional produce un perfil operativo y genera los formularios de los seis tipos **sin escribir código ni recompilar**. El CI ejecuta la suite completa dos veces, con el perfil CNEL y con el alterno, y ambas pasan.
 
@@ -485,8 +530,8 @@ Sin RAG (ADR-007). El nodo de normativa funciona con parámetros y reglas, no co
 ## Nota sobre el estado de verificación
 
 Los tests de integración **se ejecutaron contra PostgreSQL 16 + PostGIS 3.4 real**, no solo en CI:
-633 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las diez
-migraciones aplicadas y revertidas sobre una base limpia (23 tablas de la aplicación, más
+684 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las once
+migraciones aplicadas y revertidas sobre una base limpia (24 tablas de la aplicación, más
 `alembic_version` y las de PostGIS).
 
 Eso destapó cuatro defectos que ni el lint, ni `mypy --strict`, ni el renderizado de SQL offline
@@ -525,8 +570,8 @@ niveles:
 
 | Nivel | Qué prueba | Cuántos |
 |---|---|---|
-| Lógica pura | Orden, severidad, PKCE, sesión | 107 |
-| Render (jsdom) | Que las pantallas muestren lo que hay que ver | 42 |
+| Lógica pura | Orden, severidad, PKCE, sesión, decisiones del importador | 127 |
+| Render (jsdom) | Que las pantallas muestren lo que hay que ver | 56 |
 | Navegador real (Chromium) | Que **el artefacto que se despliega** cargue y la puerta de login aguante | 3 |
 
 `pnpm lint` también era un comando documentado que no existía: no había `eslint.config.js`, así

@@ -321,3 +321,84 @@ fieldset {
   height: calc(100vh - 8rem);
   min-height: 24rem;
 }
+
+/* Importador de perfiles (RF-301). La lista es larga y se lee de arriba a abajo: una
+   tarjeta por tipo de activo canónico, plegada hasta que alguien la abra. */
+.importer__hint,
+.importer__geometry {
+  color: var(--texto-suave);
+}
+
+.importer__progress {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 0.2rem 1rem;
+  width: fit-content;
+  margin: 0.5rem 0;
+}
+
+.importer__progress dt {
+  color: var(--texto-suave);
+}
+
+.importer__start {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 0.5rem 0;
+}
+
+.importer__assets {
+  list-style: none;
+  padding: 0;
+}
+
+.importer__asset {
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  margin-bottom: 0.5rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.importer__asset > header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.importer__detail {
+  border-top: 1px solid var(--borde);
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+}
+
+.importer__evidence {
+  color: var(--texto-suave);
+  font-size: 0.9em;
+  margin: 0.2rem 0 0.6rem 1.5rem;
+  padding: 0;
+}
+
+/* La confianza se dice en palabras; el color solo la acompaña, nunca la sustituye —
+   quien no distingue estos dos verdes sigue leyendo «confianza baja». */
+.importer__confidence {
+  font-size: 0.9em;
+  padding: 0 0.35rem;
+  border-radius: var(--radio);
+  background: var(--fondo-alterno);
+}
+
+.importer__confidence--baja {
+  background: var(--alarma-fondo);
+  color: var(--alarma);
+}
+
+.importer__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin: 1rem 0;
+}
