@@ -65,13 +65,27 @@ def resolve_agent(session: Session, agent_key: str) -> AgentRegistration:
     return agent
 
 
-def resolver_for_unit(unit: BusinessUnit) -> ModelResolver:
-    """The model resolver for a unit, built from the profile the unit declares.
+def resolver_for_unit(unit: BusinessUnit, session: Session | None = None) -> ModelResolver:
+    """The model resolver for a unit: its published profile if it has one, else the file.
 
     Several units normally share one profile: the schema is national. What differs between
     them is the metadata snapshot, which is why snapshots are keyed by unit and resolvers
     are not cached across them.
+
+    The published version wins when a session is available, which is what makes RF-301 true
+    rather than aspirational: a unit adopts a profile the importer produced without a
+    deployment. Falling back to the file rather than failing is deliberate — a unit that has
+    never used the importer keeps running exactly as before, and `profiles/` stays the
+    reviewable, diffable form of the same document.
     """
+    if session is not None:
+        # Imported here so the org layer does not depend on the profile store at import
+        # time, and so a caller with no session pays nothing for it.
+        from app.model_profile.drafts import published_profile
+
+        adopted = published_profile(session, unit.id, unit.profile_id)
+        if adopted is not None:
+            return ModelResolver(adopted)
     return ModelResolver(load_profile(unit.profile_id))
 
 
@@ -88,7 +102,7 @@ def context_for_unit(
     session: Session, unit: BusinessUnit
 ) -> tuple[ModelResolver, GisMetadata | None]:
     """Everything the form generator needs for one business unit."""
-    return resolver_for_unit(unit), metadata_for_unit(session, unit)
+    return resolver_for_unit(unit, session), metadata_for_unit(session, unit)
 
 
 def active_units(session: Session) -> list[BusinessUnit]:

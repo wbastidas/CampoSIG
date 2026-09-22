@@ -7,6 +7,7 @@ from app.api import (
     gis,
     health,
     integrations,
+    model_profile,
     planning,
     regulatory,
     review,
@@ -25,6 +26,7 @@ def create_app() -> FastAPI:
     )
     app.include_router(health.router)
     app.include_router(gis.router)
+    app.include_router(model_profile.router)
     app.include_router(planning.router)
     app.include_router(voice.router)
     app.include_router(dispatch.router)

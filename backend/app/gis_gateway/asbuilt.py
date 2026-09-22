@@ -109,7 +109,7 @@ def stage_from_work_order(
             f"solo se materializan propuestas de una OT aprobada; esta está en '{order.state}'"
         )
 
-    resolver = resolver_for_unit(unit)
+    resolver = resolver_for_unit(unit, session)
     staged: list[uuid.UUID] = []
 
     for raw in proposals:
@@ -222,7 +222,7 @@ def batch_payload(session: Session, unit: BusinessUnit, batch: AsBuiltBatch) -> 
     the agent stays a thin executor and the profile remains the single place that knows how
     canonical keys map to a geodatabase.
     """
-    resolver = resolver_for_unit(unit)
+    resolver = resolver_for_unit(unit, session)
     table = _proposal_table()
     rows = session.execute(
         select(
