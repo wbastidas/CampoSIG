@@ -629,11 +629,63 @@ Sin RAG (ADR-007). El nodo de normativa funciona con parámetros y reglas, no co
 |---|---|
 | Pasarela de modelos y planificador de GPU | ✅ alias como datos, admisión por perfil, colas día/noche y degradación (RF-200 a RF-205) |
 | **Cumplimiento normativo determinista** | `regulatory_parameter` con vigencia y referencia a la norma; reglas de cumplimiento (plazos de APG, umbral de interrupción no computable, resistencia de tierra admisible); repositorio documental con búsqueda de texto completo y enlace al numeral |
-| Grafo de pre-revisión | M17: coherencia, catálogos y normativa, evidencia visual, anomalías, consolidador. Reglas deterministas primero; el LLM solo interpreta texto libre y redacta observaciones |
+| Grafo de pre-revisión | ✅ mitad determinista (coherencia, anomalías, consolidador) con el guardrail de evidencia; los nodos de modelo declarados y degradados por M19 |
 | Informe en la revisión | RF-111 con observaciones enlazadas a su evidencia, y RF-111a (muestra ciega) |
 | Evaluación en CI | Conjuntos dorados de coherencia, evidencia visual, anomalías y seguridad; DeepEval, promptfoo, *red teaming*. **Sin RAGAS**: no hay recuperación que medir |
 | **Instrumentación para decidir sobre M18** | Registrar las consultas normativas que hacen técnicos y supervisores y cuáles no resuelve la búsqueda de texto completo. Es el dato que falta para decidir si el RAG se justifica después (ADR-007) |
 | Endurecimiento | Pentest, rendimiento, evaluación de impacto LOPDP, documentación de operación, despliegue escalonado |
+
+### M17: el grafo de pre-revisión, la mitad que no necesita modelos
+
+La regla 1 de la sección 7.7 del SRS dice **reglas deterministas primero, el LLM después**, y eso es
+lo que se construyó: los nodos de coherencia (RF-171) y de anomalías (RF-174) son funciones puras
+sobre los hechos de una captura, el consolidador (RF-175) produce el `AgentReport` del Anexo D, y los
+nodos que necesitan un modelo quedan declarados y degradados por M19.
+
+No se usó LangGraph. El framework se gana su sitio cuando hay puntos de control que reanudar y
+llamadas a modelos que reintentar; hoy cada nodo es una función pura, y envolver cinco de ellas en
+una máquina de estados añadiría una dependencia, un formato de serialización y un modo de fallo a
+cambio de nada. LangGraph entra con los nodos LLM de I12, que es lo que orquestará.
+
+**El guardrail es la pieza central.** La nota 3 de 7.7: *una observación = evidencia + fuente*. Una
+observación sin nada que señalar es una opinión, y una opinión en un documento que un supervisor usa
+para aprobar trabajo de campo es peor que el silencio — gasta su atención y no se puede comprobar. Se
+descarta, y el descarte **se cuenta** en el informe: un nodo que empiece a producir observaciones sin
+apoyo se nota en la ejecución siguiente y no en seis meses. Las normativas tienen una segunda barra
+(RF-172): sin cita al documento no pasan, y no se salvan cambiándoles la categoría.
+
+Lo que las reglas miran, y lo que deliberadamente no:
+
+| Nodo | Encuentra | No duplica |
+|---|---|---|
+| Coherencia | horas fuera de secuencia, horas posteriores al envío, captura lejos del activo, evidencia con hash que no cuadra, valor de IA aceptado sin cambios con poca confianza | los impedimentos de I6, que ya bloquean la aprobación |
+| Anomalías | ejecución implausiblemente corta, **la misma foto cerrando dos OT distintas**, un mismo punto GPS en dos OT, un archivo repetido dentro de la OT | las horas al revés, que son hallazgo de coherencia: leer el mismo error en dos voces es peor que leerlo una vez |
+| Normativa | los hallazgos deterministas de ADR-007, **transportados** con su cita | no los recalcula: el informe tiene que concordar con la compuerta de aprobación que decidió |
+
+Las reglas entre OT son las que aportan de verdad: dentro de una OT la pantalla de revisión ya señala
+un archivo enviado dos veces; la misma fotografía cerrando dos órdenes, o un GPS cerrando órdenes en
+dos parroquias, es el patrón que nada mira hoy.
+
+**El tono está en el requerimiento, y no por cortesía.** RF-174 pide «no acusa: marca para
+revisión», con la regla o el estadístico visible en cada alerta. Un informe que acusa se discute en
+vez de comprobarse, y la cuadrilla nombrada deja de cooperar con la plataforma — a esa altura el
+agente ha costado más de lo que encontró. Un test comprueba el lenguaje.
+
+Y **la regla 14 se verifica estructuralmente**: el paquete no puede importar nada que escriba el
+estado de una OT, y un recorrido del árbol de sintaxis lo impone. El fallo que importa no es escribir
+mal una función hoy, es que alguien añada el atajo dentro de un año —«solo para las de riesgo
+bajo»— y que nadie lo note. La guarda está probada en negativo.
+
+**Y un defecto de localización que salió al probarlo:** `:,.0f` de Python escribía «6,480 m», que en
+español del Ecuador se lee como seis coma cuatro ocho metros — los separadores están al revés. Ahora
+las distancias van sin agrupación por debajo del kilómetro y en kilómetros con coma decimal por
+encima, que además se juzga más rápido: «a 6,5 km del activo» entra de una.
+
+Falta la mitad que necesita modelos (los nodos VLM y de redacción, I12), la persistencia de
+`agent_run`, `agent_report` y `agent_step_trace` para RF-180, y la aprobación en lote asistida de
+RF-176 con su muestreo obligatorio.
+
+---
 
 ### M19: la pasarela de modelos, y que nadie espere a un modelo
 
@@ -691,7 +743,7 @@ está y se prueba.
 ## Nota sobre el estado de verificación
 
 Los tests de integración **se ejecutaron contra PostgreSQL 16 + PostGIS 3.4 real**, no solo en CI:
-895 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las doce
+944 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las doce
 migraciones aplicadas y revertidas sobre una base limpia (25 tablas de la aplicación, más
 `alembic_version` y las de PostGIS).
 
