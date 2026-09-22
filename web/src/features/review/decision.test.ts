@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 import type { ComplianceFinding, Provenance, QueueItem, ReviewDetail } from '../../api/review';
 import {
   acceptanceRate,
+  displayValue,
   attentionFor,
   citationFor,
   correctedAiValues,
@@ -276,5 +277,38 @@ describe('bandeja GIS', () => {
       proposals: [{ requires_arcfm: true }, { requires_arcfm: false }, { requires_arcfm: true }],
     };
     expect(needsArcFm(tray)).toBe(2);
+  });
+});
+
+describe('mostrar un valor de respuesta', () => {
+  it('un valor de JSONB puede ser un objeto, y String() lo convierte en [object Object]', () => {
+    // El defecto que este test fija: el supervisor veía "[object Object]" donde debía ver el
+    // valor propuesto, y creía que se le había mostrado algo.
+    const objeto = { activity_code: 'PODA', quantity: 2 };
+    expect(`${objeto as unknown as string}`).toBe('[object Object]');
+    expect(displayValue({ activity_code: 'PODA', quantity: 2 })).toBe(
+      'activity_code: PODA; quantity: 2',
+    );
+  });
+
+  it('una tabla repetible se lee como una lista', () => {
+    expect(displayValue([{ material_code: 'LED-50' }, { material_code: 'FOTO-01' }])).toBe(
+      'material_code: LED-50, material_code: FOTO-01',
+    );
+  });
+
+  it('escalares y vacíos', () => {
+    expect(displayValue('concrete')).toBe('concrete');
+    expect(displayValue(11.5)).toBe('11.5');
+    expect(displayValue(true)).toBe('true');
+    expect(displayValue(null)).toBe('—');
+    expect(displayValue(undefined)).toBe('—');
+    expect(displayValue('')).toBe('—');
+    expect(displayValue([])).toBe('—');
+    expect(displayValue({})).toBe('—');
+  });
+
+  it('un límite regulatorio con rango se muestra entero', () => {
+    expect(displayValue({ min: 5, max: 25 })).toBe('min: 5; max: 25');
   });
 });

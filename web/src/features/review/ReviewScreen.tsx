@@ -31,6 +31,7 @@ import {
   acceptanceRate,
   attentionFor,
   citationFor,
+  displayValue,
   evidenceByStage,
   needsArcFm,
   OUTCOME_LABEL,
@@ -94,16 +95,19 @@ export function ReviewScreen({ businessUnit, reviewer, now = () => new Date() }:
 
   useEffect(() => {
     const controller = new AbortController();
+    // El setState ocurre tras el await dentro del callback, no en el cuerpo del efecto. La
+    // regla no puede verlo a través de la indirección, y reescribir "cargar al montar" para
+    // complacerla lo empeoraría.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadQueue(controller.signal);
     void loadTray(controller.signal);
     return () => controller.abort();
   }, [loadQueue, loadTray]);
 
   useEffect(() => {
-    if (selected === null) {
-      setDetail(null);
-      return;
-    }
+    // Nada que cargar: el detalle ya se limpió al cambiar la selección, no hace falta un
+    // setState aquí que provoque un render en cascada.
+    if (selected === null) return;
     const controller = new AbortController();
     void (async () => {
       try {
@@ -166,7 +170,10 @@ export function ReviewScreen({ businessUnit, reviewer, now = () => new Date() }:
               <li key={item.work_order_id}>
                 <button
                   type="button"
-                  onClick={() => setSelected(item.work_order_id)}
+                  onClick={() => {
+                    setDetail(null);
+                    setSelected(item.work_order_id);
+                  }}
                   aria-current={selected === item.work_order_id}
                 >
                   <strong>{item.code ?? item.work_order_id.slice(0, 8)}</strong>
@@ -298,8 +305,8 @@ function AiAudit({ detail }: { detail: ReviewDetail }) {
             <tr key={entry.field_key} className={pending.has(entry.field_key) ? 'alarming-row' : undefined}>
               <td>{entry.field_key}</td>
               <td>{entry.origin}</td>
-              <td>{String(entry.proposed_value ?? '—')}</td>
-              <td>{String(entry.final_value ?? '—')}</td>
+              <td>{displayValue(entry.proposed_value)}</td>
+              <td>{displayValue(entry.final_value)}</td>
               <td>{entry.confidence === null ? '—' : `${Math.round(entry.confidence * 100)} %`}</td>
               <td>
                 {entry.model_name ?? '—'}
@@ -339,7 +346,7 @@ function Compliance({ detail }: { detail: ReviewDetail }) {
               <td>{row.rule}</td>
               <td>{OUTCOME_LABEL[row.outcome]}</td>
               <td>{row.measured === null ? '—' : `${row.measured} ${row.unit ?? ''}`}</td>
-              <td>{row.limit === null ? '—' : `${String(row.limit)} ${row.unit ?? ''}`}</td>
+              <td>{row.limit === null ? '—' : `${displayValue(row.limit)} ${row.unit ?? ''}`}</td>
               <td>{citationFor(row) ?? '—'}</td>
               <td>{row.message}</td>
             </tr>

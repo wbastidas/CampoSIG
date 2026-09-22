@@ -155,6 +155,36 @@ describe('la auditoría de la IA', () => {
     expect(screen.getByText('mobilenetv3-pole 2026.09')).toBeTruthy();
   });
 
+  it('una propuesta que es un objeto se muestra legible, no como [object Object]', async () => {
+    vi.stubGlobal(
+      'fetch',
+      mockApi(
+        detail({
+          provenance: [
+            {
+              field_key: 'activities',
+              origin: 'voz',
+              proposed_value: [{ activity_code: 'PODA', quantity: 2 }],
+              final_value: null,
+              confidence: 0.8,
+              model_name: 'rule-based-es-ec',
+              model_version: '0.1.0',
+              accepted_unchanged: false,
+              confirmed_by: null,
+              source: 'se podaron dos vanos',
+              is_ai: true,
+            },
+          ],
+        }),
+      ),
+    );
+    render(<ReviewScreen businessUnit="GYE" reviewer="supervisor.1" now={() => NOW} />);
+    await openTheOrder();
+
+    await waitFor(() => expect(screen.getByText(/activity_code: PODA/)).toBeTruthy());
+    expect(screen.queryByText('[object Object]')).toBeNull();
+  });
+
   it('sin propuestas de IA no muestra una tasa del 0 %', async () => {
     vi.stubGlobal('fetch', mockApi(detail()));
     render(<ReviewScreen businessUnit="GYE" reviewer="supervisor.1" now={() => NOW} />);

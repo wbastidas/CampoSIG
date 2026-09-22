@@ -63,6 +63,7 @@ export function PlannerMap({
   const featuresRef = useRef<WorkOrderFeature[]>([]);
   const dragStartRef = useRef<ScreenPoint | null>(null);
 
+  const [features, setFeatures] = useState<WorkOrderFeature[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [crews, setCrews] = useState<Crew[]>([]);
   const [crewId, setCrewId] = useState<string>('');
@@ -100,9 +101,17 @@ export function PlannerMap({
           signal,
         );
         featuresRef.current = collection.features;
+        // También en estado: la ref sirve para leer las features desde los manejadores del mapa
+        // sin recrearlos, pero un resumen calculado desde la ref durante el render no se
+        // recalcula cuando llegan features nuevas — se quedaba con el conteo anterior hasta el
+        // siguiente cambio de selección.
+        setFeatures(collection.features);
         setTruncated(collection.truncated);
-        const source = map.getSource(SOURCE_ID) as GeoJSONSource | undefined;
-        source?.setData(collection);
+        // MapLibre 6 ya tipa `getSource`, así que la aserción sobraba; y `setData` devuelve
+        // una promesa que aquí no interesa esperar —el mapa se repinta solo— pero que hay que
+        // descartar explícitamente para que un rechazo no quede sin manejar en silencio.
+        const source = map.getSource<GeoJSONSource>(SOURCE_ID);
+        void source?.setData(collection);
         paintSelection(selected);
       } catch (error) {
         if (error instanceof DOMException && error.name === 'AbortError') return;
@@ -261,9 +270,7 @@ export function PlannerMap({
     }
   }, [businessUnit, crewId, paintSelection, reload, selected]);
 
-  const summary = summarise(
-    featuresRef.current.filter((feature) => selected.has(feature.id)),
-  );
+  const summary = summarise(features.filter((feature) => selected.has(feature.id)));
 
   return (
     <div className="planner">

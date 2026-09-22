@@ -133,7 +133,7 @@ describe('el regreso del proveedor', () => {
     await waitFor(() => expect(screen.getByText(/supervisor\.demo/)).toBeTruthy());
     expect(currentToken()).toBe(token);
 
-    const body = String((doFetch.mock.calls[0]![1] as RequestInit).body);
+    const body = String(doFetch.mock.calls[0]![1].body);
     expect(body).toContain('grant_type=authorization_code');
     expect(body).toContain(`code_verifier=${challenge.verifier}`);
   });
@@ -181,7 +181,7 @@ describe('el regreso del proveedor', () => {
     rememberChallenge(challenge);
     const doFetch = vi
       .fn()
-      .mockResolvedValue({ ok: false, status: 400, json: async () => ({}) } as unknown as Response);
+      .mockResolvedValue({ ok: false, status: 400, json: () => Promise.resolve({}) });
 
     render(
       <SessionProvider
@@ -229,7 +229,7 @@ describe('la renovación silenciosa', () => {
     await vi.advanceTimersByTimeAsync(61_000);
     await waitFor(() => expect(screen.getByText(/supervisor\.renovado/)).toBeTruthy());
 
-    const renewalBody = String((doFetch.mock.calls[1]![1] as RequestInit).body);
+    const renewalBody = String(doFetch.mock.calls[1]![1].body);
     expect(renewalBody).toContain('grant_type=refresh_token');
   });
 
@@ -241,7 +241,7 @@ describe('la renovación silenciosa', () => {
     const doFetch = vi
       .fn()
       .mockResolvedValueOnce(tokenResponse(fakeToken(CLAIMS), 120))
-      .mockResolvedValueOnce({ ok: false, status: 400, json: async () => ({}) } as unknown as Response);
+      .mockResolvedValueOnce({ ok: false, status: 400, json: () => Promise.resolve({}) });
 
     render(
       <SessionProvider

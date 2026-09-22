@@ -122,8 +122,14 @@ jobs:
       - run: npm ci
       - name: Tipos
         run: npx tsc --noEmit
+      - name: Lint (eslint)
+        run: npx eslint .
       - name: Tests
         run: npx vitest run
+      # La build de producción es lo que los e2e van a probar, y un fallo aquí es más claro
+      # que el mismo fallo escondido dentro del arranque del servidor de Playwright.
+      - name: Build de producción
+        run: npm run build
       # La Definition of Done no admite vulnerabilidades críticas ni altas. Solo dependencias de
       # producción: una herramienta de desarrollo con un aviso no llega al navegador de nadie.
       - name: Vulnerabilidades de dependencias de producción

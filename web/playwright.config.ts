@@ -34,9 +34,15 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npm run build && npm run preview -- --port 4173 --strictPort',
+    // `--host 127.0.0.1` explícito: sin él, `vite preview` escucha en `localhost`, que en un
+    // runner de CI resuelve primero a ::1, mientras Playwright sondea 127.0.0.1 — y espera dos
+    // minutos a un servidor que sí estaba arriba, en la otra pila.
+    command: 'npm run build && npm run preview -- --host 127.0.0.1 --port 4173 --strictPort',
     url: 'http://127.0.0.1:4173',
     reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
+    // El tiempo incluye la compilación de producción, que en un runner frío no es inmediata.
+    timeout: 180_000,
+    stdout: 'pipe',
+    stderr: 'pipe',
   },
 });

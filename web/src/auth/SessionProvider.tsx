@@ -19,6 +19,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -84,7 +85,9 @@ export function describeToken(accessToken: string): SessionUser | null {
     const realm = (decoded.realm_access as { roles?: string[] } | undefined)?.roles ?? [];
     const units = decoded.business_units;
     return {
-      subject: String(decoded.sub ?? ''),
+      // Un `sub` que no es una cadena es un token mal formado, no algo que convertir: el
+      // backend lo rechazaría igual, y aquí produciría un "[object Object]" como identidad.
+      subject: typeof decoded.sub === 'string' ? decoded.sub : '',
       username: typeof decoded.preferred_username === 'string' ? decoded.preferred_username : null,
       roles: realm.map(String),
       businessUnits: Array.isArray(units) ? units.map(String) : [],
@@ -118,9 +121,22 @@ export function SessionProvider({
   const tokensRef = useRef<TokenSet | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const doFetch = fetchImpl ?? globalThis.fetch.bind(globalThis);
-  const go = redirect ?? ((url: string) => { globalThis.location.assign(url); });
-  const here = location ?? { search: globalThis.location?.search ?? '', pathname: globalThis.location?.pathname ?? '/' };
+  // Estabilizados con useMemo: sin esto se recrean en cada render, y los callbacks y efectos
+  // que los llevan como dependencia se recrean con ellos — lo que en el efecto del intercambio
+  // significa reintentar el canje del código en cada render.
+  const doFetch = useMemo(() => fetchImpl ?? globalThis.fetch.bind(globalThis), [fetchImpl]);
+  const go = useMemo(
+    () => redirect ?? ((url: string) => globalThis.location.assign(url)),
+    [redirect],
+  );
+  const here = useMemo(
+    () =>
+      location ?? {
+        search: globalThis.location?.search ?? '',
+        pathname: globalThis.location?.pathname ?? '/',
+      },
+    [location],
+  );
 
   const adopt = useCallback((tokens: TokenSet) => {
     tokensRef.current = tokens;

@@ -84,6 +84,10 @@ export function DispatchBoard({ businessUnit, now = () => new Date() }: Dispatch
 
   useEffect(() => {
     const controller = new AbortController();
+    // El setState ocurre tras el await dentro del callback, no en el cuerpo del efecto. La
+    // regla no puede verlo a través de la indirección, y reescribir "cargar al montar" para
+    // complacerla lo empeoraría.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load(controller.signal);
     const timer = setInterval(() => void load(), REFRESH_MS);
     return () => {

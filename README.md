@@ -50,7 +50,7 @@ despliegue a cuadrillas. El detalle por incremento está en
 | `android/core/sync/` | Motor de sincronización offline, Kotlin puro sin Android (ADR-010) | 52 |
 | `gis-agent/` | Agente arcpy, Python 2.7, el único que toca el GIS (ADR-008) | 44 |
 | `web/src/auth/` | Login corporativo con PKCE y renovación silenciosa (ADR-013) | |
-| `web/src/features/` | Asignación gráfica, tablero de despliegue, integraciones y revisión | 144 |
+| `web/src/features/` | Asignación gráfica, tablero de despliegue, integraciones y revisión | 149 |
 
 El backend suma **633 tests** que corren contra PostgreSQL 16 + PostGIS real y **bajo los dos
 perfiles de modelo de datos**, que es la forma de comprobar que la independencia del modelo no es

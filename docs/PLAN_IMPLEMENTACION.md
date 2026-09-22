@@ -525,9 +525,15 @@ niveles:
 
 | Nivel | Qué prueba | Cuántos |
 |---|---|---|
-| Lógica pura | Orden, severidad, PKCE, sesión | 103 |
-| Render (jsdom) | Que las pantallas muestren lo que hay que ver | 41 |
+| Lógica pura | Orden, severidad, PKCE, sesión | 107 |
+| Render (jsdom) | Que las pantallas muestren lo que hay que ver | 42 |
 | Navegador real (Chromium) | Que **el artefacto que se despliega** cargue y la puerta de login aguante | 3 |
+
+`pnpm lint` también era un comando documentado que no existía: no había `eslint.config.js`, así
+que fallaba con "couldn't find eslint.config.js". Ahora corre, está limpio y es un paso de CI.
+Encontró un defecto real que `tsc` acepta: `String(valor)` sobre un valor que viene de JSONB
+—una tabla repetible, un límite con rango— produce `[object Object]`, y el supervisor que
+auditaba esa propuesta creía que se le había mostrado algo.
 
 El mapa se carga bajo demanda: MapLibre es casi un megabyte y solo lo necesita una pantalla. El
 bundle inicial bajó de 1 204 kB a 179 kB — un supervisor que pasa el día en la cola de revisión
