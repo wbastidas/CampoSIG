@@ -349,7 +349,7 @@ del SRS exige era una cadena de texto que cualquiera escribía.
 | Guarda en CI de que ninguna ruta quede abierta | ✅ con prueba en negativo, porque la primera versión recorría `app.routes` y encontraba **cero** rutas: pasaba sin mirar nada |
 | Escotilla de desarrollo | ✅ requiere `SIGEC_ALLOW_DEV_IDENTITY=1` y entorno de desarrollo; un token presente siempre gana sobre ella |
 | El token en la web | ✅ un solo sitio, y **no se persiste**: `localStorage` sobreviviría a un portátil cerrado en una sala de control |
-| Login de la web contra Keycloak (PKCE) y renovación silenciosa | Pendiente; la costura está |
+| Login de la web contra Keycloak (PKCE) y renovación silenciosa | ✅ código de autorización con PKCE, `state` comprobado, verificador de un solo uso y renovación **antes** de que caduque |
 
 Decisiones en [ADR-013](adr/ADR-013-identidad-verificada.md).
 
@@ -518,9 +518,23 @@ que nunca alcanzaba `staging_table.py`. El resultado era un `create_all` sin la 
 salvo que otro import la arrastrara por casualidad — un fallo que dependía del orden de los
 tests. Ahora el gateway la importa por su efecto.
 
-Lo que sigue sin verificar: la app Android (falta el SDK). La lógica de las cuatro pantallas web
-—asignación, despliegue, integraciones y revisión— está probada con 85 tests de `vitest` (ya con
-jsdom disponible), pero el render de React no se ha ejecutado en un navegador.
+**La web ya no era un conjunto de pantallas sin aplicación.** No había `index.html`, ni `main.tsx`,
+ni `App.tsx`: cuatro pantallas construidas y ningún punto de entrada, así que `npm run build`
+habría fallado y nadie lo había intentado. Ahora hay aplicación, se compila, y se verifica en tres
+niveles:
+
+| Nivel | Qué prueba | Cuántos |
+|---|---|---|
+| Lógica pura | Orden, severidad, PKCE, sesión | 103 |
+| Render (jsdom) | Que las pantallas muestren lo que hay que ver | 41 |
+| Navegador real (Chromium) | Que **el artefacto que se despliega** cargue y la puerta de login aguante | 3 |
+
+El mapa se carga bajo demanda: MapLibre es casi un megabyte y solo lo necesita una pantalla. El
+bundle inicial bajó de 1 204 kB a 179 kB — un supervisor que pasa el día en la cola de revisión
+estaba descargando el motor de mapas para no abrirlo nunca, por la conexión que de verdad tiene
+una oficina de unidad de negocio.
+
+Lo que sigue sin verificar: la app Android (falta el SDK) y el agente contra un ArcMap real.
 
 ## Definition of Done (todo incremento)
 

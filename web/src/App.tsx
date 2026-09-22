@@ -1,0 +1,115 @@
+/**
+ * The application shell: which screen, for which business unit, as which person.
+ *
+ * Deliberately a plain tab switch and not a router. There are four screens, each one a
+ * self-contained tool, and no deep-linking requirement that a router would serve — a
+ * dependency bought for a `useState` is a dependency to keep patched forever. When work-order
+ * permalinks arrive, that is the moment for a router.
+ *
+ * The business unit is chosen here, once, from what the token says the person may act in. A
+ * screen never guesses it: passing it explicitly is what keeps ADR-009 visible in the types.
+ */
+
+import { lazy, Suspense, useState } from 'react';
+
+import { useSession } from './auth/SessionProvider';
+import { defaultBusinessUnit } from './config';
+import { DispatchBoard } from './features/dispatch/DispatchBoard';
+import { IntegrationsScreen } from './features/integrations/IntegrationsScreen';
+import { ReviewScreen } from './features/review/ReviewScreen';
+
+/**
+ * The map is loaded on demand, and only this screen is.
+ *
+ * MapLibre is roughly a megabyte, and it is the only screen that needs it. A supervisor who
+ * spends the day in the review queue was downloading the whole map engine to never open it —
+ * over the connection a business-unit office actually has.
+ */
+const PlannerMap = lazy(async () => ({
+  default: (await import('./features/planning/PlannerMap')).PlannerMap,
+}));
+
+type Screen = 'planificacion' | 'despliegue' | 'revision' | 'integraciones';
+
+const SCREENS: { key: Screen; label: string; roles: string[] }[] = [
+  { key: 'planificacion', label: 'Planificación', roles: ['planificador', 'supervisor'] },
+  { key: 'despliegue', label: 'Despliegue', roles: ['planificador', 'supervisor'] },
+  { key: 'revision', label: 'Revisión', roles: ['supervisor', 'inspector'] },
+  { key: 'integraciones', label: 'Integraciones', roles: ['admin_ti', 'admin_funcional'] },
+];
+
+/** Roles that see everything, mirroring `Principal.is_corporate` on the server. */
+const CORPORATE_ROLES = ['admin_ti', 'admin_funcional', 'auditor'];
+
+export function App() {
+  const session = useSession();
+  const roles = session.user?.roles ?? [];
+  const corporate = roles.some((role) => CORPORATE_ROLES.includes(role));
+
+  // Hiding a tab is a convenience, not a control: the server refuses the call regardless
+  // (ADR-013). Showing a supervisor a tab they cannot use would just waste their time.
+  const available = SCREENS.filter(
+    (screen) => corporate || screen.roles.some((role) => roles.includes(role)),
+  );
+
+  const units = session.user?.businessUnits ?? [];
+  const [unit, setUnit] = useState(units[0] ?? defaultBusinessUnit);
+  const [screen, setScreen] = useState<Screen>(available[0]?.key ?? 'revision');
+
+  const operator = session.user?.username ?? session.user?.subject ?? 'desconocido';
+
+  return (
+    <div className="app">
+      <header className="app-bar">
+        <strong>SIGEC-Campo</strong>
+        <nav aria-label="Pantallas">
+          {available.map((entry) => (
+            <button
+              key={entry.key}
+              type="button"
+              aria-current={screen === entry.key}
+              onClick={() => setScreen(entry.key)}
+            >
+              {entry.label}
+            </button>
+          ))}
+        </nav>
+        {units.length > 1 && (
+          <label>
+            Unidad de negocio
+            <select value={unit} onChange={(event) => setUnit(event.target.value)}>
+              {units.map((code) => (
+                <option key={code} value={code}>
+                  {code}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <span className="app-user">{operator}</span>
+        <button type="button" onClick={session.signOut}>
+          Salir
+        </button>
+      </header>
+
+      <main>
+        {available.length === 0 && (
+          <p role="alert">
+            Su cuenta no tiene ningún rol que habilite una pantalla de esta plataforma. Solicite el
+            rol correspondiente a la administración funcional.
+          </p>
+        )}
+        {screen === 'planificacion' && (
+          <Suspense fallback={<p>Cargando el mapa…</p>}>
+            <PlannerMap businessUnit={unit} />
+          </Suspense>
+        )}
+        {screen === 'despliegue' && <DispatchBoard businessUnit={unit} />}
+        {screen === 'revision' && <ReviewScreen businessUnit={unit} reviewer={operator} />}
+        {screen === 'integraciones' && (
+          <IntegrationsScreen businessUnit={unit} operator={operator} />
+        )}
+      </main>
+    </div>
+  );
+}

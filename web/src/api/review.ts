@@ -203,7 +203,8 @@ export function submitDecision(
   workOrderId: string,
   body: {
     decision: DecisionKind;
-    reviewer_sub: string;
+    // No `reviewer_sub`: quien decide sale del token, y el servidor lo descarta si viaja aquí
+    // (ADR-013). Mandarlo igual sería un campo que parece autoritativo y no lo es.
     note?: string;
     observations?: { field_key: string; message: string; suggested_value?: unknown }[];
     blind_sample?: boolean;

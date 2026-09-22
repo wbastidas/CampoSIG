@@ -128,6 +128,20 @@ jobs:
       # producción: una herramienta de desarrollo con un aviso no llega al navegador de nadie.
       - name: Vulnerabilidades de dependencias de producción
         run: npm audit --omit=dev --audit-level=high
+      # Contra la build de producción, no contra el servidor de desarrollo: lo que hay que
+      # probar es el artefacto que se despliega. Un `vite dev` transforma módulos al vuelo y
+      # tapa errores que una build real destapa.
+      - name: Navegador para e2e
+        run: npx playwright install --with-deps chromium
+      - name: E2E (Chromium)
+        run: npx playwright test
+      - name: Publicar informe e2e
+        if: failure()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: web/playwright-report
 
   android-core:
     name: Móvil — core:sync (Kotlin/JVM, sin SDK de Android)

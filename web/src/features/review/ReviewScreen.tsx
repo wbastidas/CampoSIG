@@ -44,7 +44,11 @@ import {
 export interface ReviewScreenProps {
   /** Required: nothing crosses between business units (ADR-009). */
   businessUnit: string;
-  /** Who is deciding. Recorded on the decision. */
+  /**
+   * Who is reviewing, for the screen to show. **Not** what signs the decision: that comes from
+   * the token on the server (ADR-013), and sending it from here would be a field that looks
+   * authoritative and is discarded.
+   */
   reviewer: string;
   now?: () => Date;
 }
@@ -122,7 +126,6 @@ export function ReviewScreen({ businessUnit, reviewer, now = () => new Date() }:
       try {
         await submitDecision(businessUnit, selected, {
           decision,
-          reviewer_sub: reviewer,
           note: note || undefined,
         });
         setNote('');
@@ -140,7 +143,7 @@ export function ReviewScreen({ businessUnit, reviewer, now = () => new Date() }:
         setBusy(false);
       }
     },
-    [businessUnit, selected, reviewer, note, loadQueue, loadTray],
+    [businessUnit, selected, note, loadQueue, loadTray],
   );
 
   const clock = now();
@@ -150,7 +153,9 @@ export function ReviewScreen({ businessUnit, reviewer, now = () => new Date() }:
     <section className="review">
       <header>
         <h1>Revisión</h1>
-        <p>{total} orden(es) esperando decisión.</p>
+        <p>
+          {total} orden(es) esperando decisión. Revisa {reviewer}.
+        </p>
         {error && <p role="alert" className="board-error">{error}</p>}
       </header>
 

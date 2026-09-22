@@ -20,6 +20,11 @@ THIRD_PARTY_LICENSES.md
 # Node / web
 node_modules/
 dist/
+
+# Salidas de Playwright: informes y trazas de una ejecución, no fuentes.
+test-results/
+playwright-report/
+.playwright/
 .vite/
 
 # Android

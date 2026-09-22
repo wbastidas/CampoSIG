@@ -1,0 +1,323 @@
+/* Estilos de la aplicación.
+ *
+ * Deliberadamente austeros y sin framework. Las pantallas son tablas densas que un supervisor
+ * lee de un vistazo y un mapa que ocupa lo que puede: lo que hace falta es jerarquía tipográfica
+ * y estados de color legibles, no un sistema de diseño.
+ *
+ * El color sigue la misma rampa segura para daltonismo que usan los mapas y los tableros, y
+ * nunca va solo: cada estado lleva texto además de color. Modo claro y oscuro, porque parte del
+ * uso es de noche en una sala de control.
+ */
+
+:root {
+  --fondo: #ffffff;
+  --fondo-alterno: #f6f6f4;
+  --texto: #1c1917;
+  --texto-suave: #57534e;
+  --borde: #d6d3d1;
+  --alarma: #7f1d1d;
+  --alarma-fondo: #fef2f2;
+  --acento: #1e3a5f;
+  --radio: 4px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fondo: #1c1917;
+    --fondo-alterno: #262220;
+    --texto: #f5f5f4;
+    --texto-suave: #a8a29e;
+    --borde: #44403c;
+    --alarma: #fca5a5;
+    --alarma-fondo: #3b1a1a;
+    --acento: #93c5fd;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--fondo);
+  color: var(--texto);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.app-bar {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--borde);
+  background: var(--fondo-alterno);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.app-bar nav {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.app-user {
+  margin-left: auto;
+  color: var(--texto-suave);
+}
+
+button {
+  font: inherit;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  background: var(--fondo);
+  color: var(--texto);
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--acento);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button[aria-current='true'] {
+  border-color: var(--acento);
+  font-weight: 600;
+}
+
+/* El foco visible se conserva a propósito: parte del uso es con teclado y guantes fuera. */
+:focus-visible {
+  outline: 2px solid var(--acento);
+  outline-offset: 2px;
+}
+
+main {
+  padding: 1rem;
+}
+
+h1 {
+  font-size: 1.4rem;
+  margin: 0 0 0.5rem;
+}
+
+h2 {
+  font-size: 1.1rem;
+  margin: 1.5rem 0 0.5rem;
+}
+
+h3 {
+  font-size: 1rem;
+  margin: 1rem 0 0.4rem;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--borde);
+  vertical-align: top;
+}
+
+th {
+  color: var(--texto-suave);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+code {
+  font-size: 0.85em;
+  color: var(--texto-suave);
+  word-break: break-all;
+}
+
+pre {
+  background: var(--fondo-alterno);
+  padding: 0.5rem;
+  border-radius: var(--radio);
+  overflow-x: auto;
+  font-size: 0.85em;
+}
+
+/* Resumen en tarjetas: una fila de cifras que se lee sin mover los ojos. */
+.dispatch-summary,
+.integrations-summary,
+.review-detail dl {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  margin: 0.5rem 0 1rem;
+  padding: 0;
+}
+
+.dispatch-summary div,
+.integrations-summary div,
+.review-detail dl div {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  min-width: 8rem;
+}
+
+dt {
+  color: var(--texto-suave);
+  font-size: 0.8rem;
+}
+
+dd {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 600;
+}
+
+/* El color nunca va solo: el texto del estado siempre acompaña. */
+.severity-chip {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  color: #ffffff;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.alarming,
+.alarming-row td {
+  color: var(--alarma);
+}
+
+.alarming-row {
+  background: var(--alarma-fondo);
+}
+
+[role='alert'],
+.board-error,
+.blockers {
+  border-left: 3px solid var(--alarma);
+  background: var(--alarma-fondo);
+  color: var(--alarma);
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radio);
+  margin: 0.5rem 0;
+}
+
+.blockers ul {
+  margin: 0.25rem 0 0;
+  padding-left: 1.2rem;
+}
+
+.board-age {
+  color: var(--texto-suave);
+  font-size: 0.85rem;
+  max-width: 60ch;
+}
+
+/* Revisión: cola a la izquierda, detalle a la derecha, en una pantalla ancha. */
+.review-layout {
+  display: grid;
+  grid-template-columns: minmax(14rem, 18rem) 1fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 60rem) {
+  .review-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.review-queue {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.review-queue button {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  text-align: left;
+}
+
+.review-queue .sla {
+  color: var(--alarma);
+  font-size: 0.8rem;
+}
+
+.evidence-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.evidence-pair figure {
+  margin: 0;
+}
+
+.evidence-pair ul {
+  padding-left: 1.2rem;
+}
+
+.review-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  flex-wrap: wrap;
+}
+
+textarea {
+  width: 100%;
+  min-height: 4rem;
+  font: inherit;
+  padding: 0.4rem;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  background: var(--fondo);
+  color: var(--texto);
+}
+
+fieldset {
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  margin: 1rem 0;
+}
+
+.link-button {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--acento);
+  text-align: left;
+  text-decoration: underline;
+}
+
+.login-gate {
+  max-width: 28rem;
+  margin: 15vh auto;
+  padding: 2rem;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  text-align: center;
+}
+
+/* El mapa del planificador ocupa lo que le dejen. */
+.planner-map {
+  height: calc(100vh - 8rem);
+  min-height: 24rem;
+}
