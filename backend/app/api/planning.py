@@ -15,6 +15,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.auth.dependencies import require_roles, unit_scope_query
+from app.auth.principal import Role
 from app.infra.database import get_session
 from app.org.service import UnknownBusinessUnitError, get_business_unit_by_code
 from app.workorders.models import Crew, WorkOrder, WorkOrderState
@@ -29,7 +31,11 @@ from app.workorders.service import (
     in_bounding_box,
 )
 
-router = APIRouter(prefix="/api/v1/planning", tags=["planning"])
+# El ámbito se comprueba en la puerta del router (ADR-009). `/states` no lleva unidad y por eso
+# se declara aparte, más abajo: es un catálogo de constantes, no datos de nadie.
+router = APIRouter(
+    prefix="/api/v1/planning", tags=["planning"], dependencies=[Depends(unit_scope_query)]
+)
 
 SessionDep = Annotated[Session, Depends(get_session)]
 
@@ -181,6 +187,7 @@ def crews_with_workload(session: SessionDep, business_unit: str) -> list[dict[st
 
 @router.post(
     "/assign-selection",
+    dependencies=[Depends(require_roles(Role.PLANNER, Role.SUPERVISOR))],
     response_model=AssignSelectionOut,
     summary="Asignar una selección del mapa a una cuadrilla",
 )
@@ -207,7 +214,11 @@ def assign_selection(
     )
 
 
-@router.post("/work-orders/{work_order_id}/assign", summary="Asignar o reasignar una OT")
+@router.post(
+    "/work-orders/{work_order_id}/assign",
+    summary="Asignar o reasignar una OT",
+    dependencies=[Depends(require_roles(Role.PLANNER, Role.SUPERVISOR))],
+)
 def assign_one(
     work_order_id: uuid.UUID, payload: AssignOneIn, session: SessionDep, business_unit: str
 ) -> dict[str, Any]:

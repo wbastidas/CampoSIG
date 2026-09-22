@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     # Identity (Keycloak / OIDC) — RF-001.
     oidc_issuer: str = "http://localhost:8080/realms/sigec"
     oidc_audience: str = "sigec-backend"
+    #: Development escape hatch for the `X-SIGEC-Dev-Identity` header. Off by default, and
+    #: refused outside a development environment even when on — an API that could ship with
+    #: authentication silently disabled is an API that eventually does.
+    allow_dev_identity: bool = False
 
     # Object storage for evidence (SeaweedFS, S3 API).
     s3_endpoint_url: str = "http://localhost:8333"

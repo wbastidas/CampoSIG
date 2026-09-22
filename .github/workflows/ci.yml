@@ -124,6 +124,10 @@ jobs:
         run: npx tsc --noEmit
       - name: Tests
         run: npx vitest run
+      # La Definition of Done no admite vulnerabilidades críticas ni altas. Solo dependencias de
+      # producción: una herramienta de desarrollo con un aviso no llega al navegador de nadie.
+      - name: Vulnerabilidades de dependencias de producción
+        run: npm audit --omit=dev --audit-level=high
 
   android-core:
     name: Móvil — core:sync (Kotlin/JVM, sin SDK de Android)

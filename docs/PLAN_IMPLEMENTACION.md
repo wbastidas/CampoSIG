@@ -324,6 +324,37 @@ la aprobación se guardó, el evento existe.
 
 ---
 
+## Autenticación corporativa (RF-001, RF-002)
+
+Esto no era un incremento pendiente: era un **hueco**. Había realm de Keycloak desde I0 y
+`python-jose` en las dependencias, y ni una comprobación de token en toda la API. Peor: cada
+identidad de auditoría llegaba en el cuerpo de la petición que la registraba. El `reviewer_sub`
+de una aprobación, el `confirmed_by` de un valor de IA, el `requested_by` de un reintento — todos
+valían lo que valiera la afirmación de quien llamaba. Es decir, nada: el rastro que la regla 0.5
+del SRS exige era una cadena de texto que cualquiera escribía.
+
+| Entregable | Estado |
+|---|---|
+| Verificación real de tokens | ✅ firma contra las claves del emisor, emisor, audiencia y caducidad, con tokens firmados de verdad en los tests |
+| Rechazos explícitos | ✅ firma ajena, sin caducidad, otra audiencia, otro emisor, `kid` desconocido — cada uno con su test |
+| Ámbito por unidad en la puerta del router | ✅ un endpoint nuevo no puede olvidarlo; y responder 403 tanto para una unidad ajena como para una inexistente impide enumerarlas |
+| Roles por operación | ✅ aprobar exige supervisor o inspector; reintentar una integración, administración |
+| Identidades fuera del cuerpo | ✅ no se ignoran: **no existen**, para que nadie las vuelva a leer por costumbre |
+| Guarda en CI de que ninguna ruta quede abierta | ✅ con prueba en negativo, porque la primera versión recorría `app.routes` y encontraba **cero** rutas: pasaba sin mirar nada |
+| Escotilla de desarrollo | ✅ requiere `SIGEC_ALLOW_DEV_IDENTITY=1` y entorno de desarrollo; un token presente siempre gana sobre ella |
+| El token en la web | ✅ un solo sitio, y **no se persiste**: `localStorage` sobreviviría a un portátil cerrado en una sala de control |
+| Login de la web contra Keycloak (PKCE) y renovación silenciosa | Pendiente; la costura está |
+
+Decisiones en [ADR-013](adr/ADR-013-identidad-verificada.md).
+
+**Y una vulnerabilidad crítica de verdad.** `npm audit` reportó un *bypass* del sanitizador de
+MapLibre 5.x (GHSA-jrc7-96c5-q579, XSS): el mapa del planificador muestra datos que vienen de
+nuestra API. Subido a MapLibre 6, que quitó el export por defecto, con el código adaptado.
+`npm audit --omit=dev --audit-level=high` es ahora un paso de CI: la Definition of Done no admite
+vulnerabilidades críticas ni altas, y hasta hoy nadie lo comprobaba.
+
+---
+
 ## Cumplimiento normativo determinista (ADR-007)
 
 Lo que reemplazó al RAG normativo, y que hasta ahora era una promesa del addendum:
@@ -448,7 +479,7 @@ Sin RAG (ADR-007). El nodo de normativa funciona con parámetros y reglas, no co
 ## Nota sobre el estado de verificación
 
 Los tests de integración **se ejecutaron contra PostgreSQL 16 + PostGIS 3.4 real**, no solo en CI:
-592 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las diez
+622 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las diez
 migraciones aplicadas y revertidas sobre una base limpia (23 tablas de la aplicación, más
 `alembic_version` y las de PostGIS).
 
@@ -481,9 +512,9 @@ que nunca alcanzaba `staging_table.py`. El resultado era un `create_all` sin la 
 salvo que otro import la arrastrara por casualidad — un fallo que dependía del orden de los
 tests. Ahora el gateway la importa por su efecto.
 
-Lo que sigue sin verificar: la app Android (falta el SDK). La lógica de las tres pantallas web
-—asignación, despliegue y revisión— está probada con 79 tests de `vitest`, pero el render de
-React no se ha ejecutado en un navegador.
+Lo que sigue sin verificar: la app Android (falta el SDK). La lógica de las cuatro pantallas web
+—asignación, despliegue, integraciones y revisión— está probada con 85 tests de `vitest` (ya con
+jsdom disponible), pero el render de React no se ha ejecutado en un navegador.
 
 ## Definition of Done (todo incremento)
 

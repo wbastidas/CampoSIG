@@ -9,7 +9,14 @@
  * would assign the wrong work to the wrong crew is tested without a browser.
  */
 
-import maplibregl, { type GeoJSONSource, type Map as MapLibreMap } from 'maplibre-gl';
+// MapLibre 6 dejó de exponer un export por defecto; se importan los símbolos que se usan.
+// El salto de major se hizo por una vulnerabilidad crítica de XSS en el sanitizador de la 5.x
+// (GHSA-jrc7-96c5-q579), y el mapa muestra datos que vienen de nuestra API.
+import {
+  type GeoJSONSource,
+  Map as MapLibreMap,
+  type MapMouseEvent,
+} from 'maplibre-gl';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
@@ -108,7 +115,7 @@ export function PlannerMap({
   // --- map setup -----------------------------------------------------------------
   useEffect(() => {
     if (!containerRef.current) return;
-    const map = new maplibregl.Map({
+    const map = new MapLibreMap({
       container: containerRef.current,
       style: BASEMAP_STYLE,
       center: initialCenter,
@@ -163,14 +170,14 @@ export function PlannerMap({
     const map = mapRef.current;
     if (!map) return;
 
-    const onDown = (event: maplibregl.MapMouseEvent) => {
+    const onDown = (event: MapMouseEvent) => {
       if (!event.originalEvent.shiftKey) return;
       // Shift-drag is the lasso; plain drag stays pan, which is what a planner expects.
       dragStartRef.current = { x: event.point.x, y: event.point.y };
       map.dragPan.disable();
     };
 
-    const onUp = (event: maplibregl.MapMouseEvent) => {
+    const onUp = (event: MapMouseEvent) => {
       const start = dragStartRef.current;
       dragStartRef.current = null;
       map.dragPan.enable();

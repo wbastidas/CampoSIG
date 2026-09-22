@@ -14,12 +14,16 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.auth.dependencies import require_roles, unit_scope
+from app.auth.principal import Role
 from app.infra.database import get_session
 from app.integrations.models import Connector, EventStatus, IntegrationEvent
 from app.integrations.service import abandon, connector_health, ledger, retry_now
 from app.org.service import UnknownBusinessUnitError, get_business_unit_by_code
 
-router = APIRouter(prefix="/api/v1/integrations", tags=["integrations"])
+router = APIRouter(
+    prefix="/api/v1/integrations", tags=["integrations"], dependencies=[Depends(unit_scope)]
+)
 
 SessionDep = Annotated[Session, Depends(get_session)]
 
@@ -88,29 +92,31 @@ def events(
     return [_as_dict(row) for row in rows]
 
 
-class RetryIn(BaseModel):
-    requested_by: str = Field(min_length=1, max_length=255)
-
-
 @router.post("/units/{unit_code}/events/{event_id}/retry")
 def retry(
-    session: SessionDep, unit_code: str, event_id: uuid.UUID, payload: RetryIn
+    session: SessionDep,
+    unit_code: str,
+    event_id: uuid.UUID,
+    principal: Annotated[Any, Depends(require_roles(Role.IT_ADMIN, Role.FUNCTIONAL_ADMIN))] = None,
 ) -> dict[str, Any]:
     """Put a failed exchange back in the queue (RF-125)."""
     unit = _unit(session, unit_code)
-    event = retry_now(session, _event(session, unit.id, event_id), by=payload.requested_by)
+    event = retry_now(session, _event(session, unit.id, event_id), by=principal.subject)
     session.commit()
     return _as_dict(event)
 
 
 class AbandonIn(BaseModel):
-    requested_by: str = Field(min_length=1, max_length=255)
     reason: str = Field(min_length=1, max_length=500)
 
 
 @router.post("/units/{unit_code}/events/{event_id}/abandon")
 def abandon_event(
-    session: SessionDep, unit_code: str, event_id: uuid.UUID, payload: AbandonIn
+    session: SessionDep,
+    unit_code: str,
+    event_id: uuid.UUID,
+    payload: AbandonIn,
+    principal: Annotated[Any, Depends(require_roles(Role.IT_ADMIN, Role.FUNCTIONAL_ADMIN))] = None,
 ) -> dict[str, Any]:
     """Give up on an exchange, on the record and with a reason."""
     unit = _unit(session, unit_code)
@@ -118,7 +124,7 @@ def abandon_event(
         session,
         _event(session, unit.id, event_id),
         reason=payload.reason,
-        by=payload.requested_by,
+        by=principal.subject,
     )
     session.commit()
     return _as_dict(event)

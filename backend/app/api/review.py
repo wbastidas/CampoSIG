@@ -20,6 +20,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.auth.dependencies import require_roles, unit_scope
+from app.auth.principal import Role
 from app.gis_gateway.models import AsBuiltBatch
 from app.gis_gateway.staging_table import asbuilt_proposal
 from app.infra.database import get_session
@@ -40,7 +42,9 @@ from app.review.service import (
 )
 from app.workorders.models import WorkOrder
 
-router = APIRouter(prefix="/api/v1/review", tags=["review"])
+# `unit_scope` as a router dependency, not per endpoint: an endpoint cannot forget it, and
+# ADR-009 holds at the door instead of inside each handler.
+router = APIRouter(prefix="/api/v1/review", tags=["review"], dependencies=[Depends(unit_scope)])
 
 SessionDep = Annotated[Session, Depends(get_session)]
 
@@ -210,7 +214,8 @@ class ObservationIn(BaseModel):
 
 class DecisionIn(BaseModel):
     decision: Decision
-    reviewer_sub: str = Field(min_length=1, max_length=255)
+    # No `reviewer_sub`: the reviewer is whoever the token says they are. A decision whose
+    # author the caller could type is a decision nobody signed.
     note: str | None = Field(default=None, max_length=2000)
     observations: list[ObservationIn] = Field(default_factory=list)
     #: True when this order was drawn for the blind sample that measures agreement between
@@ -220,7 +225,11 @@ class DecisionIn(BaseModel):
 
 @router.post("/units/{unit_code}/work-orders/{order_id}/decision")
 def submit_decision(
-    session: SessionDep, unit_code: str, order_id: uuid.UUID, payload: DecisionIn
+    session: SessionDep,
+    unit_code: str,
+    order_id: uuid.UUID,
+    payload: DecisionIn,
+    principal: Annotated[Any, Depends(require_roles(Role.SUPERVISOR, Role.INSPECTOR))] = None,
 ) -> dict[str, Any]:
     """Record a decision (RF-112). Approval is refused when its preconditions are unmet."""
     unit = _unit(session, unit_code)
@@ -231,7 +240,7 @@ def submit_decision(
             unit,
             order,
             decision=payload.decision.value,
-            reviewer_sub=payload.reviewer_sub,
+            reviewer_sub=principal.subject,
             note=payload.note,
             observations=[item.model_dump() for item in payload.observations],
             blind_sample=payload.blind_sample,

@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.auth.dependencies import PrincipalDep, unit_scope
 from app.infra.database import get_session
 from app.org.service import UnknownBusinessUnitError, get_business_unit_by_code
 from app.responses.models import FormResponse
@@ -35,7 +36,7 @@ from app.voice.service import (
 )
 from app.workorders.models import WorkOrder
 
-router = APIRouter(prefix="/api/v1/voice", tags=["voice"])
+router = APIRouter(prefix="/api/v1/voice", tags=["voice"], dependencies=[Depends(unit_scope)])
 
 SessionDep = Annotated[Session, Depends(get_session)]
 
@@ -174,7 +175,8 @@ class ConfirmIn(BaseModel):
     #: Absent means "reject this proposal". A correction sends the corrected value.
     final_value: Any = None
     accept: bool = True
-    confirmed_by: str
+    # No `confirmed_by`: the confirmation is worth exactly the identity behind it, and an
+    # identity the caller types is no identity at all (SRS rule 0.5).
     reviewer_level: str = "tecnico"
 
 
@@ -205,16 +207,18 @@ def pending(session: SessionDep, unit_code: str, response_id: uuid.UUID) -> list
 
 @router.post("/units/{unit_code}/responses/{response_id}/confirm")
 def confirm_proposal(
-    session: SessionDep, unit_code: str, response_id: uuid.UUID, payload: ConfirmIn
+    session: SessionDep,
+    unit_code: str,
+    response_id: uuid.UUID,
+    payload: ConfirmIn,
+    principal: PrincipalDep = None,  # type: ignore[assignment]
 ) -> dict[str, Any]:
     """Confirm, correct or reject one proposal. The only path from proposal to answer."""
     unit = _unit(session, unit_code)
     response = _response(session, unit.id, response_id)
     try:
         if not payload.accept:
-            discard(
-                session, response, field_key=payload.field_key, discarded_by=payload.confirmed_by
-            )
+            discard(session, response, field_key=payload.field_key, discarded_by=principal.subject)
             session.commit()
             return {"field_key": payload.field_key, "state": "descartada"}
         entry = confirm(
@@ -222,7 +226,7 @@ def confirm_proposal(
             response,
             field_key=payload.field_key,
             final_value=payload.final_value,
-            confirmed_by=payload.confirmed_by,
+            confirmed_by=principal.subject,
             reviewer_level=payload.reviewer_level,
         )
     except UnknownProposalError as exc:

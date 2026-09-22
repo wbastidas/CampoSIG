@@ -64,6 +64,8 @@ export interface AssignSelectionResult {
   failures: { work_order_id: string; message: string }[];
 }
 
+import { authHeaders, notifyExpired } from './session';
+
 const BASE = '/api/v1/planning';
 
 export class ApiError extends Error {
@@ -76,9 +78,11 @@ export class ApiError extends Error {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
-    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
+    headers: authHeaders(init?.headers ?? {}),
   });
   if (!response.ok) {
+    // Un 401 significa que el token dejó de servir; la sesión se entera en un solo sitio.
+    if (response.status === 401) notifyExpired();
     // Prefer the server's message: it is written for the planner, in Spanish, and says
     // what to do — "recargue antes de reasignar" is more useful than "409 Conflict".
     let detail = `${response.status} ${response.statusText}`;

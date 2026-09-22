@@ -45,11 +45,12 @@ despliegue a cuadrillas. El detalle por incremento está en
 | [`backend/app/vision/`](backend/app/vision/README.md) | Taxonomía, prellenado y comparador antes/después | |
 | `backend/app/regulatory/` | Parámetros con vigencia y reglas de cumplimiento deterministas (ADR-007) | |
 | `backend/app/integrations/` | Outbox transaccional y adaptadores de OT y call center (ADR-012) | |
+| `backend/app/auth/` | Identidad verificada contra Keycloak; ninguna ruta abierta (ADR-013) | |
 | `android/core/sync/` | Motor de sincronización offline, Kotlin puro sin Android (ADR-010) | 52 |
 | `gis-agent/` | Agente arcpy, Python 2.7, el único que toca el GIS (ADR-008) | 44 |
-| `web/src/features/` | Asignación gráfica, tablero de despliegue, integraciones y revisión | 79 |
+| `web/src/features/` | Asignación gráfica, tablero de despliegue, integraciones y revisión | 85 |
 
-El backend suma **592 tests** que corren contra PostgreSQL 16 + PostGIS real y **bajo los dos
+El backend suma **622 tests** que corren contra PostgreSQL 16 + PostGIS real y **bajo los dos
 perfiles de modelo de datos**, que es la forma de comprobar que la independencia del modelo no es
 una aspiración. Las integraciones se prueban **contra los simuladores de verdad**, levantados
 dentro del propio test.

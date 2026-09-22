@@ -13,12 +13,14 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.auth.dependencies import require_roles, unit_scope
+from app.auth.principal import Role
 from app.dispatch.service import device_readiness, dispatch_board
 from app.infra.database import get_session
 from app.org.service import UnknownBusinessUnitError, get_business_unit_by_code
 from app.sync.service import build_offline_package, current_package
 
-router = APIRouter(prefix="/api/v1/dispatch", tags=["dispatch"])
+router = APIRouter(prefix="/api/v1/dispatch", tags=["dispatch"], dependencies=[Depends(unit_scope)])
 
 SessionDep = Annotated[Session, Depends(get_session)]
 
@@ -58,7 +60,11 @@ class PublishPackageIn(BaseModel):
     model_package_version: str | None = None
 
 
-@router.post("/units/{unit_code}/packages", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/units/{unit_code}/packages",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_roles(Role.PLANNER, Role.FUNCTIONAL_ADMIN, Role.IT_ADMIN))],
+)
 def publish_package(
     session: SessionDep, unit_code: str, payload: PublishPackageIn
 ) -> dict[str, Any]:

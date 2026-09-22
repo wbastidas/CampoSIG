@@ -16,6 +16,8 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.auth.dependencies import current_principal
+from app.auth.principal import Principal, Role
 from app.gis_gateway.ingest import ingest_metadata
 from app.infra.database import get_session
 from app.main import create_app
@@ -44,11 +46,24 @@ def unit(session: Session) -> BusinessUnit:
     return created
 
 
+#: The supervisor these tests act as. Identity comes from the token in production; here the
+#: dependency is overridden, because what this file tests is the endpoints, not authentication.
+#: Authentication has its own file, which exercises the real dependency.
+SUPERVISOR = Principal(
+    subject="kc|supervisor.demo",
+    username="supervisor.demo",
+    display_name="Supervisor Demo",
+    roles=frozenset({Role.SUPERVISOR.value}),
+    business_units=frozenset({"GYE", "MAN"}),
+)
+
+
 @pytest.fixture
 def client(session: Session):
     """A client sharing the test's transaction, so nothing it writes escapes the rollback."""
     app = create_app()
     app.dependency_overrides[get_session] = lambda: session
+    app.dependency_overrides[current_principal] = lambda: SUPERVISOR
     # The endpoints commit; inside the test's outer transaction that is a nested flush, so the
     # fixture's rollback still undoes everything.
     with TestClient(app) as raw:
@@ -122,8 +137,16 @@ class TestTheQueue:
         body = client.get(f"/api/v1/review/units/{other.code}/queue").json()
         assert body["total"] == 0
 
-    def test_an_unknown_unit_is_404(self, client) -> None:
-        assert client.get("/api/v1/review/units/NOEXISTE/queue").status_code == 404
+    def test_a_unit_outside_the_callers_scope_is_403_not_404(self, client) -> None:
+        """Y eso vale también para una unidad que no existe, a propósito.
+
+        Responder 404 para una inexistente y 403 para una ajena dejaría enumerar las unidades
+        de negocio de la empresa preguntando una por una. El chequeo de ámbito corre antes del
+        handler, así que ninguna de las dos se distingue desde fuera (ADR-009).
+        """
+        answer = client.get("/api/v1/review/units/NOEXISTE/queue")
+        assert answer.status_code == 403
+        assert "unidad de negocio" in answer.json()["detail"]
 
 
 class TestTheDetail:
@@ -215,7 +238,7 @@ class TestTheDecision:
 
         answer = client.post(
             f"/api/v1/review/units/{unit.code}/work-orders/{order.id}/decision",
-            json={"decision": "aprobada", "reviewer_sub": "supervisor.1"},
+            json={"decision": "aprobada"},
         )
         assert answer.status_code == 200
         assert answer.json()["work_order_state"] == WorkOrderState.APPROVED
@@ -227,7 +250,7 @@ class TestTheDecision:
         save_answers(session, unit, order, answers={"code": "P-1"}, submit=False)
         answer = client.post(
             f"/api/v1/review/units/{unit.code}/work-orders/{order.id}/decision",
-            json={"decision": "aprobada", "reviewer_sub": "supervisor.1"},
+            json={"decision": "aprobada"},
         )
         assert answer.status_code == 422
         detail = answer.json()["detail"]
@@ -241,7 +264,6 @@ class TestTheDecision:
             f"/api/v1/review/units/{unit.code}/work-orders/{order.id}/decision",
             json={
                 "decision": "devuelta",
-                "reviewer_sub": "supervisor.1",
                 "note": "falta la foto de después",
                 "observations": [
                     {"field_key": "photos_after", "message": "adjunte la foto de cierre"}
@@ -254,6 +276,8 @@ class TestTheDecision:
         body = client.get(f"/api/v1/review/units/{unit.code}/work-orders/{order.id}").json()
         assert body["observations"][0]["field_key"] == "photos_after"
         assert body["history"][0]["decision"] == "devuelta"
+        # Y el autor sale del token, no del cuerpo de la petición.
+        assert body["history"][0]["reviewer_sub"] == SUPERVISOR.subject
 
     def test_rf_112_deciding_on_something_not_awaiting_review_is_409(
         self, client, session, unit, order
@@ -262,7 +286,7 @@ class TestTheDecision:
         session.flush()
         answer = client.post(
             f"/api/v1/review/units/{unit.code}/work-orders/{order.id}/decision",
-            json={"decision": "aprobada", "reviewer_sub": "supervisor.1"},
+            json={"decision": "aprobada"},
         )
         assert answer.status_code == 409
 
@@ -282,7 +306,7 @@ class TestTheGisTray:
         session.flush()
         client.post(
             f"/api/v1/review/units/{unit.code}/work-orders/{order.id}/decision",
-            json={"decision": "aprobada", "reviewer_sub": "supervisor.1"},
+            json={"decision": "aprobada"},
         )
         session.refresh(order)
 

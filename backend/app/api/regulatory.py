@@ -14,6 +14,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.auth.dependencies import current_principal, require_roles
+from app.auth.principal import Role
 from app.infra.database import get_session
 from app.regulatory.loader import unverified_codes
 from app.regulatory.rules import REQUIRED_PARAMETER_CODES
@@ -27,7 +29,12 @@ from app.regulatory.service import (
     set_parameter,
 )
 
-router = APIRouter(prefix="/api/v1/regulatory", tags=["regulatory"])
+# Los parámetros regulatorios son nacionales, no de una unidad de negocio, así que aquí no hay
+# ámbito por unidad — pero sí hace falta estar autenticado, y escribir un límite es un acto de
+# administración funcional: quien lo carga afirma haber leído el texto oficial.
+router = APIRouter(
+    prefix="/api/v1/regulatory", tags=["regulatory"], dependencies=[Depends(current_principal)]
+)
 
 SessionDep = Annotated[Session, Depends(get_session)]
 
@@ -109,7 +116,11 @@ class ParameterIn(BaseModel):
     strict: bool = False
 
 
-@router.post("/parameters", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/parameters",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_roles(Role.FUNCTIONAL_ADMIN, Role.IT_ADMIN))],
+)
 def upsert_parameter(session: SessionDep, payload: ParameterIn) -> dict[str, Any]:
     """Record a regulatory value, closing the previous period rather than replacing it."""
     try:

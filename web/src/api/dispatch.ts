@@ -7,6 +7,7 @@
  */
 
 import { ApiError } from './planning';
+import { authHeaders, notifyExpired } from './session';
 
 export interface CrewDispatch {
   crew_id: string;
@@ -56,9 +57,11 @@ const BASE = '/api/v1/dispatch';
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
-    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
+    headers: authHeaders(init?.headers ?? {}),
   });
   if (!response.ok) {
+    // Un 401 significa que el token dejó de servir; la sesión se entera en un solo sitio.
+    if (response.status === 401) notifyExpired();
     let detail = `${response.status} ${response.statusText}`;
     try {
       const body = (await response.json()) as { detail?: string };
