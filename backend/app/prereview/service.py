@@ -13,9 +13,10 @@ this module is on a request path a supervisor waits on.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.agents.facts import (
@@ -311,3 +312,38 @@ def orders_without_a_terminal_run(
             .limit(limit)
         )
     )
+
+
+def risk_levels_for(
+    session: Session, order_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, tuple[str, str | None]]:
+    """Run state and risk level of the latest run of each named order, in one query.
+
+    For the queue, which shows a page of orders and has two seconds to do it (RNF). Calling
+    :func:`latest_report` per row would be two queries and a full document validation each, and the
+    queue needs one word per order, not the report.
+
+    The value is a pair — run state and risk level — because "no risk yet" has two meanings the
+    supervisor should be able to tell apart: it failed, or it has not run.
+    """
+    if not order_ids:
+        return {}
+    ranked = (
+        select(
+            AgentRun.work_order_id.label("work_order_id"),
+            AgentRun.state.label("state"),
+            StoredReport.risk_level.label("risk_level"),
+            func.row_number()
+            .over(partition_by=AgentRun.work_order_id, order_by=AgentRun.created_at.desc())
+            .label("position"),
+        )
+        .join(StoredReport, StoredReport.agent_run_id == AgentRun.id, isouter=True)
+        .where(AgentRun.work_order_id.in_(list(order_ids)))
+        .subquery()
+    )
+    rows = session.execute(
+        select(ranked.c.work_order_id, ranked.c.state, ranked.c.risk_level).where(
+            ranked.c.position == 1
+        )
+    )
+    return {row.work_order_id: (row.state, row.risk_level) for row in rows}

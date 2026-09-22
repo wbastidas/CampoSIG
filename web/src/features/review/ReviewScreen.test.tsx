@@ -30,6 +30,8 @@ const QUEUE = {
       crew_id: null,
       sla_due_at: null,
       updated_at: '2026-09-22T10:00:00Z',
+      pre_review_state: 'terminado',
+      risk_level: 'medium',
     },
   ],
 };
@@ -638,5 +640,170 @@ describe('el informe de pre-revisión en pantalla (RF-111)', () => {
 
     (await screen.findByRole('button', { name: /OT-/ })).click();
     expect(await screen.findByText(/descartó 2 observación/)).not.toBeNull();
+  });
+});
+
+/**
+ * La aprobación en lote, en pantalla (RF-176).
+ *
+ * Lo que se comprueba es lo que el requerimiento cobra por conceder el bloque: que solo se pueda
+ * marcar las de riesgo bajo, que la muestra se diga **antes** de pulsar, que haga falta una segunda
+ * pulsación, y que después el resultado nombre las apartadas. «12 aprobadas» sin «1 apartada» se lee
+ * como un lote terminado, y la apartada es justo el punto.
+ */
+describe('aprobación en lote (RF-176)', () => {
+  function queueItem(id: string, risk: 'low' | 'medium' | 'high' | null) {
+    return {
+      work_order_id: id,
+      code: `OT-${id.toUpperCase()}`,
+      work_type: 'inspeccion_preventiva',
+      form_code: 'F-MT-01',
+      state: 'sincronizada',
+      priority: 'media',
+      asset_code: null,
+      crew_id: null,
+      sla_due_at: null,
+      updated_at: '2026-09-22T10:00:00Z',
+      pre_review_state: risk === null ? null : 'terminado',
+      risk_level: risk,
+    };
+  }
+
+  function mockBatchApi(
+    items: ReturnType<typeof queueItem>[],
+    outcome?: Record<string, unknown>,
+  ) {
+    const posted: unknown[] = [];
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/batch-approval/preview')) {
+        const size = Number(new URL(url, 'http://x').searchParams.get('size'));
+        // La misma política del servidor: techo del 5 %, piso de uno.
+        const held = size === 0 ? 0 : Math.max(1, Math.ceil(size * 0.05));
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ batch_size: size, sampled: held, would_approve: size - held }),
+        } as unknown as Response;
+      }
+      if (url.includes('/batch-approval')) {
+        posted.push(JSON.parse(String(init?.body)));
+        return {
+          ok: true,
+          status: 200,
+          json: async () =>
+            outcome ?? {
+              approved: items.slice(1).map((item) => item.work_order_id),
+              sampled: [items[0]!.work_order_id],
+              refused: [],
+              sample_note: '1 OT quedaron apartadas para verificación individual obligatoria',
+            },
+        } as unknown as Response;
+      }
+      if (url.includes('/gis-tray')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ proposals: [], batches: [] }),
+        } as unknown as Response;
+      }
+      if (url.includes('/queue')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ total: items.length, items }),
+        } as unknown as Response;
+      }
+      return { ok: true, status: 200, json: async () => detail() } as unknown as Response;
+    });
+    return { fetcher, posted };
+  }
+
+  it('solo las de riesgo bajo se pueden marcar, y de las demás se dice por qué', async () => {
+    const { fetcher } = mockBatchApi([
+      queueItem('a', 'low'),
+      queueItem('b', 'medium'),
+      queueItem('c', null),
+    ]);
+    vi.stubGlobal('fetch', fetcher);
+    render(<ReviewScreen businessUnit="GYE" reviewer="sup.1" now={() => NOW} />);
+
+    await waitFor(() => expect(screen.getByText(/3 orden\(es\)/)).toBeTruthy());
+    const boxes = screen.getAllByRole('checkbox');
+    expect(boxes).toHaveLength(1);
+    expect(boxes[0]!.getAttribute('aria-label')).toContain('OT-A');
+    expect(screen.getByText(/Riesgo medio: se revisa una por una/)).toBeTruthy();
+    expect(screen.getByText(/Sin pre-revisión: se revisa una por una/)).toBeTruthy();
+  });
+
+  it('dice cuántas quedarán apartadas antes de pulsar', async () => {
+    const { fetcher } = mockBatchApi(
+      Array.from({ length: 4 }, (_, index) => queueItem(`l${index}`, 'low')),
+    );
+    vi.stubGlobal('fetch', fetcher);
+    render(<ReviewScreen businessUnit="GYE" reviewer="sup.1" now={() => NOW} />);
+
+    const boxes = await screen.findAllByRole('checkbox');
+    for (const box of boxes) box.click();
+
+    await waitFor(() => expect(screen.getByText(/se aprobarán 3/)).toBeTruthy());
+    expect(screen.getByText(/1 apartada\(s\)/)).toBeTruthy();
+  });
+
+  it('hace falta confirmar: una sola pulsación no aprueba nada', async () => {
+    const { fetcher, posted } = mockBatchApi(
+      Array.from({ length: 4 }, (_, index) => queueItem(`l${index}`, 'low')),
+    );
+    vi.stubGlobal('fetch', fetcher);
+    render(<ReviewScreen businessUnit="GYE" reviewer="sup.1" now={() => NOW} />);
+
+    const boxes = await screen.findAllByRole('checkbox');
+    for (const box of boxes) box.click();
+    await waitFor(() => expect(screen.getByText(/se aprobarán 3/)).toBeTruthy());
+
+    (await screen.findByRole('button', { name: /Aprobar 4 en lote/ })).click();
+    // La primera pulsación solo pregunta. Un lote libera propuestas as-built de cada OT hacia el
+    // SIG corporativo, y eso no se hace con un clic mal dado.
+    expect(posted).toHaveLength(0);
+    expect(await screen.findByText(/No se puede deshacer en bloque/)).toBeTruthy();
+
+    (await screen.findByRole('button', { name: /Confirmar aprobación en lote/ })).click();
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect((posted[0] as { work_order_ids: string[] }).work_order_ids).toHaveLength(4);
+  });
+
+  it('el resultado nombra las apartadas, no solo las aprobadas', async () => {
+    const { fetcher } = mockBatchApi(
+      Array.from({ length: 4 }, (_, index) => queueItem(`l${index}`, 'low')),
+      {
+        approved: ['l1', 'l2'],
+        sampled: ['l0'],
+        refused: [{ work_order_id: 'l3', code: 'OT-L3', reason: 'faltan fotos de «antes»' }],
+        sample_note: '1 apartada',
+      },
+    );
+    vi.stubGlobal('fetch', fetcher);
+    render(<ReviewScreen businessUnit="GYE" reviewer="sup.1" now={() => NOW} />);
+
+    const boxes = await screen.findAllByRole('checkbox');
+    for (const box of boxes) box.click();
+    await waitFor(() => expect(screen.getByText(/se aprobarán 3/)).toBeTruthy());
+    (await screen.findByRole('button', { name: /Aprobar 4 en lote/ })).click();
+    (await screen.findByRole('button', { name: /Confirmar aprobación en lote/ })).click();
+
+    expect(await screen.findByText(/No están aprobadas/)).toBeTruthy();
+    expect(screen.getByText(/Aprobadas: 2/)).toBeTruthy();
+    // Y el motivo del rechazo, que es lo que el supervisor tiene que arreglar.
+    expect(screen.getByText(/faltan fotos de «antes»/)).toBeTruthy();
+  });
+
+  it('sin nada marcado no hay botón que aprobar', async () => {
+    const { fetcher } = mockBatchApi([queueItem('a', 'low')]);
+    vi.stubGlobal('fetch', fetcher);
+    render(<ReviewScreen businessUnit="GYE" reviewer="sup.1" now={() => NOW} />);
+
+    const button = await screen.findByRole('button', { name: /Aprobar 0 en lote/ });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/Seleccione OT de riesgo bajo/)).toBeTruthy();
   });
 });

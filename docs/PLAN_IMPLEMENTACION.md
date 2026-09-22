@@ -703,8 +703,35 @@ su evidencia señalada y su acción sugerida, y —cuando no hay informe— el m
 no corrió» son cosas distintas para quien está por decidir sin él, y ninguna de las dos es motivo de
 esperar.
 
-Falta la mitad que necesita modelos (los nodos VLM y de redacción, I12) y la aprobación en lote
-asistida de RF-176 con su muestreo obligatorio.
+**La aprobación en lote de RF-176 ya está, y su forma la dicta el criterio de aceptación**, que es un
+test negativo: *no existe ningún camino de aprobación automática sin clic humano*. Lo que ese test
+comprueba no es que hoy esté bien escrito, es que **siga** estándolo cuando alguien añada, dentro de
+un año, «un job nocturno que apruebe las de riesgo bajo, que total el agente ya las revisó». La frase
+suena razonable y es exactamente el fallo, así que un recorrido del árbol de sintaxis prohíbe que los
+workers, los agentes, la persistencia de la pre-revisión y la pasarela llamen a `decide` o mencionen
+el estado `aprobada`. La guarda está probada en negativo.
+
+Las tres reglas del lote, y por qué cada una es así:
+
+| Regla | Por qué |
+|---|---|
+| Toda aprobación pasa por **el mismo** `decide` | un camino más rápido que se saltara los impedimentos de I6 sería una segunda puerta más débil, y a partir de ahí la compuerta no significa nada. El lote los recibe idénticos: una OT sin fotos se rechaza dentro del lote |
+| La muestra se redondea **hacia arriba** y su piso es uno | el 5 % de tres es 0,15, y una política que redondea a cero es una política con un agujero: el supervisor que lo descubre aprueba de tres en tres. Un lote de una sola OT la aparta entera —aprobar de una en una ya existe y se llama aprobar— |
+| Sin informe **no** es riesgo bajo | una OT que nadie pre-revisó es justo la que un lote no debería tragarse |
+
+Y la cola de revisión ahora trae el riesgo de cada OT, en una consulta por página y no una por fila:
+sin eso el supervisor selecciona a ciegas y el servidor le rechaza media selección. En la pantalla,
+solo las de riesgo bajo tienen casilla; las demás dicen por qué no la tienen. El lote necesita **dos
+pulsaciones**, porque libera las propuestas as-built de cada OT hacia el SIG corporativo y eso no se
+hace con un clic mal dado. Y el resultado nombra las apartadas: «12 aprobadas» sin «1 apartada» se lee
+como un lote terminado, y la apartada es el punto del requerimiento.
+
+**Otro defecto de localización, de la misma familia que el de las distancias:** el motivo del rechazo
+decía «riesgo medium». Los identificadores van en inglés (regla 11), así que interpolar el valor del
+enum en una frase en español produce eso mismo en la pantalla de un supervisor. Las palabras viven
+ahora junto al enum, y un test falla si alguien añade un nivel sin la suya.
+
+Falta la mitad que necesita modelos: los nodos VLM y de redacción, en I12.
 
 ---
 

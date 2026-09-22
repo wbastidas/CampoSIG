@@ -16,6 +16,7 @@
 import type {
   AgentObservation,
   AgentReport,
+  BatchOutcome,
   ComplianceFinding,
   Degradation,
   Provenance,
@@ -275,4 +276,66 @@ export function missingReportReason(detail: ReviewDetail): string | null {
     return `La pre-revisión falló (${envelope.run_state ?? 'sin estado'}): ${envelope.error}`;
   }
   return `La pre-revisión está en estado «${envelope.run_state ?? 'desconocido'}» y aún no produjo informe.`;
+}
+
+/**
+ * Batch approval: what may be selected, and what the screen must say (RF-176).
+ *
+ * The server decides — it re-checks the risk and runs every approval through the same gate as an
+ * individual one. What these do is keep the supervisor from selecting a batch that will come back
+ * half refused, and make the sample impossible to overlook: «12 aprobadas» without «1 apartada»
+ * reads as a finished batch, and the one held back is the whole point of the requirement.
+ */
+export type BatchBar = 'apta' | 'sin_informe' | 'riesgo';
+
+/** Why this order cannot go in a batch, or null when it can. */
+export function batchBar(item: QueueItem): BatchBar {
+  if (item.risk_level === null) return 'sin_informe';
+  return item.risk_level === 'low' ? 'apta' : 'riesgo';
+}
+
+/** Said in the row, so the supervisor reads why instead of discovering it in the refusals. */
+export function batchBarLabel(item: QueueItem): string | null {
+  switch (batchBar(item)) {
+    case 'apta':
+      return null;
+    case 'riesgo':
+      return `${RISK_LABEL[item.risk_level as AgentReport['risk_level']]}: se revisa una por una`;
+    case 'sin_informe':
+      // Not the same as low risk, and the distinction matters: an order nobody pre-reviewed is
+      // exactly the one a bulk approval should not swallow.
+      return 'Sin pre-revisión: se revisa una por una';
+  }
+}
+
+export function batchable(items: QueueItem[]): QueueItem[] {
+  return items.filter((item) => batchBar(item) === 'apta');
+}
+
+/**
+ * What pressing the button will do, in words, before it is pressed.
+ *
+ * `sampled` comes from the server's own preview: the rounding rule is policy, and a second copy of
+ * it here would be a copy free to drift from the one that decides.
+ */
+export function batchPlan(selected: number, sampled: number | null): string {
+  if (selected === 0) return 'Seleccione OT de riesgo bajo para aprobar en lote.';
+  if (sampled === null) return `${selected} seleccionada(s). Calculando la muestra…`;
+  const approve = Math.max(selected - sampled, 0);
+  return (
+    `${selected} seleccionada(s): se aprobarán ${approve} y quedarán ${sampled} apartada(s) ` +
+    'para verificación individual obligatoria (RF-176).'
+  );
+}
+
+/** What the batch actually did. Every part of it, including what it refused and why. */
+export function batchOutcomeLines(outcome: BatchOutcome): string[] {
+  const lines = [
+    `Aprobadas: ${outcome.approved.length}.`,
+    `Apartadas para verificación individual: ${outcome.sampled.length}. No están aprobadas.`,
+  ];
+  if (outcome.refused.length > 0) {
+    lines.push(`Rechazadas: ${outcome.refused.length}.`);
+  }
+  return lines;
 }

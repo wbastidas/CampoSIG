@@ -18,7 +18,10 @@ import { FormView } from '../../forms/FormView';
 
 import {
   ApprovalBlocked,
+  approveBatch,
+  type BatchOutcome,
   type DecisionKind,
+  fetchBatchPreview,
   fetchDetail,
   fetchGisTray,
   fetchQueue,
@@ -34,6 +37,10 @@ import {
   CATEGORY_LABEL,
   acceptanceRate,
   attentionFor,
+  batchBarLabel,
+  batchOutcomeLines,
+  batchPlan,
+  batchable,
   citationFor,
   displayValue,
   evidenceByStage,
@@ -76,6 +83,12 @@ export function ReviewScreen({ businessUnit, reviewer, now = () => new Date() }:
   const [refused, setRefused] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [acta, setActa] = useState<{ code: string; hash: string } | null>(null);
+  // La aprobación en lote (RF-176). `picked` son las que el supervisor marcó; `sampled` es el
+  // tamaño de la muestra según el servidor, que es quien tiene la política de redondeo.
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [sampled, setSampled] = useState<number | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [batchOutcome, setBatchOutcome] = useState<BatchOutcome | null>(null);
 
   const loadQueue = useCallback(
     async (signal?: AbortSignal) => {
@@ -136,6 +149,70 @@ export function ReviewScreen({ businessUnit, reviewer, now = () => new Date() }:
     })();
     return () => controller.abort();
   }, [businessUnit, selected]);
+
+  /**
+   * How many of the current selection the server would hold back (RF-176).
+   *
+   * Asked of the server on every change instead of computed here: the rounding rule is policy, and
+   * a copy of it in the browser is a copy free to drift from the one that actually decides. The
+   * call is a bare GET with a number.
+   */
+  useEffect(() => {
+    if (picked.size === 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSampled(null);
+      return;
+    }
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const preview = await fetchBatchPreview(businessUnit, picked.size, controller.signal);
+        setSampled(preview.sampled);
+      } catch (cause) {
+        if ((cause as Error).name === 'AbortError') return;
+        // Sin muestra conocida no se promete un número: el plan dirá que está calculando, y el
+        // botón queda deshabilitado. Inventarla aquí sería inventar la política.
+        setSampled(null);
+      }
+    })();
+    return () => controller.abort();
+  }, [businessUnit, picked]);
+
+  const togglePicked = useCallback((workOrderId: string) => {
+    setBatchOutcome(null);
+    setConfirming(false);
+    setPicked((current) => {
+      const next = new Set(current);
+      if (next.has(workOrderId)) next.delete(workOrderId);
+      else next.add(workOrderId);
+      return next;
+    });
+  }, []);
+
+  /**
+   * Approve the selected batch (RF-176).
+   *
+   * Two presses, not one: the first asks, the second does it. A bulk approval releases as-built
+   * proposals towards the corporate GIS for every order in it, and that is not a thing to do on a
+   * mis-click. The sample is drawn by the server, so nothing here decides what is held back.
+   */
+  const runBatch = useCallback(async () => {
+    if (picked.size === 0) return;
+    setBusy(true);
+    try {
+      const outcome = await approveBatch(businessUnit, [...picked], note || undefined);
+      setBatchOutcome(outcome);
+      setPicked(new Set());
+      setConfirming(false);
+      setNote('');
+      setError(null);
+      await Promise.all([loadQueue(), loadTray()]);
+    } catch (cause) {
+      setError((cause as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }, [businessUnit, picked, note, loadQueue, loadTray]);
 
   /**
    * Emit the acta and hand the browser the file (RF-115).
@@ -209,24 +286,51 @@ export function ReviewScreen({ businessUnit, reviewer, now = () => new Date() }:
 
       <div className="review-layout">
         <nav aria-label="Cola de revisión">
+          <BatchApproval
+            batchable={batchable(ordered).length}
+            picked={picked.size}
+            sampled={sampled}
+            confirming={confirming}
+            busy={busy}
+            outcome={batchOutcome}
+            onAsk={() => setConfirming(true)}
+            onCancel={() => setConfirming(false)}
+            onConfirm={() => void runBatch()}
+          />
           <ul className="review-queue">
-            {ordered.map((item) => (
-              <li key={item.work_order_id}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDetail(null);
-                    setSelected(item.work_order_id);
-                  }}
-                  aria-current={selected === item.work_order_id}
-                >
-                  <strong>{item.code ?? item.work_order_id.slice(0, 8)}</strong>
-                  <span>{item.work_type}</span>
-                  <span>{item.priority}</span>
-                  {item.sla_due_at && <span className="sla">vence {item.sla_due_at.slice(0, 10)}</span>}
-                </button>
-              </li>
-            ))}
+            {ordered.map((item) => {
+              const bar = batchBarLabel(item);
+              const label = item.code ?? item.work_order_id.slice(0, 8);
+              return (
+                <li key={item.work_order_id}>
+                  {bar === null ? (
+                    <input
+                      type="checkbox"
+                      aria-label={`Incluir ${label} en el lote`}
+                      checked={picked.has(item.work_order_id)}
+                      onChange={() => togglePicked(item.work_order_id)}
+                    />
+                  ) : (
+                    /* Dicho en la fila, no descubierto en los rechazos: así el supervisor ve por
+                       qué esta OT no entra en el lote antes de intentarlo (RF-176). */
+                    <span className="review-nobatch">{bar}</span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDetail(null);
+                      setSelected(item.work_order_id);
+                    }}
+                    aria-current={selected === item.work_order_id}
+                  >
+                    <strong>{label}</strong>
+                    <span>{item.work_type}</span>
+                    <span>{item.priority}</span>
+                    {item.sla_due_at && <span className="sla">vence {item.sla_due_at.slice(0, 10)}</span>}
+                  </button>
+                </li>
+              );
+            })}
             {ordered.length === 0 && <li>Nada esperando revisión.</li>}
           </ul>
         </nav>
@@ -298,6 +402,84 @@ export function ReviewScreen({ businessUnit, reviewer, now = () => new Date() }:
       </div>
 
       {tray && <GisTrayPanel tray={tray} />}
+    </section>
+  );
+}
+
+/**
+ * Batch approval of low-risk work orders (RF-176).
+ *
+ * The requirement grants the bulk action and charges two things for it, and this panel is where both
+ * are visible: the approval happens because a person pressed something — twice, since it releases
+ * as-built proposals for every order in the batch — and a mandatory sample is held back for
+ * one-by-one verification, said in the plan *before* the press and again in the result after it.
+ *
+ * "12 aprobadas" without "1 apartada" reads as a finished batch. The one held back is the point.
+ */
+function BatchApproval({
+  batchable,
+  picked,
+  sampled,
+  confirming,
+  busy,
+  outcome,
+  onAsk,
+  onCancel,
+  onConfirm,
+}: {
+  batchable: number;
+  picked: number;
+  sampled: number | null;
+  confirming: boolean;
+  busy: boolean;
+  outcome: BatchOutcome | null;
+  onAsk: () => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <section className="review-batch" aria-label="Aprobación en lote">
+      <h2>Aprobación en lote</h2>
+      <p className="review-hint">
+        {batchable} de riesgo bajo en esta página. Las demás se revisan una por una.
+      </p>
+      <p role="status">{batchPlan(picked, sampled)}</p>
+      {!confirming ? (
+        <button type="button" disabled={picked === 0 || sampled === null || busy} onClick={onAsk}>
+          Aprobar {picked} en lote
+        </button>
+      ) : (
+        <div className="review-batch-confirm" role="group" aria-label="Confirmar el lote">
+          <p>
+            Se aprobarán {Math.max(picked - (sampled ?? 0), 0)} OT y se liberarán sus propuestas
+            as-built hacia el SIG. No se puede deshacer en bloque.
+          </p>
+          <button type="button" disabled={busy} onClick={onConfirm}>
+            Confirmar aprobación en lote
+          </button>
+          <button type="button" disabled={busy} onClick={onCancel}>
+            Cancelar
+          </button>
+        </div>
+      )}
+      {outcome && (
+        <div className="review-batch-outcome" role="status">
+          <ul>
+            {batchOutcomeLines(outcome).map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+          {outcome.refused.length > 0 && (
+            <ul aria-label="OT rechazadas del lote">
+              {outcome.refused.map((item) => (
+                <li key={item.work_order_id}>
+                  <strong>{item.code ?? item.work_order_id.slice(0, 8)}</strong>: {item.reason}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </section>
   );
 }

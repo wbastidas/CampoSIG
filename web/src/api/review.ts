@@ -22,6 +22,10 @@ export interface QueueItem {
   crew_id: string | null;
   sla_due_at: string | null;
   updated_at: string | null;
+  /** State of the last pre-review run, or null when none ran (RF-170). */
+  pre_review_state: string | null;
+  /** Risk the pre-review assigned, or null when there is no report. Null is not 'low'. */
+  risk_level: 'low' | 'medium' | 'high' | null;
 }
 
 export interface Provenance {
@@ -280,6 +284,44 @@ export function submitDecision(
     `${BASE}/units/${encodeURIComponent(businessUnit)}/work-orders/${workOrderId}/decision`,
     { method: 'POST', body: JSON.stringify(body) },
   );
+}
+
+/** What a batch approval did, and what it deliberately did not do (RF-176). */
+export interface BatchOutcome {
+  approved: string[];
+  /** Held back for one-by-one verification. Not approved — that is the point. */
+  sampled: string[];
+  refused: { work_order_id: string; code: string | null; reason: string }[];
+  sample_note: string;
+}
+
+/**
+ * How many of a batch of this size would be held back (RF-176).
+ *
+ * Asked of the server rather than computed here on purpose: the rounding rule is a policy, and a
+ * second copy of it in the browser is a copy free to drift from the one that actually decides.
+ */
+export function fetchBatchPreview(
+  businessUnit: string,
+  size: number,
+  signal?: AbortSignal,
+): Promise<{ batch_size: number; sampled: number; would_approve: number }> {
+  return request(
+    `${BASE}/units/${encodeURIComponent(businessUnit)}/batch-approval/preview?size=${size}`,
+    { signal },
+  );
+}
+
+/** Approve the selected low-risk orders, sample included (RF-176). */
+export function approveBatch(
+  businessUnit: string,
+  workOrderIds: string[],
+  note?: string,
+): Promise<BatchOutcome> {
+  return request<BatchOutcome>(`${BASE}/units/${encodeURIComponent(businessUnit)}/batch-approval`, {
+    method: 'POST',
+    body: JSON.stringify({ work_order_ids: workOrderIds, note: note || undefined }),
+  });
 }
 
 export function fetchGisTray(businessUnit: string, signal?: AbortSignal): Promise<GisTray> {

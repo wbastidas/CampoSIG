@@ -22,6 +22,11 @@ import {
   PLACEMENT_LABEL,
   RISK_LABEL,
   acceptanceRate,
+  batchBar,
+  batchBarLabel,
+  batchOutcomeLines,
+  batchPlan,
+  batchable,
   attentionFor,
   citationFor,
   correctedAiValues,
@@ -261,6 +266,8 @@ describe('orden de la cola', () => {
       crew_id: null,
       sla_due_at: null,
       updated_at: '2026-09-22T10:00:00Z',
+      pre_review_state: null,
+      risk_level: null,
       ...overrides,
     };
   }
@@ -479,5 +486,87 @@ describe('el informe de pre-revisión (RF-111, RF-175)', () => {
     expect(RISK_LABEL.high).toBe('Riesgo alto');
     expect(CATEGORY_LABEL.regulatory).toBe('Normativa');
     expect(CATEGORY_LABEL.anomaly).toBe('Anomalía');
+  });
+});
+
+describe('aprobación en lote (RF-176)', () => {
+  function item(overrides: Partial<QueueItem> = {}): QueueItem {
+    return {
+      work_order_id: 'wo',
+      code: 'OT',
+      work_type: 'x',
+      form_code: 'F-MT-01',
+      state: 'sincronizada',
+      priority: 'media',
+      asset_code: null,
+      crew_id: null,
+      sla_due_at: null,
+      updated_at: null,
+      pre_review_state: 'terminado',
+      risk_level: 'low',
+      ...overrides,
+    };
+  }
+
+  it('solo las de riesgo bajo son seleccionables', () => {
+    const rows = [
+      item({ work_order_id: 'a', risk_level: 'low' }),
+      item({ work_order_id: 'b', risk_level: 'medium' }),
+      item({ work_order_id: 'c', risk_level: 'high' }),
+    ];
+    expect(batchable(rows).map((row) => row.work_order_id)).toEqual(['a']);
+  });
+
+  it('sin informe no es riesgo bajo', () => {
+    const row = item({ work_order_id: 'a', risk_level: null, pre_review_state: null });
+    expect(batchable([row])).toEqual([]);
+    expect(batchBar(row)).toBe('sin_informe');
+    expect(batchBarLabel(row)).toContain('Sin pre-revisión');
+  });
+
+  it('la razón se dice en la fila, no se descubre en los rechazos', () => {
+    expect(batchBarLabel(item({ risk_level: 'medium' }))).toBe(
+      'Riesgo medio: se revisa una por una',
+    );
+    expect(batchBarLabel(item({ risk_level: 'low' }))).toBeNull();
+  });
+
+  it('el plan dice cuántas se aprueban y cuántas quedan apartadas', () => {
+    const said = batchPlan(40, 2);
+    expect(said).toContain('se aprobarán 38');
+    expect(said).toContain('2 apartada(s)');
+  });
+
+  it('sin selección invita a seleccionar, y no promete nada', () => {
+    expect(batchPlan(0, null)).toContain('Seleccione');
+    expect(batchPlan(0, 0)).not.toContain('se aprobarán');
+  });
+
+  it('mientras el servidor no ha dicho el tamaño de la muestra, no se inventa', () => {
+    // Redondear aquí sería una segunda copia de la política, libre de separarse de la que decide.
+    expect(batchPlan(9, null)).toContain('Calculando');
+    expect(batchPlan(9, null)).not.toContain('se aprobarán');
+  });
+
+  it('el resultado nombra las apartadas incluso cuando todo salió bien', () => {
+    const lines = batchOutcomeLines({
+      approved: ['a', 'b'],
+      sampled: ['c'],
+      refused: [],
+      sample_note: '',
+    });
+    expect(lines[0]).toContain('Aprobadas: 2');
+    expect(lines[1]).toContain('No están aprobadas');
+    expect(lines).toHaveLength(2);
+  });
+
+  it('y las rechazadas cuando hay', () => {
+    const lines = batchOutcomeLines({
+      approved: [],
+      sampled: ['c'],
+      refused: [{ work_order_id: 'd', code: 'OT-D', reason: 'faltan fotos' }],
+      sample_note: '',
+    });
+    expect(lines.some((line) => line.includes('Rechazadas: 1'))).toBe(true);
   });
 });

@@ -27,9 +27,10 @@ from app.gis_gateway.staging_table import asbuilt_proposal
 from app.inference.service import pre_review_degradations
 from app.infra.database import get_session
 from app.org.service import UnknownBusinessUnitError, get_business_unit_by_code
-from app.prereview.service import latest_report, latest_run
+from app.prereview.service import latest_report, latest_run, risk_levels_for
 from app.responses.models import FormResponse, ValueOrigin
 from app.responses.service import compose_for, missing_photos, photo_counts
+from app.review.batch import approve_batch, orders_for_batch, sample_size
 from app.review.models import Decision
 from app.review.service import (
     ApprovalBlockedError,
@@ -86,6 +87,10 @@ def queue(
     """Work orders awaiting a decision, worst SLA first (RF-110)."""
     unit = _unit(session, unit_code)
     orders = review_queue(session, unit, area=area, crew_id=crew_id, limit=limit, offset=offset)
+    # The pre-review's verdict travels with the row so a supervisor can see which orders a batch
+    # approval may take before selecting them (RF-176). One query for the page, not one per row:
+    # the queue has two seconds and the screen needs one word per order, not the report.
+    risks = risk_levels_for(session, [order.id for order in orders])
     return {
         "total": queue_size(session, unit),
         "items": [
@@ -100,6 +105,8 @@ def queue(
                 "crew_id": str(order.assigned_crew_id) if order.assigned_crew_id else None,
                 "sla_due_at": order.sla_due_at.isoformat() if order.sla_due_at else None,
                 "updated_at": order.updated_at.isoformat() if order.updated_at else None,
+                "pre_review_state": risks.get(order.id, (None, None))[0],
+                "risk_level": risks.get(order.id, (None, None))[1],
             }
             for order in orders
         ],
@@ -294,6 +301,67 @@ def submit_decision(
         "decision": row.decision,
         "decided_at": row.decided_at.isoformat() if row.decided_at else None,
         "work_order_state": order.state,
+    }
+
+
+class BatchApprovalIn(BaseModel):
+    """What a supervisor submits to approve a batch.
+
+    No reviewer field, and no "dry run" that approves: the identity comes from the token (ADR-013),
+    and this endpoint exists only because a person pressed something.
+    """
+
+    work_order_ids: list[uuid.UUID] = Field(min_length=1, max_length=200)
+    note: str | None = Field(default=None, max_length=2000)
+
+
+@router.post(
+    "/units/{unit_code}/batch-approval",
+    summary="Aprobar en lote OT de riesgo bajo, con muestreo obligatorio de verificación",
+    dependencies=[Depends(require_roles(Role.SUPERVISOR))],
+)
+def approve_in_batch(
+    unit_code: str,
+    payload: BatchApprovalIn,
+    session: SessionDep,
+    principal: Annotated[Any, Depends(require_roles(Role.SUPERVISOR))],
+) -> dict[str, Any]:
+    """RF-176. Every approval here goes through the same gate as a single one.
+
+    Restricted to the supervisor alone — not the inspector, who may decide on one work order but is
+    not who signs off a block of them. And the sample is held back before anything is approved, so
+    there is no ordering in which a caller gets the approvals and skips the sampling.
+    """
+    unit = _unit(session, unit_code)
+    orders, missing = orders_for_batch(session, unit, payload.work_order_ids)
+    outcome = approve_batch(
+        session, unit, orders, reviewer_sub=principal.subject, note=payload.note
+    )
+    outcome.refused.extend(missing)
+    session.commit()
+
+    body = outcome.as_dict()
+    # Said in the response, not only in the docs: a supervisor who sees "12 approved" without
+    # "2 held back" would think the batch was finished.
+    body["sample_note"] = (
+        f"{len(outcome.sampled)} OT quedaron apartadas para verificación individual obligatoria "
+        "(RF-176). No están aprobadas."
+    )
+    return body
+
+
+@router.get(
+    "/units/{unit_code}/batch-approval/preview",
+    summary="Cuántas OT quedarían apartadas para verificación en un lote de este tamaño",
+)
+def preview_batch(unit_code: str, size: int, session: SessionDep) -> dict[str, Any]:
+    """So the screen can say the number before the supervisor commits to the batch."""
+    _unit(session, unit_code)
+    held = sample_size(size)
+    return {
+        "batch_size": size,
+        "sampled": held,
+        "would_approve": max(size - held, 0),
     }
 
 

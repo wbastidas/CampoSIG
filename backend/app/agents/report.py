@@ -49,6 +49,17 @@ class RiskLevel(StrEnum):
     HIGH = "high"
 
 
+#: How a risk level is said to a person. The enum values are English because identifiers are
+#: (rule 11), and interpolating one into a Spanish sentence produces «riesgo medium», which is what
+#: a supervisor would actually have read on the screen. Kept beside the enum so that a third
+#: consumer of this text does not invent a fourth spelling.
+RISK_IN_SPANISH: dict[RiskLevel, str] = {
+    RiskLevel.LOW: "bajo",
+    RiskLevel.MEDIUM: "medio",
+    RiskLevel.HIGH: "alto",
+}
+
+
 class RunStatus(StrEnum):
     #: Every node ran.
     COMPLETE = "complete"
