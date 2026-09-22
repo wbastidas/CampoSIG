@@ -231,7 +231,7 @@ del propio endpoint de bajada, no después— con la versión entregada, de modo
 también distingue el segundo modo de fallo: la cuadrilla tiene la OT, pero en la versión que
 el planificador cambió anoche.
 
-`core:sync` es un módulo Kotlin/JVM sin dependencias de Android (ADR-010), así que sus 52 tests
+`core:sync` es un módulo Kotlin/JVM sin dependencias de Android (ADR-010), así que sus 60 tests
 corren sin SDK, emulador ni dispositivo. La capa Android lo envuelve y no contiene decisiones.
 
 **Nota de verificación:** el entorno de construcción tiene JDK 21 y Gradle 8.14 pero **no SDK de
@@ -251,13 +251,49 @@ dispositivo.
 |---|---|
 | Renderizador Android | JSON Schema + UI Schema en Compose, con los doce bloques del SRS 4.2 |
 | Renderizador web | RJSF con widgets propios, misma semántica |
-| Validación compartida | JSON Schema + JSON Logic con idéntico comportamiento en backend, web y móvil (una suite de casos común a los tres) |
+| Validación compartida | ✅ un corpus (`forms/contract/validation-cases.json`) que ejecutan las tres plataformas |
 | Diseñador de formularios | M04: ajuste sobre lo generado, versionado, publicación que genera GBNF y prompts (RF-033) |
 | Seis formularios del piloto | F-TR-01, F-TR-02, F-OP-01, F-MT-01, F-AP-01, F-IC-03 — **generados desde el perfil** y ajustados, no escritos a mano |
 | Evidencias | CameraX con encuadres guiados, EXIF, GPS, hash, marca de agua, control de calidad de imagen (M07) |
 | ATS bloqueante | Sin ATS aprobado no se habilita el registro de ejecución (etapa 6 del macroproceso) |
 
 **Aceptación:** los seis formularios se llenan de punta a punta en modo avión, con evidencias, y el ATS bloquea de verdad. Cambiar un dominio en el GIS y re-sincronizar metadatos actualiza las opciones del formulario sin desplegar nada.
+
+---
+
+### Validación compartida: un corpus, tres implementaciones
+
+Las reglas condicionales de los bloques son JSON Logic para que el backend, la web y el móvil
+las evalúen igual. «Igual» no se consigue escribiendo el mismo algoritmo tres veces con cuidado:
+eso produce tres algoritmos que coinciden en los casos que a alguien se le ocurrieron. Se
+consigue con `forms/contract/validation-cases.json` —30 casos— que las tres suites ejecutan.
+
+El fallo que impide es caro en campo y va en las dos direcciones. Si el teléfono acepta una
+captura que el servidor rechaza después, el trabajo de la cuadrilla vuelve al día siguiente y
+nadie entiende por qué. Si el teléfono exige un campo que el servidor no pide, la OT no se puede
+cerrar con la red caída — que es la situación para la que existe todo el producto.
+
+| Implementación | Dónde | Corre |
+|---|---|---|
+| Servidor | `backend/app/forms/rules.py` | `pytest`, 49 casos |
+| Web | `web/src/forms/rules.ts` | `vitest`, 47 casos |
+| Móvil | `android/core/sync/.../FormRules.kt` | `gradle :core:sync:test`, en la JVM sin SDK ni dispositivo (ADR-010) |
+
+Los casos que importan son los aburridos, porque son los que las tres implementaciones fallan a
+la vez: **el cero es una respuesta** (una medición de 0 Ω es un resultado), **el falso también**
+(«¿quedó señalizado? No» es una respuesta, y en JavaScript un `false` desprevenido se lee como
+vacío), **los espacios en blanco no**, `11` y `"11"` no son el mismo valor, un booleano no es 0
+ni 1, y un operador desconocido da falso en vez de excepción — una regla mal escrita no puede
+impedirle a una cuadrilla enviar el día de trabajo.
+
+Dos guardas sostienen el contrato: cada suite comprueba que el corpus **distingue una
+implementación ingenua de la correcta** —un corpus que cualquiera pasa no mide nada— y la del
+backend comprueba que las tres suites siguen existiendo y leyendo el mismo archivo, porque borrar
+una dejaría CI en verde y el contrato reducido a dos plataformas en silencio. Las dos están
+probadas en negativo.
+
+`rules.ts` es la biblioteca que consumirá el renderizador web de I5 cuando llegue; el contrato se
+establece ahora precisamente para que no pueda divergir al escribirlo.
 
 ---
 
@@ -572,7 +608,7 @@ Sin RAG (ADR-007). El nodo de normativa funciona con parámetros y reglas, no co
 ## Nota sobre el estado de verificación
 
 Los tests de integración **se ejecutaron contra PostgreSQL 16 + PostGIS 3.4 real**, no solo en CI:
-749 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las doce
+798 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las doce
 migraciones aplicadas y revertidas sobre una base limpia (25 tablas de la aplicación, más
 `alembic_version` y las de PostGIS).
 
@@ -612,7 +648,7 @@ niveles:
 
 | Nivel | Qué prueba | Cuántos |
 |---|---|---|
-| Lógica pura | Orden, severidad, PKCE, sesión, decisiones del importador | 127 |
+| Lógica pura | Orden, severidad, PKCE, sesión, importador, contrato de validación | 174 |
 | Render (jsdom) | Que las pantallas muestren lo que hay que ver | 58 |
 | Navegador real (Chromium) | Que **el artefacto que se despliega** cargue y la puerta de login aguante | 3 |
 

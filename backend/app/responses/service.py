@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.forms.composer import ComposedForm, FormComposer
+from app.forms.rules import missing_requirements
 from app.org.models import BusinessUnit
 from app.org.service import context_for_unit
 from app.responses.models import (
@@ -72,59 +73,17 @@ def validate_answers(form: ComposedForm, answers: dict[str, Any]) -> list[str]:
 
 
 def _evaluate_rules(form: ComposedForm, answers: dict[str, Any]) -> list[str]:
-    """Evaluate the form's conditional rules (JSON Logic subset).
+    """The form's conditional requirements, as messages for the person who has to fix them.
 
-    A deliberately small evaluator covering the operators the block library actually uses.
-    A full JSON Logic library would be more general; it would also accept expressions the
-    mobile renderer cannot evaluate, and a rule that behaves differently on the phone than on
-    the server is a rule nobody can trust.
+    The judgement lives in `app/forms/rules.py`, which the web and the phone mirror against a
+    shared corpus (`forms/contract/validation-cases.json`). Only the wording is here: a rule
+    that behaves differently on the phone than on the server is a rule nobody can trust, and the
+    way to prevent that is one contract rather than three careful implementations.
     """
-    problems: list[str] = []
-    for rule in form.rules:
-        condition = rule.get("when")
-        required = rule.get("require") or []
-        if not condition or not required:
-            continue
-        if not _evaluate_condition(condition, answers):
-            continue
-        for field in required:
-            value = answers.get(field)
-            if value is None or value == "" or value == []:
-                problems.append(rule.get("message") or f"{field}: es obligatorio en este caso")
-    return problems
-
-
-def _evaluate_condition(condition: dict[str, Any], answers: dict[str, Any]) -> bool:
-    """Evaluate one JSON Logic condition. Unknown operators evaluate to False.
-
-    False rather than raising: an unrecognised operator must not block a technician from
-    submitting a day's work. It is surfaced by the catalogue validation instead, before the
-    form ever reaches a phone.
-    """
-    if "==" in condition:
-        left, right = condition["=="]
-        return bool(_resolve(left, answers) == _resolve(right, answers))
-    if "!=" in condition:
-        left, right = condition["!="]
-        return bool(_resolve(left, answers) != _resolve(right, answers))
-    if "in" in condition:
-        needle, haystack = condition["in"]
-        resolved = _resolve(haystack, answers)
-        if not isinstance(resolved, (list, tuple, str)):
-            return False
-        return bool(_resolve(needle, answers) in resolved)
-    if "and" in condition:
-        return all(_evaluate_condition(part, answers) for part in condition["and"])
-    if "or" in condition:
-        return any(_evaluate_condition(part, answers) for part in condition["or"])
-    return False
-
-
-def _resolve(token: Any, answers: dict[str, Any]) -> Any:
-    """Resolve a JSON Logic operand: `{"var": "x"}` reads an answer, anything else is literal."""
-    if isinstance(token, dict) and "var" in token:
-        return answers.get(token["var"])
-    return token
+    return [
+        missing.message or f"{missing.field}: es obligatorio en este caso"
+        for missing in missing_requirements(form.rules, answers)
+    ]
 
 
 # --- responses ---------------------------------------------------------------------
