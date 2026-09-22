@@ -80,6 +80,53 @@ export interface Degradation {
   reason: string;
 }
 
+/** One finding of the pre-review report (Annex D, RF-175). */
+export interface AgentObservation {
+  id: string;
+  category: 'coherence' | 'regulatory' | 'catalog' | 'evidence' | 'anomaly' | 'safety';
+  severity: 'low' | 'medium' | 'high';
+  message: string;
+  evidence: {
+    type: 'transcript' | 'field' | 'photo' | 'computed';
+    span: [number, number] | null;
+    json_path: string | null;
+    evidence_id: string | null;
+    detail: string | null;
+  }[];
+  source: { document: string; version: string | null; section: string | null; verified: boolean } | null;
+  suggested_action: string | null;
+  confidence: number | null;
+  node: string | null;
+}
+
+export interface AgentReport {
+  work_order_id: string;
+  graph_version: string;
+  hardware_profile: string;
+  risk_level: 'low' | 'medium' | 'high';
+  status: 'complete' | 'partial' | 'failed';
+  summary: string;
+  observations: AgentObservation[];
+  models: Record<string, string>;
+  budget: { llm_calls: number; tokens: number; duration_s: number };
+  /** Nodes that did not run, with the reason (RF-204). */
+  skipped: string[];
+  /** Observations the guardrail refused. Zero is the expected value. */
+  discarded: number;
+}
+
+/**
+ * The report and the state of the run that produced it.
+ *
+ * The run state travels because "there is no report" has two very different meanings — it failed, or
+ * it has not run — and a supervisor deciding without one should know which.
+ */
+export interface AgentReportEnvelope {
+  run_state: string | null;
+  error: string | null;
+  report: AgentReport | null;
+}
+
 export interface ReviewDetail {
   work_order: {
     work_order_id: string;
@@ -118,6 +165,8 @@ export interface ReviewDetail {
   compliance: ComplianceFinding[];
   blockers: string[];
   degradations: Degradation[];
+  /** Null when no run exists at all (RF-170, RF-204). */
+  agent_report: AgentReportEnvelope | null;
   observations: { field_key: string; message: string; suggested_value: unknown }[];
   history: {
     decision: string;

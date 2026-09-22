@@ -31,18 +31,23 @@ import {
 import {
   ATTENTION_COLOR,
   ATTENTION_LABEL,
+  CATEGORY_LABEL,
   acceptanceRate,
   attentionFor,
   citationFor,
   displayValue,
   evidenceByStage,
   hasDegradations,
+  missingReportReason,
   needsArcFm,
+  observationCitation,
   OUTCOME_LABEL,
   PLACEMENT_LABEL,
   reusedEvidence,
+  RISK_LABEL,
   sortDegradations,
   sortFindings,
+  sortObservations,
   sortQueue,
   tamperedEvidence,
   unconfirmedAiValues,
@@ -232,6 +237,7 @@ export function ReviewScreen({ businessUnit, reviewer, now = () => new Date() }:
           <article className="review-detail">
             <ReviewHeader detail={detail} />
             <Blockers detail={detail} refused={refused} />
+            <PreReview detail={detail} />
             <Degradations detail={detail} />
             {/* La captura misma, antes de la auditoría: se revisa lo que la cuadrilla escribió,
                 no solo lo que la plataforma opina de ello (I6, vista de formulario). */}
@@ -292,6 +298,80 @@ export function ReviewScreen({ businessUnit, reviewer, now = () => new Date() }:
       </div>
 
       {tray && <GisTrayPanel tray={tray} />}
+    </section>
+  );
+}
+
+/**
+ * The pre-review report (RF-111, RF-175).
+ *
+ * Above the evidence and below the blockers: it is context for reading the capture, not a verdict on
+ * it. The heading states the risk level in words — these screens get read on office monitors of every
+ * vintage, and a colour-only signal is one a colour-blind supervisor does not receive at all.
+ *
+ * When there is no report, the reason is shown instead of nothing. "It failed" and "it has not run
+ * yet" are different things to somebody about to decide without it, and neither of them is a reason
+ * to wait: the deterministic findings above are complete either way (RF-204).
+ */
+function PreReview({ detail }: { detail: ReviewDetail }) {
+  const missing = missingReportReason(detail);
+  if (missing !== null) {
+    return (
+      <section aria-label="Informe de pre-revisión">
+        <h3>Informe de pre-revisión</h3>
+        <p role="status">{missing}</p>
+      </section>
+    );
+  }
+
+  const report = detail.agent_report?.report;
+  if (!report) return null;
+
+  return (
+    <section aria-label="Informe de pre-revisión">
+      <h3>
+        Informe de pre-revisión — {RISK_LABEL[report.risk_level]}{' '}
+        <span className="prereview__meta">{report.graph_version}</span>
+      </h3>
+      <p>{report.summary}</p>
+
+      {report.discarded > 0 && (
+        <p role="status">
+          {/* Un nodo que empieza a producir observaciones sin apoyo tiene que notarse en la
+              ejecución siguiente y no en seis meses. */}
+          El guardrail descartó {report.discarded} observación(es) por no señalar evidencia.
+        </p>
+      )}
+
+      {report.observations.length === 0 ? (
+        <p>Sin observaciones: las reglas deterministas no encontraron nada que revisar.</p>
+      ) : (
+        <ul className="prereview__observations">
+          {sortObservations(report.observations).map((observation) => {
+            const citation = observationCitation(observation);
+            return (
+              <li key={observation.id}>
+                <strong>{CATEGORY_LABEL[observation.category]}</strong>{' '}
+                <span className="severity-chip">{observation.severity}</span>
+                <div>{observation.message}</div>
+                {observation.suggested_action && (
+                  <div className="prereview__action">{observation.suggested_action}</div>
+                )}
+                {citation && <div className="prereview__citation">{citation}</div>}
+                {/* La evidencia que la observación señala: sin esto el supervisor tendría que ir a
+                    buscarla, que es el trabajo que el informe existe para ahorrar. */}
+                <ul className="prereview__evidence">
+                  {observation.evidence.map((ref, index) => (
+                    <li key={`${ref.type}-${index}`}>
+                      {ref.detail ?? ref.json_path ?? ref.evidence_id ?? ref.type}
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </section>
   );
 }

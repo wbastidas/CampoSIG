@@ -480,3 +480,43 @@ fieldset {
     margin-bottom: 0.5rem;
   }
 }
+
+/* Informe de pre-revisión (RF-111). El riesgo va en palabras en el encabezado; el color solo
+   acompaña. Estas pantallas se leen en monitores de oficina de cualquier antigüedad, y una señal
+   solo por color es una que un supervisor con daltonismo no recibe. */
+.prereview__meta {
+  font-weight: normal;
+  font-size: 0.8em;
+  color: var(--texto-suave);
+}
+
+.prereview__observations {
+  list-style: none;
+  padding: 0;
+}
+
+.prereview__observations > li {
+  border-left: 3px solid var(--borde);
+  padding: 0.25rem 0 0.25rem 0.6rem;
+  margin-bottom: 0.6rem;
+}
+
+.prereview__action {
+  color: var(--texto-suave);
+}
+
+.prereview__citation {
+  font-size: 0.9em;
+  color: var(--texto-suave);
+  font-style: italic;
+}
+
+/* La evidencia que la observación señala: pequeña, monoespaciada y siempre presente. Sin ella el
+   supervisor tendría que ir a buscarla, que es el trabajo que el informe existe para ahorrar. */
+.prereview__evidence {
+  font-family: ui-monospace, monospace;
+  font-size: 0.8em;
+  color: var(--texto-suave);
+  margin: 0.2rem 0 0 1rem;
+  padding: 0;
+}

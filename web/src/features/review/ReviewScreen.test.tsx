@@ -72,6 +72,7 @@ function detail(overrides: Partial<ReviewDetail> = {}): ReviewDetail {
     compliance: [],
     blockers: [],
     degradations: [],
+    agent_report: null,
     observations: [],
     history: [],
     ...overrides,
@@ -541,5 +542,101 @@ describe('el aviso de IA no disponible (RF-204)', () => {
     (await screen.findByRole('button', { name: /OT-/ })).click();
     await screen.findByText(/Decisión/);
     expect(screen.queryByText(/Lo que la IA no va a aportar/)).toBeNull();
+  });
+});
+
+describe('el informe de pre-revisión en pantalla (RF-111)', () => {
+  const observation = {
+    id: 'coh-gps-distance',
+    category: 'coherence' as const,
+    severity: 'high' as const,
+    message: 'La captura se registró a 6,5 km del activo P-000452.',
+    evidence: [
+      { type: 'field' as const, span: null, json_path: '$.gps', evidence_id: null, detail: null },
+      {
+        type: 'computed' as const,
+        span: null,
+        json_path: null,
+        evidence_id: null,
+        detail: 'distancia haversine: 6,5 km, tolerancia 250 m',
+      },
+    ],
+    source: null,
+    suggested_action: 'Confirmar que se trabajó en el activo de la OT.',
+    confidence: null,
+    node: 'coherence',
+  };
+
+  const report = {
+    work_order_id: 'wo-1',
+    graph_version: 'prereview-0.1.0',
+    hardware_profile: 'A',
+    risk_level: 'high' as const,
+    status: 'partial' as const,
+    summary: '1 observación (1 de severidad alta). No se ejecutó: auditoría de evidencia visual.',
+    observations: [observation],
+    models: {},
+    budget: { llm_calls: 0, tokens: 0, duration_s: 0.02 },
+    skipped: ['auditoría de evidencia visual: sin GPU'],
+    discarded: 0,
+  };
+
+  it('muestra el riesgo en palabras, el resumen y la evidencia que la observación señala', async () => {
+    vi.stubGlobal(
+      'fetch',
+      mockApi(detail({ agent_report: { run_state: 'parcial', error: null, report } })),
+    );
+    render(<ReviewScreen businessUnit="GYE" reviewer="sup.1" />);
+
+    (await screen.findByRole('button', { name: /OT-/ })).click();
+    expect(await screen.findByText(/Riesgo alto/)).not.toBeNull();
+    expect(screen.getByText(/6,5 km del activo/)).not.toBeNull();
+    // La evidencia: sin esto el supervisor tendría que ir a buscarla, que es el trabajo que el
+    // informe existe para ahorrar.
+    expect(screen.getByText(/distancia haversine/)).not.toBeNull();
+    expect(screen.getByText(/Confirmar que se trabajó/)).not.toBeNull();
+  });
+
+  it('sin informe muestra por qué no lo hay, no un hueco', async () => {
+    vi.stubGlobal('fetch', mockApi(detail({ agent_report: null })));
+    render(<ReviewScreen businessUnit="GYE" reviewer="sup.1" />);
+
+    (await screen.findByRole('button', { name: /OT-/ })).click();
+    expect(await screen.findByText(/todavía no se ha ejecutado/)).not.toBeNull();
+  });
+
+  it('una ejecución fallida se distingue de una que no corrió', async () => {
+    vi.stubGlobal(
+      'fetch',
+      mockApi(
+        detail({
+          agent_report: { run_state: 'fallido', error: 'RuntimeError: el grafo se rompió', report: null },
+        }),
+      ),
+    );
+    render(<ReviewScreen businessUnit="GYE" reviewer="sup.1" />);
+
+    (await screen.findByRole('button', { name: /OT-/ })).click();
+    expect(await screen.findByText(/falló/)).not.toBeNull();
+    expect(screen.getByText(/el grafo se rompió/)).not.toBeNull();
+  });
+
+  it('un descarte del guardrail se anuncia', async () => {
+    vi.stubGlobal(
+      'fetch',
+      mockApi(
+        detail({
+          agent_report: {
+            run_state: 'terminado',
+            error: null,
+            report: { ...report, discarded: 2, observations: [] },
+          },
+        }),
+      ),
+    );
+    render(<ReviewScreen businessUnit="GYE" reviewer="sup.1" />);
+
+    (await screen.findByRole('button', { name: /OT-/ })).click();
+    expect(await screen.findByText(/descartó 2 observación/)).not.toBeNull();
   });
 });

@@ -9,9 +9,18 @@
 
 import { describe, expect, it } from 'vitest';
 
-import type { ComplianceFinding, Provenance, QueueItem, ReviewDetail } from '../../api/review';
+import type {
+  AgentObservation,
+  AgentReport,
+  ComplianceFinding,
+  Provenance,
+  QueueItem,
+  ReviewDetail,
+} from '../../api/review';
 import {
+  CATEGORY_LABEL,
   PLACEMENT_LABEL,
+  RISK_LABEL,
   acceptanceRate,
   attentionFor,
   citationFor,
@@ -19,10 +28,13 @@ import {
   displayValue,
   evidenceByStage,
   hasDegradations,
+  missingReportReason,
   needsArcFm,
+  observationCitation,
   reusedEvidence,
   sortDegradations,
   sortFindings,
+  sortObservations,
   sortQueue,
   tamperedEvidence,
   unconfirmedAiValues,
@@ -102,6 +114,7 @@ function detail(overrides: Partial<ReviewDetail> = {}): ReviewDetail {
     compliance: [],
     blockers: [],
     degradations: [],
+    agent_report: null,
     observations: [],
     history: [],
     ...overrides,
@@ -366,5 +379,105 @@ describe('lo que la IA no va a aportar (RF-204)', () => {
   it('cada destino tiene una etiqueta en castellano', () => {
     expect(PLACEMENT_LABEL.unavailable).toBe('No se va a ejecutar');
     expect(PLACEMENT_LABEL.night_batch).toBe('Queda para el lote nocturno');
+  });
+});
+
+describe('el informe de pre-revisión (RF-111, RF-175)', () => {
+  function observation(overrides: Partial<AgentObservation> = {}): AgentObservation {
+    return {
+      id: 'obs-1',
+      category: 'coherence',
+      severity: 'medium',
+      message: 'algo que revisar',
+      evidence: [
+        { type: 'field', span: null, json_path: '$.x', evidence_id: null, detail: null },
+      ],
+      source: null,
+      suggested_action: null,
+      confidence: null,
+      node: 'coherence',
+      ...overrides,
+    };
+  }
+
+  function report(overrides: Partial<AgentReport> = {}): AgentReport {
+    return {
+      work_order_id: 'wo-1',
+      graph_version: 'prereview-0.1.0',
+      hardware_profile: 'A',
+      risk_level: 'medium',
+      status: 'partial',
+      summary: 'dos observaciones',
+      observations: [],
+      models: {},
+      budget: { llm_calls: 0, tokens: 0, duration_s: 0.1 },
+      skipped: ['auditoría de evidencia visual: sin GPU'],
+      discarded: 0,
+      ...overrides,
+    };
+  }
+
+  it('las observaciones se leen de la peor a la más leve', () => {
+    const ordered = sortObservations([
+      observation({ id: 'c', severity: 'low' }),
+      observation({ id: 'a', severity: 'high' }),
+      observation({ id: 'b', severity: 'medium' }),
+    ]);
+    expect(ordered.map((item) => item.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('un límite sin verificar no se presenta como cita del texto oficial', () => {
+    // ADR-007: darle a alguien un veredicto con una referencia de aspecto oficial debajo es peor
+    // que darle el veredicto solo, porque lo invita a dejar de comprobar.
+    const unverified = observation({
+      category: 'regulatory',
+      source: { document: 'ARCERNNR 002/20', version: '2023', section: 'Art. 12', verified: false },
+    });
+    const citation = observationCitation(unverified);
+    expect(citation).toContain('sin verificar');
+    expect(citation).not.toContain('ARCERNNR');
+  });
+
+  it('un límite verificado sí se cita con documento, versión y numeral', () => {
+    const verified = observation({
+      category: 'regulatory',
+      source: { document: 'ARCERNNR 002/20', version: '2023', section: 'Art. 12', verified: true },
+    });
+    expect(observationCitation(verified)).toBe('ARCERNNR 002/20 · v2023 · Art. 12');
+  });
+
+  it('una observación sin fuente no inventa una cita', () => {
+    expect(observationCitation(observation())).toBeNull();
+  });
+
+  it('distingue «falló» de «todavía no corrió»', () => {
+    // Son cosas distintas para quien está por decidir sin informe, y ninguna es motivo de esperar.
+    expect(missingReportReason(detail({ agent_report: null }))).toContain('todavía no se ha ejecutado');
+    expect(
+      missingReportReason(
+        detail({ agent_report: { run_state: 'fallido', error: 'RuntimeError: x', report: null } }),
+      ),
+    ).toContain('falló');
+    expect(
+      missingReportReason(
+        detail({ agent_report: { run_state: 'pendiente', error: null, report: null } }),
+      ),
+    ).toContain('pendiente');
+  });
+
+  it('con informe no hay motivo que mostrar', () => {
+    expect(
+      missingReportReason(
+        detail({ agent_report: { run_state: 'terminado', error: null, report: report() } }),
+      ),
+    ).toBeNull();
+  });
+
+  it('cada nivel de riesgo y cada categoría tienen etiqueta en palabras', () => {
+    // En palabras y no solo en color: una señal solo por color es una que un supervisor con
+    // daltonismo no recibe.
+    expect(RISK_LABEL.high).toBe('Riesgo alto');
+    expect(CATEGORY_LABEL.regulatory).toBe('Normativa');
+    expect(CATEGORY_LABEL.anomaly).toBe('Anomalía');
   });
 });

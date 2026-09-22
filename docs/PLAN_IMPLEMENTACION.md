@@ -681,9 +681,30 @@ español del Ecuador se lee como seis coma cuatro ocho metros — los separadore
 las distancias van sin agrupación por debajo del kilómetro y en kilómetros con coma decimal por
 encima, que además se juzga más rápido: «a 6,5 km del activo» entra de una.
 
-Falta la mitad que necesita modelos (los nodos VLM y de redacción, I12), la persistencia de
-`agent_run`, `agent_report` y `agent_step_trace` para RF-180, y la aprobación en lote asistida de
-RF-176 con su muestreo obligatorio.
+**Y la pre-revisión ya corre y se guarda.** `app/prereview/` es la otra mitad: construye los hechos
+desde la base, ejecuta el grafo, y guarda `agent_run`, `agent_report` y `agent_step_trace`
+(migración 0013). Está **fuera** de `app/agents/` a propósito: la guarda estructural de ese paquete
+prohíbe importar SQLAlchemy, que es cómo la regla 14 se sostiene sin que nadie tenga que recordarla.
+Una guarda con una excepción para «el archivo que sí puede escribir» sería una guarda que alguien
+amplía.
+
+Lo que el criterio de aceptación de RF-170 pide, y que ahora tiene test contra base real:
+
+| Propiedad | Cómo se sostiene |
+|---|---|
+| Toda OT sincronizada acaba con ejecución en estado terminal | `orders_without_a_terminal_run` es la cola del worker, y se comprueba que se vacía |
+| Un fallo queda registrado y se reintenta | una excepción del grafo no escapa: deja la ejecución en `fallido` con su motivo. El único estado prohibido es que la OT no tenga ejecución ninguna |
+| Nada bloquea la revisión humana | el worker nunca está en el camino de una petición, y aprobar funciona sin informe |
+| RF-180: reproducir una ejecución da el mismo informe | dos ejecuciones sobre la misma captura producen documentos idénticos salvo la duración medida |
+| El nodo que no corrió queda en la traza con su motivo | «¿por qué no hay sección visual?» tiene respuesta en el registro y no en la memoria de alguien sobre el despliegue |
+
+Y en la pantalla del supervisor el informe aparece con el riesgo **en palabras**, cada observación con
+su evidencia señalada y su acción sugerida, y —cuando no hay informe— el motivo: «falló» y «todavía
+no corrió» son cosas distintas para quien está por decidir sin él, y ninguna de las dos es motivo de
+esperar.
+
+Falta la mitad que necesita modelos (los nodos VLM y de redacción, I12) y la aprobación en lote
+asistida de RF-176 con su muestreo obligatorio.
 
 ---
 
@@ -743,8 +764,8 @@ está y se prueba.
 ## Nota sobre el estado de verificación
 
 Los tests de integración **se ejecutaron contra PostgreSQL 16 + PostGIS 3.4 real**, no solo en CI:
-944 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las doce
-migraciones aplicadas y revertidas sobre una base limpia (25 tablas de la aplicación, más
+957 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las trece
+migraciones aplicadas y revertidas sobre una base limpia (28 tablas de la aplicación, más
 `alembic_version` y las de PostGIS).
 
 Eso destapó cuatro defectos que ni el lint, ni `mypy --strict`, ni el renderizado de SQL offline
@@ -783,8 +804,8 @@ niveles:
 
 | Nivel | Qué prueba | Cuántos |
 |---|---|---|
-| Lógica pura | Orden, severidad, PKCE, sesión, importador, validación, disposición | 195 |
-| Render (jsdom) | Que las pantallas muestren lo que hay que ver | 72 |
+| Lógica pura | Orden, severidad, PKCE, sesión, importador, validación, disposición, informe | 202 |
+| Render (jsdom) | Que las pantallas muestren lo que hay que ver | 76 |
 | Navegador real (Chromium) | Que **el artefacto que se despliega** cargue y la puerta de login aguante | 3 |
 
 `pnpm lint` también era un comando documentado que no existía: no había `eslint.config.js`, así

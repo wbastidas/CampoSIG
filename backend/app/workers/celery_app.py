@@ -21,6 +21,7 @@ from celery.schedules import crontab
 from app.infra.database import get_session_factory
 from app.settings import get_settings
 from app.workers.integration_delivery import run_once
+from app.workers.pre_review import run_once as run_pre_review_pass
 
 settings = get_settings()
 
@@ -39,7 +40,15 @@ celery_app.conf.update(
         "entregar-integraciones": {
             "task": "sigec.integrations.deliver",
             "schedule": crontab(minute="*"),
-        }
+        },
+        # Cada cinco minutos, no cada minuto: la pre-revisión de una OT recién sincronizada no es
+        # urgente —el supervisor la abre cuando llega a ella— y un grafo por OT cuesta más que
+        # empujar un evento. Lo que sí importa es que la cola se vacíe, y eso lo comprueba
+        # `orders_without_a_terminal_run`.
+        "pre-revisar-ot": {
+            "task": "sigec.prereview.run",
+            "schedule": crontab(minute="*/5"),
+        },
     },
 )
 
@@ -57,3 +66,16 @@ def deliver_integrations() -> dict[str, Any]:
     """
     with get_session_factory()() as session:
         return run_once(session).as_dict()
+
+
+@celery_app.task(name="sigec.prereview.run")  # type: ignore[untyped-decorator]
+def run_pre_reviews() -> dict[str, Any]:
+    """One pre-review pass over every business unit (RF-170).
+
+    No `autoretry_for` here either, and for a sharper reason than the integration task: a failed
+    run is recorded with its reason and retried by the next pass, bounded by `MAX_ATTEMPTS`. A task
+    retry would multiply that, and a graph that fails deterministically would be run until the queue
+    gave up rather than until somebody fixed it.
+    """
+    with get_session_factory()() as session:
+        return run_pre_review_pass(session).as_dict()

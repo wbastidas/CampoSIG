@@ -14,6 +14,8 @@
  */
 
 import type {
+  AgentObservation,
+  AgentReport,
   ComplianceFinding,
   Degradation,
   Provenance,
@@ -206,3 +208,71 @@ export const PLACEMENT_LABEL: Record<Degradation['placement'], string> = {
   night_batch: 'Queda para el lote nocturno',
   interactive: 'En línea',
 };
+
+/**
+ * Reading the pre-review report (RF-111, RF-175).
+ *
+ * The risk level is what a supervisor sorts by, so the label has to be unambiguous in a glance and
+ * not depend on colour: these actas get read on office monitors of every vintage, and a colour-only
+ * signal is one a colour-blind supervisor does not receive at all.
+ */
+export const RISK_LABEL: Record<AgentReport['risk_level'], string> = {
+  high: 'Riesgo alto',
+  medium: 'Riesgo medio',
+  low: 'Riesgo bajo',
+};
+
+export const CATEGORY_LABEL: Record<AgentObservation['category'], string> = {
+  safety: 'Seguridad',
+  regulatory: 'Normativa',
+  evidence: 'Evidencia',
+  coherence: 'Coherencia',
+  catalog: 'Catálogo',
+  anomaly: 'Anomalía',
+};
+
+const OBSERVATION_SEVERITY: Record<AgentObservation['severity'], number> = {
+  high: 0,
+  medium: 1,
+  low: 2,
+};
+
+/** Worst first, then by id, so two readings of one report agree. */
+export function sortObservations(observations: AgentObservation[]): AgentObservation[] {
+  return [...observations].sort(
+    (a, b) =>
+      OBSERVATION_SEVERITY[a.severity] - OBSERVATION_SEVERITY[b.severity] ||
+      a.id.localeCompare(b.id),
+  );
+}
+
+/**
+ * The citation of a report observation, or why there is none.
+ *
+ * An unverified limit is **not** shown as a citation of the official text (ADR-007): handing
+ * somebody a verdict with an official-looking reference under it is worse than handing them the
+ * verdict alone, because it invites them to stop checking.
+ */
+export function observationCitation(observation: AgentObservation): string | null {
+  const source = observation.source;
+  if (!source) return null;
+  if (!source.verified) return 'Límite sin verificar contra el texto oficial; resultado provisional';
+  return [source.document, source.version ? `v${source.version}` : null, source.section]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/** Why there is no report, in words. Null when there is one. */
+export function missingReportReason(detail: ReviewDetail): string | null {
+  const envelope = detail.agent_report;
+  if (envelope === null) {
+    return 'La pre-revisión de esta OT todavía no se ha ejecutado.';
+  }
+  if (envelope.report !== null) return null;
+  if (envelope.error) {
+    // Distinguished on purpose: "it failed" and "it has not run" are different things to a
+    // supervisor who is about to decide without it.
+    return `La pre-revisión falló (${envelope.run_state ?? 'sin estado'}): ${envelope.error}`;
+  }
+  return `La pre-revisión está en estado «${envelope.run_state ?? 'desconocido'}» y aún no produjo informe.`;
+}

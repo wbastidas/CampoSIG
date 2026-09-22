@@ -27,6 +27,7 @@ from app.gis_gateway.staging_table import asbuilt_proposal
 from app.inference.service import pre_review_degradations
 from app.infra.database import get_session
 from app.org.service import UnknownBusinessUnitError, get_business_unit_by_code
+from app.prereview.service import latest_report, latest_run
 from app.responses.models import FormResponse, ValueOrigin
 from app.responses.service import compose_for, missing_photos, photo_counts
 from app.review.models import Decision
@@ -194,6 +195,10 @@ def detail(session: SessionDep, unit_code: str, order_id: uuid.UUID) -> dict[str
         # no report. Computed from configuration, with no call to the model service: a review
         # screen must never wait on a model, and the approval below does not either.
         "degradations": [entry.as_dict() for entry in pre_review_degradations()],
+        # The pre-review report (RF-111, RF-175), or null when there is none yet. Null is an
+        # ordinary answer: the order may be waiting for the night batch, or this deployment may have
+        # no model service at all. The degradations above say which.
+        "agent_report": _agent_report(session, order.id),
         "observations": [
             {
                 "field_key": observation.field_key,
@@ -212,6 +217,27 @@ def detail(session: SessionDep, unit_code: str, order_id: uuid.UUID) -> dict[str
             }
             for row in decision_history(session, order)
         ],
+    }
+
+
+def _agent_report(session: Session, order_id: uuid.UUID) -> dict[str, Any] | None:
+    """The stored report plus the state of its run.
+
+    The run's state travels with it because "there is no report" has two very different
+    meanings — it failed, or it has not run — and a supervisor deciding without one should know
+    which.
+    """
+    report = latest_report(session, order_id)
+    if report is None:
+        run = latest_run(session, order_id)
+        if run is None:
+            return None
+        return {"run_state": run.state, "error": run.error, "report": None}
+    run = latest_run(session, order_id)
+    return {
+        "run_state": run.state if run else None,
+        "error": run.error if run else None,
+        "report": report.model_dump(mode="json"),
     }
 
 
