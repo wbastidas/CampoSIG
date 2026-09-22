@@ -221,3 +221,36 @@ export function fetchGisTray(businessUnit: string, signal?: AbortSignal): Promis
     signal,
   });
 }
+
+/**
+ * Issue the acta of a work order and hand back the PDF with its verification code (RF-115).
+ *
+ * Returned as a blob rather than a URL to navigate to: the request carries the bearer token, and
+ * a plain `<a href>` would not. The code and hash come back in headers so the screen can name
+ * the document it just produced without parsing the PDF.
+ */
+export async function issueActa(
+  businessUnit: string,
+  workOrderId: string,
+): Promise<{ blob: Blob; verificationCode: string; contentHash: string }> {
+  const response = await fetch(
+    `/api/v1/reports/units/${encodeURIComponent(businessUnit)}/work-orders/${workOrderId}/acta`,
+    { method: 'POST', headers: authHeaders() },
+  );
+  if (!response.ok) {
+    if (response.status === 401) notifyExpired();
+    let detail = `${response.status} ${response.statusText}`;
+    try {
+      const body = (await response.json()) as { detail?: string };
+      if (body.detail) detail = body.detail;
+    } catch {
+      // No JSON body; the status line stands.
+    }
+    throw new ApiError(response.status, detail);
+  }
+  return {
+    blob: await response.blob(),
+    verificationCode: response.headers.get('X-SIGEC-Verification-Code') ?? '',
+    contentHash: response.headers.get('X-SIGEC-Document-Hash') ?? '',
+  };
+}

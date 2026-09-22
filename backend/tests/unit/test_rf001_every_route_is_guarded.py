@@ -23,6 +23,12 @@ PUBLIC_ROUTES: dict[str, str] = {
     "/ready": "sonda de disponibilidad",
     # Catálogo de constantes del propio código: no son datos de nadie.
     "/api/v1/planning/states": "enumeración de estados, sin datos",
+    # Verificación pública del acta (RF-115): la abre quien escanea el QR impreso, que es el
+    # cliente cuya luminaria se repuso y no tiene cuenta corporativa. Exigir identidad la haría
+    # inútil. Lo que compensa es que revela lo mínimo —si el documento consta, de qué OT es,
+    # cuándo se emitió y su huella— y nada de la persona, la dirección ni las respuestas; y que
+    # el código es impredecible, así que no se puede enumerar lo emitido.
+    "/verificar/{code}": "verificación pública del acta, sin datos personales",
     # Documentación de la API.
     "/openapi.json": "especificación",
     "/docs": "documentación",
@@ -134,7 +140,11 @@ def test_rf_002_every_unit_scoped_route_checks_the_scope() -> None:
 
 
 def test_the_exception_list_stays_short() -> None:
-    """Una lista de excepciones que crece es una lista que dejó de significar algo."""
+    """Una lista de excepciones que crece es una lista que dejó de significar algo.
+
+    Está justo en el tope, y eso es deliberado: la siguiente ruta pública obliga a mirar si
+    alguna de las ocho sigue teniendo sentido antes de subir el número.
+    """
     assert len(PUBLIC_ROUTES) <= 8
 
 

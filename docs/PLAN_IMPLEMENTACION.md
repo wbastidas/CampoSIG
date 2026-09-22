@@ -269,7 +269,7 @@ dispositivo.
 |---|---|
 | Bandeja de revisión | M11: filtros, paginación de servidor, vista de formulario, línea de tiempo, mapa, fotos antes/después |
 | Decisión del supervisor | Aprobar, devolver con observaciones por campo, anular. La devolución regresa al móvil junto al campo exacto |
-| Acta PDF | WeasyPrint con fotos, firmas, resumen y QR de verificación (RF-115) |
+| Acta PDF | ✅ WeasyPrint con fotos, firmas, resumen y QR de verificación (RF-115) |
 | `staging_asbuilt` | RF-342: propuestas con `proposal_id`, `GLOBALID` de origen, OT, y resultado de aplicación |
 | **Bandeja de revisión GIS** | RF-343: agrupación por zona y alimentador, antes/después, aprobación por lotes, rol de editor GIS |
 | Exportación para ArcFM | RF-344: lote aprobado como GeoJSON y CSV de trabajo, una fila por elemento con su acción, atributos y enlace a la OT, fotos y detecciones. **La aplicación en ArcFM la ejecuta el equipo de la distribuidora**; no se construye complemento de ArcMap ni se usa ArcObjects (ADR-001) |
@@ -292,7 +292,49 @@ dispositivo.
 | Antes/después | ✅ con la misma foto enviada dos veces detectada por hash, y la evidencia cuyo hash no cuadra destacada |
 | Impedimentos antes de pulsar Aprobar | ✅ y si el servidor rechaza, devuelve la lista y la pantalla la muestra como lista |
 | Bandeja hacia el GIS | ✅ propuestas y lotes, con las que requieren ArcFM contadas aparte (ADR-001) |
-| Render en un navegador | Pendiente: la lógica tiene 79 tests, el DOM no se ha ejecutado |
+| Render en un navegador | ✅ 26 tests de lógica y 14 de render en jsdom |
+| Acta PDF con QR de verificación (RF-115) | ✅ `app/reports/`, WeasyPrint + segno |
+
+### El acta, y qué significa que un QR verifique (RF-115)
+
+Un QR que solo abre una página mostrando el mismo hash impreso al lado no verifica nada: sería
+la página haciendo eco del papel. Lo que la convierte en verificación es que la plataforma
+**reconozca el código** —uno impredecible, para que lo emitido no se pueda enumerar— y pueda
+decir **«no consta»** de uno que nunca emitió. Esa frase es la razón de imprimir el QR.
+
+La página es pública a propósito: la abre el cliente cuya luminaria se repuso, que no tiene
+cuenta corporativa. Lo que compensa es que revela lo mínimo —si el documento consta, de qué OT
+es, cuándo se emitió y su huella— y nada de la persona, la dirección ni las respuestas. Es la
+octava y última excepción de la lista de rutas sin identidad, y la lista está en su tope
+deliberadamente.
+
+El acta se compone de los **bloques del propio formulario, en su orden**, no de una lista de
+campos escrita en el código: una lista a mano deja de mencionar el campo que un administrador
+funcional añade mañana, y el acta sigue pareciendo completa. Y seis cosas se imprimen porque el
+papel mentiría sin ellas:
+
+| En el papel | Lo que evita |
+|---|---|
+| Cada valor de IA con su modelo, versión, confianza y quién lo confirmó | Imprimir lo que un modelo adivinó como si lo hubiera escrito una persona (regla 8) |
+| Un límite sin verificar marcado **provisional**, nunca citado | Una cifra que nadie leyó en la resolución, con una referencia de aspecto oficial debajo (ADR-007) |
+| Una foto cuyo hash no cuadra, impresa diciéndolo | Que el acta parezca más ordenada que la evidencia |
+| «Sin firma» donde no hubo firma | Un hueco bajo un pie de firma se lee como una firma mal escaneada |
+| «BORRADOR» cruzando la página de una OT sin aprobar | Que una cuadrilla entregue como definitivo lo que no lo es |
+| Los avisos del compositor del formulario | Un acta salida de un formulario incompleto que no lo dice |
+
+**Y un supuesto que hubo que corregir.** El primer diseño daba por hecho que volver a renderizar
+reproduce los mismos bytes —la salida de WeasyPrint sí es estable byte a byte para una página
+trivial, que es lo que muestra una comprobación rápida— y el test lo desmintió: con subconjuntos
+de fuentes reales incrustados deja de estarlo. Así que el registro guarda la huella de **los bytes
+que se entregaron** y la verificación compara el archivo que alguien tiene contra esa huella; nunca
+se vuelve a renderizar para comprobar. Reimprimir emite un documento nuevo, con su propia fila: la
+OT puede haberse corregido en medio, y dos papeles distintos afirmando ser el mismo documento es
+lo que un registro tiene que poder distinguir.
+
+Y una inconsistencia que apareció al probar: `create_work_order` no asigna código legible —solo
+las OT importadas traen número externo—, así que el identificador suele ser el id. El acta
+imprimía el id y la página de verificación mostraba una raya, de modo que verificar fallaba justo
+en las OT que son la mayoría. Ahora las dos leen la misma función.
 
 ---
 
@@ -530,8 +572,8 @@ Sin RAG (ADR-007). El nodo de normativa funciona con parámetros y reglas, no co
 ## Nota sobre el estado de verificación
 
 Los tests de integración **se ejecutaron contra PostgreSQL 16 + PostGIS 3.4 real**, no solo en CI:
-684 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las once
-migraciones aplicadas y revertidas sobre una base limpia (24 tablas de la aplicación, más
+749 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las doce
+migraciones aplicadas y revertidas sobre una base limpia (25 tablas de la aplicación, más
 `alembic_version` y las de PostGIS).
 
 Eso destapó cuatro defectos que ni el lint, ni `mypy --strict`, ni el renderizado de SQL offline
@@ -571,7 +613,7 @@ niveles:
 | Nivel | Qué prueba | Cuántos |
 |---|---|---|
 | Lógica pura | Orden, severidad, PKCE, sesión, decisiones del importador | 127 |
-| Render (jsdom) | Que las pantallas muestren lo que hay que ver | 56 |
+| Render (jsdom) | Que las pantallas muestren lo que hay que ver | 58 |
 | Navegador real (Chromium) | Que **el artefacto que se despliega** cargue y la puerta de login aguante | 3 |
 
 `pnpm lint` también era un comando documentado que no existía: no había `eslint.config.js`, así

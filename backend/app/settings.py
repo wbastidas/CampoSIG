@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     #: chunks rather than in one pass that either finishes or dies holding everything.
     integration_batch_size: int = 50
 
+    #: Where a person scanning the QR of an acta lands (RF-115). Has to be the address the
+    #: platform is reachable at from a phone, not from inside the container network: a QR
+    #: pointing at `localhost` is a QR that works only on the server that printed it.
+    public_base_url: str = "http://localhost:8000"
+
     # Object storage for evidence (SeaweedFS, S3 API).
     s3_endpoint_url: str = "http://localhost:8333"
     s3_bucket: str = "sigec-evidence"

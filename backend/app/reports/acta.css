@@ -1,0 +1,195 @@
+/* Hoja de estilo del acta (RF-115).
+ *
+ * A4 y no Letter: Ecuador usa A4, y una tabla que se corta a la derecha en la impresora de
+ * la oficina de la unidad convierte un acta en un papel que hay que volver a imprimir.
+ *
+ * Escala de grises deliberada: estas actas se imprimen en las impresoras que hay, que son
+ * monocromas. Nada de lo que el documento dice depende de un color — un hallazgo grave se
+ * lee porque lo dice la columna de severidad, no porque esté en rojo.
+ */
+
+@page {
+  size: A4;
+  margin: 14mm 14mm 18mm;
+  @bottom-center {
+    content: "Página " counter(page) " de " counter(pages);
+    font-size: 8pt;
+    color: #555;
+  }
+}
+
+body {
+  font-family: "DejaVu Sans", "Liberation Sans", sans-serif;
+  font-size: 9.5pt;
+  line-height: 1.35;
+  color: #111;
+  margin: 0;
+}
+
+h1 {
+  font-size: 15pt;
+  margin: 0;
+}
+
+h2 {
+  font-size: 10.5pt;
+  margin: 10pt 0 3pt;
+  padding-bottom: 1.5pt;
+  border-bottom: 0.6pt solid #999;
+  /* Un título de sección solo, al pie de una página, es una sección que parece vacía. */
+  break-after: avoid;
+}
+
+.subtitle {
+  margin: 1pt 0 0;
+  color: #555;
+}
+
+.draft {
+  border: 1.5pt solid #111;
+  padding: 4pt;
+  margin-bottom: 8pt;
+  text-align: center;
+  font-weight: bold;
+  letter-spacing: 0.08em;
+}
+
+.acta-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10mm;
+  border-bottom: 1pt solid #111;
+  padding-bottom: 5pt;
+}
+
+.verify {
+  text-align: center;
+  width: 28mm;
+  flex: none;
+}
+
+.verify svg {
+  width: 26mm;
+  height: 26mm;
+}
+
+.code {
+  margin: 1pt 0 0;
+  font-family: "DejaVu Sans Mono", monospace;
+  font-size: 8pt;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.fields th {
+  width: 34%;
+  text-align: left;
+  vertical-align: top;
+  font-weight: normal;
+  color: #444;
+  padding: 1.6pt 4pt 1.6pt 0;
+}
+
+.fields td {
+  vertical-align: top;
+  padding: 1.6pt 0;
+}
+
+.fields tr {
+  break-inside: avoid;
+}
+
+.summary {
+  margin: 6pt 0 2pt;
+}
+
+/* La procedencia de un valor de IA va pegada al valor, no en un anexo al final: la regla 8
+ * pide que se pueda auditar, y un anexo se lee después de haber creído el número. */
+.ai {
+  font-size: 7.8pt;
+  color: #444;
+  font-style: italic;
+}
+
+.photos,
+.signatures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4mm;
+}
+
+.photo,
+.signature {
+  margin: 0;
+  width: 52mm;
+  break-inside: avoid;
+}
+
+.photo img,
+.signature img {
+  width: 100%;
+  border: 0.5pt solid #999;
+}
+
+.photo--suspect img {
+  border: 1.5pt solid #111;
+}
+
+.photo__missing,
+.signature__absent {
+  border: 0.5pt dashed #999;
+  padding: 10mm 2mm;
+  text-align: center;
+  color: #555;
+  font-size: 8pt;
+}
+
+figcaption {
+  font-size: 8pt;
+  padding-top: 1pt;
+}
+
+.hash {
+  font-family: "DejaVu Sans Mono", monospace;
+  font-size: 7.5pt;
+  color: #555;
+}
+
+.findings th,
+.decisions th,
+.findings td,
+.decisions td {
+  border: 0.4pt solid #bbb;
+  padding: 2pt 3pt;
+  text-align: left;
+  vertical-align: top;
+}
+
+.findings tr,
+.decisions tr {
+  break-inside: avoid;
+}
+
+.warnings {
+  border: 0.5pt solid #999;
+  padding: 3pt 8pt;
+  margin: 6pt 0;
+  background: #f4f4f2;
+}
+
+.empty {
+  color: #555;
+  font-style: italic;
+}
+
+footer {
+  margin-top: 10pt;
+  padding-top: 4pt;
+  border-top: 0.5pt solid #999;
+  font-size: 8pt;
+  color: #333;
+}

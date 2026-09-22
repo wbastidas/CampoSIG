@@ -21,6 +21,7 @@ import {
   fetchGisTray,
   fetchQueue,
   type GisTray,
+  issueActa,
   type QueueItem,
   type ReviewDetail,
   submitDecision,
@@ -64,6 +65,7 @@ export function ReviewScreen({ businessUnit, reviewer, now = () => new Date() }:
   const [error, setError] = useState<string | null>(null);
   const [refused, setRefused] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [acta, setActa] = useState<{ code: string; hash: string } | null>(null);
 
   const loadQueue = useCallback(
     async (signal?: AbortSignal) => {
@@ -114,12 +116,44 @@ export function ReviewScreen({ businessUnit, reviewer, now = () => new Date() }:
         setDetail(await fetchDetail(businessUnit, selected, controller.signal));
         setRefused([]);
         setError(null);
+        // El aviso del acta pertenecía a la OT anterior; dejarlo en pantalla haría creer que se
+        // emitió el acta de esta.
+        setActa(null);
       } catch (cause) {
         if ((cause as Error).name === 'AbortError') return;
         setError((cause as Error).message);
       }
     })();
     return () => controller.abort();
+  }, [businessUnit, selected]);
+
+  /**
+   * Emit the acta and hand the browser the file (RF-115).
+   *
+   * Through `fetch` rather than a link, because the request needs the bearer token. The
+   * verification code is shown afterwards so the supervisor can read it back to whoever holds
+   * the paper — a QR that will not focus is a common enough problem in the field.
+   */
+  const printActa = useCallback(async () => {
+    if (selected === null) return;
+    setBusy(true);
+    try {
+      const issued = await issueActa(businessUnit, selected);
+      const url = URL.createObjectURL(issued.blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `acta-${selected}.pdf`;
+      link.click();
+      // Revoked right after: an object URL that is never released keeps the whole PDF in memory
+      // for as long as the tab lives, and a supervisor prints dozens in a morning.
+      URL.revokeObjectURL(url);
+      setActa({ code: issued.verificationCode, hash: issued.contentHash });
+      setError(null);
+    } catch (cause) {
+      setError((cause as Error).message);
+    } finally {
+      setBusy(false);
+    }
   }, [businessUnit, selected]);
 
   const decide = useCallback(
@@ -218,6 +252,24 @@ export function ReviewScreen({ businessUnit, reviewer, now = () => new Date() }:
                   Anular
                 </button>
               </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>Acta</legend>
+              <p className="review-hint">
+                {detail.work_order.state === 'aprobada'
+                  ? 'El acta lleva las fotos, los hallazgos, la procedencia de cada valor de IA y un QR de verificación.'
+                  : 'Esta OT todavía no está aprobada, así que el acta saldrá marcada como borrador.'}
+              </p>
+              <button type="button" disabled={busy} onClick={() => void printActa()}>
+                Emitir acta en PDF
+              </button>
+              {acta && (
+                <p role="status" className="review-acta">
+                  Acta emitida. Código de verificación <code>{acta.code}</code>. Huella{' '}
+                  <code>{acta.hash.slice(0, 16)}…</code>
+                </p>
+              )}
             </fieldset>
           </article>
         )}

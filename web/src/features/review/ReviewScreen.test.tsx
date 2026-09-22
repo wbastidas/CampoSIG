@@ -430,3 +430,82 @@ describe('la decisión', () => {
     expect(seen[0]).toEqual({ decision: 'aprobada' });
   });
 });
+
+describe('el acta (RF-115)', () => {
+  function actaApi(detail: ReviewDetail, onIssue?: () => void) {
+    return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/acta')) {
+        onIssue?.();
+        return {
+          ok: true,
+          status: 200,
+          headers: new Headers({
+            'X-SIGEC-Verification-Code': 'Zm9vYmFyMTIzNDU2',
+            'X-SIGEC-Document-Hash': 'a'.repeat(64),
+          }),
+          blob: async () => new Blob(['%PDF-1.7'], { type: 'application/pdf' }),
+        } as unknown as Response;
+      }
+      if (url.includes('/gis-tray')) {
+        return { ok: true, status: 200, json: async () => ({ proposals: [], batches: [] }) } as unknown as Response;
+      }
+      if (url.includes('/queue')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            total: 1,
+            items: [
+              {
+                work_order_id: detail.work_order.work_order_id,
+                code: detail.work_order.code,
+                work_type: detail.work_order.work_type,
+                form_code: detail.form.code,
+                state: detail.work_order.state,
+                priority: detail.work_order.priority,
+                asset_code: detail.work_order.asset_code,
+                crew_id: null,
+                sla_due_at: null,
+                updated_at: null,
+              },
+            ],
+          }),
+        } as unknown as Response;
+      }
+      void init;
+      return { ok: true, status: 200, json: async () => detail } as unknown as Response;
+    });
+  }
+
+  it('avisa que el acta de una OT sin aprobar saldrá como borrador', async () => {
+    const pending = detail();
+    pending.work_order.state = 'sincronizada';
+    vi.stubGlobal('fetch', actaApi(pending));
+    render(<ReviewScreen businessUnit="GYE" reviewer="sup.1" />);
+
+    (await screen.findByRole('button', { name: /OT-/ })).click();
+    expect(await screen.findByText(/saldrá marcada como borrador/)).not.toBeNull();
+  });
+
+  it('emitida, muestra el código de verificación para poder dictarlo', async () => {
+    // Un QR que no enfoca es un problema corriente en campo, así que el código se lee en voz.
+    const approved = detail();
+    approved.work_order.state = 'aprobada';
+    let issued = false;
+    vi.stubGlobal('fetch', actaApi(approved, () => { issued = true; }));
+    const createUrl = vi.fn(() => 'blob:acta');
+    vi.stubGlobal('URL', { createObjectURL: createUrl, revokeObjectURL: vi.fn() });
+    render(<ReviewScreen businessUnit="GYE" reviewer="sup.1" />);
+
+    (await screen.findByRole('button', { name: /OT-/ })).click();
+    const button = await screen.findByRole('button', { name: 'Emitir acta en PDF' });
+    button.click();
+
+    expect(await screen.findByText(/Acta emitida/)).not.toBeNull();
+    expect(screen.getByText('Zm9vYmFyMTIzNDU2')).not.toBeNull();
+    expect(issued).toBe(true);
+    // Y el object URL se libera: un supervisor emite decenas en una mañana.
+    expect(createUrl).toHaveBeenCalled();
+  });
+});

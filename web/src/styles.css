@@ -402,3 +402,17 @@ fieldset {
   flex-wrap: wrap;
   margin: 1rem 0;
 }
+
+/* Acta emitida (RF-115): el código se lee en voz alta cuando el QR no enfoca, así que va en
+   monoespaciado y con espacio suficiente para dictarlo sin equivocarse. */
+.review-acta code {
+  font-family: ui-monospace, monospace;
+  background: var(--fondo-alterno);
+  padding: 0 0.25rem;
+  border-radius: var(--radio);
+}
+
+.review-hint {
+  color: var(--texto-suave);
+  margin: 0.25rem 0 0.5rem;
+}

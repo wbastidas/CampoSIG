@@ -10,6 +10,7 @@ from app.api import (
     model_profile,
     planning,
     regulatory,
+    reports,
     review,
     voice,
 )
@@ -32,6 +33,10 @@ def create_app() -> FastAPI:
     app.include_router(dispatch.router)
     app.include_router(regulatory.router)
     app.include_router(integrations.router)
+    app.include_router(reports.router)
+    # La página pública de verificación del acta (RF-115): la abre quien escanea el QR,
+    # que es el cliente y no tiene cuenta corporativa.
+    app.include_router(reports.public_router)
     app.include_router(review.router)
     return app
 

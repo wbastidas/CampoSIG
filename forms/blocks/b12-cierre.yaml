@@ -14,8 +14,12 @@ fields:
     title: Causa de no resolución
     x-catalog-ref: unresolved_reason
     x-voice: true
-  crew_leader_signature: {type: string, format: uri, title: Firma del jefe de cuadrilla}
-  customer_signature: {type: string, format: uri, title: Firma del cliente}
+  # `x-signature` para que el acta sepa qué imprimir como firma y qué como dato (RF-115).
+  # Marcado aquí, en los datos, y no deducido del nombre del campo en el código.
+  crew_leader_signature:
+    {type: string, format: uri, title: Firma del jefe de cuadrilla, x-signature: jefe_cuadrilla}
+  customer_signature:
+    {type: string, format: uri, title: Firma del cliente, x-signature: cliente}
   customer_id: {type: string, title: Cédula del cliente, x-voice: true}
 rules:
   # JSON Logic, misma semántica en backend, web y móvil (SRS stack 7.2).
