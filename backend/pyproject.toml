@@ -18,6 +18,12 @@ dependencies = [
     "python-jose[cryptography]>=3.3",
     "jsonschema>=4.23",
     "pyyaml>=6.0",
+    # Acta en PDF (RF-115). WeasyPrint es BSD-3 y compone desde HTML y CSS, así que la
+    # plantilla del acta se revisa en un navegador antes de imprimirse.
+    "weasyprint>=63",
+    # El QR de verificación. `segno` es BSD-3, Python puro y genera SVG sin Pillow: un
+    # código QR no necesita una biblioteca de imágenes.
+    "segno>=1.6",
 ]
 
 [project.optional-dependencies]
