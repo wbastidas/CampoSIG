@@ -2,7 +2,16 @@
 
 from fastapi import FastAPI
 
-from app.api import dispatch, gis, health, integrations, planning, regulatory, voice
+from app.api import (
+    dispatch,
+    gis,
+    health,
+    integrations,
+    planning,
+    regulatory,
+    review,
+    voice,
+)
 from app.settings import get_settings
 
 
@@ -21,6 +30,7 @@ def create_app() -> FastAPI:
     app.include_router(dispatch.router)
     app.include_router(regulatory.router)
     app.include_router(integrations.router)
+    app.include_router(review.router)
     return app
 
 

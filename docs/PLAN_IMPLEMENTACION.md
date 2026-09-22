@@ -236,6 +236,21 @@ dispositivo.
 
 ---
 
+### Avance de la pantalla de revisión (mitad web de I6)
+
+| Entregable | Estado |
+|---|---|
+| API de revisión | ✅ `api/review.py`: cola, detalle **armado en una sola llamada**, decisión y bandeja GIS |
+| Cola priorizada | ✅ vencido primero, luego prioridad, luego lo que más lleva esperando — es un atraso, no un buzón |
+| Auditoría de valores de IA | ✅ propuesto, final, confianza, modelo, quién confirmó y **de dónde salió** (fragmento dictado o recorte de la foto) |
+| Hallazgos normativos con cita | ✅ y un límite sin verificar **no** se presenta como cita del texto oficial |
+| Antes/después | ✅ con la misma foto enviada dos veces detectada por hash, y la evidencia cuyo hash no cuadra destacada |
+| Impedimentos antes de pulsar Aprobar | ✅ y si el servidor rechaza, devuelve la lista y la pantalla la muestra como lista |
+| Bandeja hacia el GIS | ✅ propuestas y lotes, con las que requieren ArcFM contadas aparte (ADR-001) |
+| Render en un navegador | Pendiente: la lógica tiene 79 tests, el DOM no se ha ejecutado |
+
+---
+
 ## I7 — Voz → formulario · 6 semanas 🟢
 
 **Objetivo:** el técnico dicta y el formulario se llena, offline, en español ecuatoriano.
@@ -433,7 +448,7 @@ Sin RAG (ADR-007). El nodo de normativa funciona con parámetros y reglas, no co
 ## Nota sobre el estado de verificación
 
 Los tests de integración **se ejecutaron contra PostgreSQL 16 + PostGIS 3.4 real**, no solo en CI:
-575 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las nueve
+592 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las diez
 migraciones aplicadas y revertidas sobre una base limpia (23 tablas de la aplicación, más
 `alembic_version` y las de PostGIS).
 
@@ -452,8 +467,22 @@ podían ver:
    transacción comparten `updated_at`. El cursor delta ya lo manejaba —por eso es una tupla— pero
    ahora hay un test que documenta ese caso.
 
-Lo que sigue sin verificar: la app Android (falta el SDK) y la pantalla de revisión en la web.
-El tablero de despliegue sí tiene su lógica probada (19 tests de `vitest`) pero el render de
+**Un quinto defecto, y de los caros.** Escribiendo la consulta de la bandeja GIS de la pantalla
+de revisión apareció que `asbuilt_proposal` **no tenía columna de unidad de negocio**, y que
+`create_batch` seleccionaba toda propuesta aprobada de un tipo de activo sin importar de quién
+era, para meterla en el lote de la unidad que lo pidió. Es decir: los datos de campo de una
+unidad despachados al agente arcpy de otra y escritos en una geodatabase donde nadie estaba
+trabajando. No es una fuga de lectura; es una escritura cruzada, más difícil de deshacer y
+contraria a ADR-009. Corregido en la migración 0010, con cuatro tests de aislamiento y la
+comprobación en negativo de que detectan la regresión.
+
+Y con él, una recaída del defecto 2: `import_all_models()` descubre por nombre de módulo, así
+que nunca alcanzaba `staging_table.py`. El resultado era un `create_all` sin la tabla de staging
+salvo que otro import la arrastrara por casualidad — un fallo que dependía del orden de los
+tests. Ahora el gateway la importa por su efecto.
+
+Lo que sigue sin verificar: la app Android (falta el SDK). La lógica de las tres pantallas web
+—asignación, despliegue y revisión— está probada con 79 tests de `vitest`, pero el render de
 React no se ha ejecutado en un navegador.
 
 ## Definition of Done (todo incremento)

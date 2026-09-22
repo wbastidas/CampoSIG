@@ -209,3 +209,124 @@ class TestUnitLookup:
             )
         )
         session.flush()  # must not raise
+
+
+class TestAsBuiltStagingDoesNotCrossUnits:
+    """El hueco que esta clase cierra, escrito tal como era.
+
+    `asbuilt_proposal` no tenía columna de unidad de negocio, y `create_batch` seleccionaba
+    **toda** propuesta aprobada de un tipo de activo, sin importar de quién era, para meterla en
+    el lote de la unidad que lo pidió. Es decir: los datos de campo de una unidad despachados al
+    agente arcpy de otra, y escritos en una geodatabase donde nadie estaba trabajando. No es una
+    fuga de lectura; es una escritura cruzada, que es peor y más difícil de deshacer.
+
+    Se descubrió escribiendo la consulta de la bandeja GIS de la pantalla de revisión, no por un
+    test — de ahí que ahora haya uno.
+    """
+
+    @pytest.fixture
+    def approved_orders(self, session: Session, units: dict[str, BusinessUnit]):
+        from app.workorders.models import WorkOrderState
+        from app.workorders.service import create_work_order
+
+        created = {}
+        for code, unit in units.items():
+            order = create_work_order(
+                session,
+                unit,
+                work_type="inspeccion_preventiva",
+                form_code="F-MT-01",
+                asset_type_key="support_structure",
+                longitude=-79.9,
+                latitude=-2.17,
+            )
+            order.state = WorkOrderState.APPROVED
+            created[code] = order
+        session.flush()
+        return created
+
+    def _stage(self, session: Session, unit: BusinessUnit, order) -> uuid.UUID:
+        from app.gis_gateway.asbuilt import build_proposal, stage_from_work_order
+
+        proposal = build_proposal(
+            resolver_for_unit(unit),
+            asset_type_key="support_structure",
+            action="update",
+            attributes={"material": "concrete"},
+            gis_global_id="{" + str(uuid.uuid4()).upper() + "}",
+        )
+        proposal["proposal_id"] = uuid.uuid4()
+        staged = stage_from_work_order(session, unit, order, [proposal])
+        return staged[0]
+
+    def test_rf_002_a_batch_only_carries_its_own_units_proposals(
+        self, session: Session, units, approved_orders
+    ):
+        from app.gis_gateway.asbuilt import create_batch
+        from app.gis_gateway.staging_table import asbuilt_proposal
+
+        mine = self._stage(session, units["GYE"], approved_orders["GYE"])
+        theirs = self._stage(session, units["MAN"], approved_orders["MAN"])
+
+        batch = create_batch(session, units["GYE"], asset_type_key="support_structure")
+        assert batch is not None
+
+        from sqlalchemy import select
+
+        in_batch = {
+            row[0]
+            for row in session.execute(
+                select(asbuilt_proposal.c.proposal_id).where(
+                    asbuilt_proposal.c.batch_id == batch.id
+                )
+            ).all()
+        }
+        assert in_batch == {mine}
+        assert theirs not in in_batch
+
+    def test_rf_002_the_other_units_proposal_stays_available_for_its_own_batch(
+        self, session: Session, units, approved_orders
+    ):
+        """Y no queda atrapada: sigue esperando el lote de su propia unidad."""
+        from app.gis_gateway.asbuilt import create_batch
+
+        self._stage(session, units["GYE"], approved_orders["GYE"])
+        theirs = self._stage(session, units["MAN"], approved_orders["MAN"])
+
+        create_batch(session, units["GYE"], asset_type_key="support_structure")
+        their_batch = create_batch(session, units["MAN"], asset_type_key="support_structure")
+        assert their_batch is not None
+
+        from sqlalchemy import select
+
+        from app.gis_gateway.staging_table import asbuilt_proposal
+
+        assert (
+            session.execute(
+                select(asbuilt_proposal.c.batch_id).where(asbuilt_proposal.c.proposal_id == theirs)
+            ).scalar()
+            == their_batch.id
+        )
+
+    def test_rf_002_every_staged_proposal_carries_its_unit(
+        self, session: Session, units, approved_orders
+    ):
+        from sqlalchemy import select
+
+        from app.gis_gateway.staging_table import asbuilt_proposal
+
+        self._stage(session, units["GYE"], approved_orders["GYE"])
+        rows = session.execute(
+            select(asbuilt_proposal.c.business_unit_id, asbuilt_proposal.c.work_order_ref)
+        ).all()
+        assert rows
+        assert all(row[0] == units["GYE"].id for row in rows)
+
+    def test_rf_002_a_unit_with_nothing_approved_gets_no_batch(
+        self, session: Session, units, approved_orders
+    ):
+        """Aunque la unidad vecina tenga propuestas listas."""
+        from app.gis_gateway.asbuilt import create_batch
+
+        self._stage(session, units["MAN"], approved_orders["MAN"])
+        assert create_batch(session, units["GYE"], asset_type_key="support_structure") is None

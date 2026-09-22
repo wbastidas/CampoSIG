@@ -16,6 +16,13 @@ from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, UniqueConst
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+# Importado por su efecto: `asbuilt_proposal` es una tabla Core en un módulo que no se llama
+# `models.py`, así que `import_all_models()` —que descubre por nombre de módulo— no la
+# alcanzaba. El resultado era un `create_all` que construía el esquema sin la tabla de staging
+# salvo que algún otro import la arrastrara por casualidad; es decir, un fallo que dependía del
+# orden de los tests. Importarla aquí la pone en `Base.metadata` siempre que el gateway se
+# cargue, que es siempre.
+from app.gis_gateway.staging_table import asbuilt_proposal as _asbuilt_proposal  # noqa: F401
 from app.infra.database import Base
 
 

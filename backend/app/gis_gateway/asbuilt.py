@@ -127,7 +127,10 @@ def stage_from_work_order(
         existing = session.execute(
             select(1)
             .select_from(_proposal_table())
-            .where(_proposal_table().c.proposal_id == proposal_id)
+            .where(
+                _proposal_table().c.proposal_id == proposal_id,
+                _proposal_table().c.business_unit_id == unit.id,
+            )
         ).first()
         if existing is not None:
             staged.append(proposal_id)
@@ -138,6 +141,7 @@ def stage_from_work_order(
             .insert()
             .values(
                 proposal_id=proposal_id,
+                business_unit_id=unit.id,
                 asset_type_key=validated["asset_type_key"],
                 action=validated["action"],
                 gis_global_id=validated["gis_global_id"],
@@ -178,6 +182,10 @@ def create_batch(
     pending = session.execute(
         select(table.c.proposal_id)
         .where(
+            # La unidad primero: un lote lleva propuestas de esta unidad y de ninguna otra.
+            # Sin este filtro, el agente de una unidad recibiría propuestas de la vecina y
+            # las escribiría en la geodatabase equivocada (ADR-009).
+            table.c.business_unit_id == unit.id,
             table.c.status == "approved",
             table.c.asset_type_key == asset_type_key,
             table.c.batch_id.is_(None),

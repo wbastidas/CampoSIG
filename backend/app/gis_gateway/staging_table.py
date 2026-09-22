@@ -31,6 +31,11 @@ asbuilt_proposal = Table(
     # Generated on the device; the idempotency key that stops a replay from creating a second
     # pole in the geodatabase (RF-353).
     Column("proposal_id", UUID(as_uuid=True), primary_key=True),
+    # Acotada a la unidad de negocio, como todo lo demás (ADR-009). Sin esta columna,
+    # `create_batch` seleccionaba toda propuesta aprobada de un tipo de activo sin importar de
+    # quién era, y la despachaba al agente de *otra* unidad: escribir los datos de campo de una
+    # unidad en la geodatabase de la vecina. No es una fuga de lectura, es una escritura cruzada.
+    Column("business_unit_id", UUID(as_uuid=True), nullable=False),
     Column("asset_type_key", String(64), nullable=False),
     Column("action", String(16), nullable=False),
     # Null for new elements; carries the geodatabase GLOBALID otherwise.
@@ -50,6 +55,8 @@ asbuilt_proposal = Table(
         name="ck_asbuilt_status",
     ),
     Index("ix_asbuilt_status", "status"),
+    # La consulta que corre `create_batch`: lo aprobado de una unidad y un tipo de activo.
+    Index("ix_asbuilt_unit_status", "business_unit_id", "status", "asset_type_key"),
     Index("ix_asbuilt_batch", "batch_id"),
     Index("ix_asbuilt_attributes", "attributes", postgresql_using="gin"),
 )
