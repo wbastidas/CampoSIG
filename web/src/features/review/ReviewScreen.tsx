@@ -34,9 +34,12 @@ import {
   citationFor,
   displayValue,
   evidenceByStage,
+  hasDegradations,
   needsArcFm,
   OUTCOME_LABEL,
+  PLACEMENT_LABEL,
   reusedEvidence,
+  sortDegradations,
   sortFindings,
   sortQueue,
   tamperedEvidence,
@@ -227,6 +230,7 @@ export function ReviewScreen({ businessUnit, reviewer, now = () => new Date() }:
           <article className="review-detail">
             <ReviewHeader detail={detail} />
             <Blockers detail={detail} refused={refused} />
+            <Degradations detail={detail} />
             <AiAudit detail={detail} />
             <Compliance detail={detail} />
             <BeforeAfter detail={detail} />
@@ -276,6 +280,34 @@ export function ReviewScreen({ businessUnit, reviewer, now = () => new Date() }:
       </div>
 
       {tray && <GisTrayPanel tray={tray} />}
+    </section>
+  );
+}
+
+/**
+ * What the AI layer will not do on this deployment (RF-204).
+ *
+ * Shown above the evidence, not tucked at the bottom: a supervisor deciding without the agent's
+ * report should know that before reading, not after. And it only renders when something is
+ * actually missing — a permanent notice becomes part of the furniture, and then nobody reads it on
+ * the day it means something.
+ */
+function Degradations({ detail }: { detail: ReviewDetail }) {
+  if (!hasDegradations(detail)) return null;
+  return (
+    <section aria-label="Ayuda de IA no disponible">
+      <h3>Lo que la IA no va a aportar en esta revisión</h3>
+      <ul>
+        {sortDegradations(detail.degradations).map((entry) => (
+          <li key={entry.alias}>
+            <strong>{PLACEMENT_LABEL[entry.placement]}</strong>: {entry.purpose} — {entry.reason}
+          </li>
+        ))}
+      </ul>
+      <p className="review-hint">
+        La decisión no depende de esto: los hallazgos normativos y los impedimentos de arriba son
+        deterministas y están completos.
+      </p>
     </section>
   );
 }

@@ -70,6 +70,7 @@ function detail(overrides: Partial<ReviewDetail> = {}): ReviewDetail {
     missing_photos: [],
     compliance: [],
     blockers: [],
+    degradations: [],
     observations: [],
     history: [],
     ...overrides,
@@ -507,5 +508,37 @@ describe('el acta (RF-115)', () => {
     expect(issued).toBe(true);
     // Y el object URL se libera: un supervisor emite decenas en una mañana.
     expect(createUrl).toHaveBeenCalled();
+  });
+});
+
+describe('el aviso de IA no disponible (RF-204)', () => {
+  it('se muestra con su motivo, y dice que la decisión no depende de eso', async () => {
+    const withGap = detail({
+      degradations: [
+        {
+          alias: 'vlm-audit',
+          purpose: 'Auditoría de evidencia visual',
+          placement: 'unavailable',
+          reason: "'vlm-audit' necesita GPU y el perfil A no tiene; se omite con aviso",
+        },
+      ],
+    });
+    vi.stubGlobal('fetch', mockApi(withGap));
+    render(<ReviewScreen businessUnit="GYE" reviewer="sup.1" />);
+
+    (await screen.findByRole('button', { name: /OT-/ })).click();
+    expect(await screen.findByText(/No se va a ejecutar/)).not.toBeNull();
+    expect(screen.getByText(/necesita GPU y el perfil A no tiene/)).not.toBeNull();
+    // Y lo importante: que el supervisor sepa que puede decidir igual.
+    expect(screen.getByText(/La decisión no depende de esto/)).not.toBeNull();
+  });
+
+  it('sin degradaciones no aparece la sección', async () => {
+    vi.stubGlobal('fetch', mockApi(detail({ degradations: [] })));
+    render(<ReviewScreen businessUnit="GYE" reviewer="sup.1" />);
+
+    (await screen.findByRole('button', { name: /OT-/ })).click();
+    await screen.findByText(/Decisión/);
+    expect(screen.queryByText(/Lo que la IA no va a aportar/)).toBeNull();
   });
 });

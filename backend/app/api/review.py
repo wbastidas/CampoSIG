@@ -24,6 +24,7 @@ from app.auth.dependencies import require_roles, unit_scope
 from app.auth.principal import Role
 from app.gis_gateway.models import AsBuiltBatch
 from app.gis_gateway.staging_table import asbuilt_proposal
+from app.inference.service import pre_review_degradations
 from app.infra.database import get_session
 from app.org.service import UnknownBusinessUnitError, get_business_unit_by_code
 from app.responses.models import FormResponse, ValueOrigin
@@ -185,6 +186,11 @@ def detail(session: SessionDep, unit_code: str, order_id: uuid.UUID) -> dict[str
             finding.as_dict() for finding in compliance_findings(session, order, response)
         ],
         "blockers": approval_blockers(session, unit, order, response),
+        # RF-204: what the AI layer will not do on this deployment, and why. Said out loud rather
+        # than left as a missing section — a report with a gap looks complete, which is worse than
+        # no report. Computed from configuration, with no call to the model service: a review
+        # screen must never wait on a model, and the approval below does not either.
+        "degradations": [entry.as_dict() for entry in pre_review_degradations()],
         "observations": [
             {
                 "field_key": observation.field_key,

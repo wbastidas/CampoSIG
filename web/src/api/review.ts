@@ -66,6 +66,20 @@ export interface ComplianceFinding {
   blocking: boolean;
 }
 
+/**
+ * Something the AI layer will not do on this deployment, and why (RF-204).
+ *
+ * Shown rather than left as a missing section: a report with a gap looks complete, which is worse
+ * than no report. `placement` distinguishes the two answers that matter to a supervisor — work
+ * that waits for tonight from work that is not coming at all.
+ */
+export interface Degradation {
+  alias: string;
+  purpose: string;
+  placement: 'night_batch' | 'unavailable' | 'interactive';
+  reason: string;
+}
+
 export interface ReviewDetail {
   work_order: {
     work_order_id: string;
@@ -101,6 +115,7 @@ export interface ReviewDetail {
   missing_photos: string[];
   compliance: ComplianceFinding[];
   blockers: string[];
+  degradations: Degradation[];
   observations: { field_key: string; message: string; suggested_value: unknown }[];
   history: {
     decision: string;

@@ -1,0 +1,140 @@
+# Alias lógicos de la pasarela de modelos (M19, RF-200, RF-203, RF-204).
+#
+# La regla 13 dice que el servidor consume LLM y VLM **solo por alias**. Este archivo es la razón
+# de que eso sea cierto y no una intención: cambiar el modelo detrás de `llm-judge` se hace aquí,
+# y ningún agente cambia. Un nombre de modelo escrito en el código haría que migrar de runtime
+# —llama.cpp a vLLM, o al revés— fuera un refactor.
+#
+# `vram_gb` es lo que el modelo necesita **residente**, no su tamaño en disco. Es lo que decide si
+# dos alias pueden coexistir en un perfil (RF-203), y por eso está aquí y no deducido del nombre
+# del archivo: el mismo GGUF ocupa distinto según el contexto y el tamaño de lote.
+#
+# La degradación de RF-204 son **dos** campos, porque son dos situaciones distintas y el SRS las
+# trata distinto:
+#
+#   `when_unsupported` — el hardware no puede con este alias, punto. El perfil A no tiene GPU, así
+#     que el VLM está *desactivado* (SRS 7.9), no en cola.
+#   `when_busy` — el alias sí corre en este perfil, pero ahora mismo no cabe o no es interactivo.
+#     En el perfil B el VLM pasa al lote nocturno (RNF-026), no se pierde.
+#
+# `night_batch` espera la ventana nocturna; `skip` se omite con aviso. Ninguna de las dos bloquea a
+# una persona: la revisión humana nunca depende de que un modelo esté disponible.
+
+version: 1
+
+# Ventanas horarias del planificador (RF-202), en hora local del servidor.
+# Día = inferencia interactiva. Noche y fin de semana = lotes y entrenamiento.
+windows:
+  day_starts_at: "07:00"
+  day_ends_at: "19:00"
+  # Sábado y domingo cuentan como ventana nocturna completa: son los días en que el
+  # entrenamiento puede tomar la GPU sin competir con nadie.
+  weekend_is_night: true
+
+# Clases de prioridad de RF-202, de más a menos urgente. El orden de esta lista **es** la
+# prioridad: quien la reordene cambia el planificador, que es como debe ser.
+priorities:
+  - interactive        # una persona esperando en pantalla
+  - pre_review         # el grafo de pre-revisión de una OT recién sincronizada
+  - retranscription    # re-transcribir audio con un modelo mayor
+  - pre_labelling      # pre-etiquetado para el ciclo de datos
+  - training           # nunca en horario laboral (RF-202)
+
+aliases:
+  llm-small:
+    purpose: Tareas cortas de texto libre; la que sí cabe en CPU.
+    model: qwen2.5-3b-instruct-q4_k_m
+    runtime: llamacpp
+    priority: interactive
+    vram_gb: 3.0
+    runs_on_cpu: true
+    supports_grammar: true
+    when_unsupported: night_batch
+    when_busy: night_batch
+
+  llm-judge:
+    purpose: Juez y redactor de observaciones del grafo de pre-revisión (M17).
+    model: qwen2.5-7b-instruct-awq
+    runtime: llamacpp
+    priority: pre_review
+    vram_gb: 6.5
+    # En el perfil A corre en CPU, lento, y por eso su trabajo pasa al lote nocturno.
+    runs_on_cpu: true
+    supports_grammar: true
+    when_unsupported: night_batch
+    when_busy: night_batch
+
+  vlm-audit:
+    purpose: Auditoría de evidencia visual — si las fotos sustentan lo declarado (RF-173).
+    model: qwen2.5-vl-7b-awq
+    runtime: llamacpp
+    priority: pre_review
+    vram_gb: 9.0
+    # Sin GPU no hay VLM: el perfil A lo desactiva, y eso se dice con un aviso en la revisión
+    # en vez de dejar un informe incompleto sin explicación.
+    runs_on_cpu: false
+    supports_grammar: true
+    # Perfil A: desactivado (SRS 7.9). Perfil B: cabe pero no junto al juez, así que espera la
+    # noche (RNF-026). La misma auditoría, dos destinos según lo que falte.
+    when_unsupported: skip
+    when_busy: night_batch
+
+  asr-server:
+    purpose: Re-transcripción del audio de campo con un modelo mayor (RF-060).
+    model: parakeet-tdt-0.6b-v3
+    runtime: nemo
+    priority: retranscription
+    vram_gb: 2.5
+    runs_on_cpu: true
+    supports_grammar: false
+    when_unsupported: night_batch
+    when_busy: night_batch
+
+  embed:
+    purpose: Embeddings para la búsqueda de la bandeja y del repositorio documental.
+    model: bge-m3
+    runtime: llamacpp
+    priority: pre_labelling
+    vram_gb: 1.5
+    runs_on_cpu: true
+    supports_grammar: false
+    when_unsupported: night_batch
+    when_busy: night_batch
+
+  form-extractor:
+    purpose: Dictado → JSON del sub-esquema del formulario, con gramática GBNF (RF-332).
+    model: qwen2.5-1.5b-instruct-q4_k_m
+    runtime: llamacpp
+    priority: interactive
+    vram_gb: 1.5
+    runs_on_cpu: true
+    supports_grammar: true
+    # Se omite con aviso en los dos casos, no se encola: una propuesta de dictado que llega
+    # mañana no le sirve a nadie. El técnico escribe el campo y sigue.
+    when_unsupported: skip
+    when_busy: skip
+
+# Perfiles de servidor de la sección 7.9 del SRS. `vram_gb: 0` es «no hay GPU».
+profiles:
+  A:
+    label: Solo CPU (servidor actual)
+    vram_gb: 0
+    vram_headroom_gb: 0
+    #: Lo que el perfil admite en línea. El resto degrada según su propio alias.
+    interactive_aliases: [llm-small, form-extractor]
+  B:
+    label: GPU de 16 GB
+    vram_gb: 16
+    # Reserva para contexto, activaciones y fragmentación. Sin ella la aritmética diría que el
+    # juez y el VLM caben en 16 GB —6,5 + 9 = 15,5— y RF-203 dice explícitamente que no
+    # coexisten: lo que sobra no alcanza para la caché KV de ninguno de los dos. La reserva
+    # declarada hace cierta esa regla por aritmética, en vez de por una lista de pares prohibidos
+    # que se queda vieja el primer día que se cambia un modelo detrás de su alias.
+    vram_headroom_gb: 1.5
+    # El VLM y el juez no coexisten en 16 GB, y eso lo impone la VRAM, no esta lista.
+    interactive_aliases: [llm-small, form-extractor, llm-judge, asr-server, embed]
+  C:
+    label: GPU de 24 GB
+    vram_gb: 24
+    vram_headroom_gb: 1.5
+    interactive_aliases: [llm-small, form-extractor, llm-judge, vlm-audit, asr-server, embed]

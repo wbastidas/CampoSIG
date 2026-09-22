@@ -11,14 +11,17 @@ import { describe, expect, it } from 'vitest';
 
 import type { ComplianceFinding, Provenance, QueueItem, ReviewDetail } from '../../api/review';
 import {
+  PLACEMENT_LABEL,
   acceptanceRate,
-  displayValue,
   attentionFor,
   citationFor,
   correctedAiValues,
+  displayValue,
   evidenceByStage,
+  hasDegradations,
   needsArcFm,
   reusedEvidence,
+  sortDegradations,
   sortFindings,
   sortQueue,
   tamperedEvidence,
@@ -97,6 +100,7 @@ function detail(overrides: Partial<ReviewDetail> = {}): ReviewDetail {
     missing_photos: [],
     compliance: [],
     blockers: [],
+    degradations: [],
     observations: [],
     history: [],
     ...overrides,
@@ -310,5 +314,51 @@ describe('mostrar un valor de respuesta', () => {
 
   it('un límite regulatorio con rango se muestra entero', () => {
     expect(displayValue({ min: 5, max: 25 })).toBe('min: 5; max: 25');
+  });
+});
+
+describe('lo que la IA no va a aportar (RF-204)', () => {
+  const unavailable = {
+    alias: 'vlm-audit',
+    purpose: 'Auditoría de evidencia visual',
+    placement: 'unavailable' as const,
+    reason: 'el perfil A no tiene GPU',
+  };
+  const tonight = {
+    alias: 'llm-judge',
+    purpose: 'Juez y redactor de observaciones',
+    placement: 'night_batch' as const,
+    reason: 'pasa al lote nocturno',
+  };
+
+  it('lo que no va a volver se lee primero', () => {
+    // Es lo que el supervisor tiene que absorber: ese informe no llega, así que decide con la
+    // evidencia determinista. Un aviso de espera es una cosa más pequeña que saber.
+    expect(sortDegradations([tonight, unavailable]).map((e) => e.alias)).toEqual([
+      'vlm-audit',
+      'llm-judge',
+    ]);
+  });
+
+  it('sin nada degradado la sección no se muestra', () => {
+    // Un aviso permanente se vuelve parte del decorado, y entonces nadie lo lee el día que
+    // significa algo.
+    expect(hasDegradations(detail({ degradations: [] }))).toBe(false);
+    expect(
+      hasDegradations(
+        detail({
+          degradations: [{ ...tonight, placement: 'interactive' }],
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it('con algo degradado sí se muestra', () => {
+    expect(hasDegradations(detail({ degradations: [unavailable] }))).toBe(true);
+  });
+
+  it('cada destino tiene una etiqueta en castellano', () => {
+    expect(PLACEMENT_LABEL.unavailable).toBe('No se va a ejecutar');
+    expect(PLACEMENT_LABEL.night_batch).toBe('Queda para el lote nocturno');
   });
 });

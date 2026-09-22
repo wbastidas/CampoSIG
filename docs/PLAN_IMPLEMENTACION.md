@@ -593,13 +593,62 @@ Sin RAG (ADR-007). El nodo de normativa funciona con parámetros y reglas, no co
 
 | Entregable | Detalle |
 |---|---|
-| Pasarela de modelos y planificador de GPU | M19: alias lógicos, colas día/noche, degradación a lote nocturno según perfil |
+| Pasarela de modelos y planificador de GPU | ✅ alias como datos, admisión por perfil, colas día/noche y degradación (RF-200 a RF-205) |
 | **Cumplimiento normativo determinista** | `regulatory_parameter` con vigencia y referencia a la norma; reglas de cumplimiento (plazos de APG, umbral de interrupción no computable, resistencia de tierra admisible); repositorio documental con búsqueda de texto completo y enlace al numeral |
 | Grafo de pre-revisión | M17: coherencia, catálogos y normativa, evidencia visual, anomalías, consolidador. Reglas deterministas primero; el LLM solo interpreta texto libre y redacta observaciones |
 | Informe en la revisión | RF-111 con observaciones enlazadas a su evidencia, y RF-111a (muestra ciega) |
 | Evaluación en CI | Conjuntos dorados de coherencia, evidencia visual, anomalías y seguridad; DeepEval, promptfoo, *red teaming*. **Sin RAGAS**: no hay recuperación que medir |
 | **Instrumentación para decidir sobre M18** | Registrar las consultas normativas que hacen técnicos y supervisores y cuáles no resuelve la búsqueda de texto completo. Es el dato que falta para decidir si el RAG se justifica después (ADR-007) |
 | Endurecimiento | Pentest, rendimiento, evaluación de impacto LOPDP, documentación de operación, despliegue escalonado |
+
+### M19: la pasarela de modelos, y que nadie espere a un modelo
+
+La regla 13 dice que el servidor consume LLM y VLM **solo por alias**, y hasta ahora eso era una
+intención: no había pasarela. `infra/inference/aliases.yaml` la vuelve cierta — el modelo detrás de
+`llm-judge` se cambia ahí y ningún agente se toca (RF-200). Un nombre de modelo escrito en el código
+convertiría migrar de llama.cpp a vLLM en un refactor; un test lo verifica buscando por los nombres
+que el propio registro declara, así que añadir un alias extiende la comprobación sola.
+
+**La propiedad que sostiene todo lo demás es RF-204**, y su criterio de aceptación es literal: con
+el servicio de modelos detenido, el supervisor puede revisar y aprobar OT, con aviso. Por eso la
+política de admisión es una función pura: se puede afirmar sobre **toda** la matriz de alias ×
+perfil × (pasarela arriba/abajo) a la vez, en vez de sobre el camino de una petición. Ninguna
+combinación devuelve algo que signifique «espere a que haya modelo»: o corre ahora, o queda para la
+noche, o se omite con aviso.
+
+| Perfil | Extractor de dictado | Juez (LLM) | Auditoría visual (VLM) |
+|---|---|---|---|
+| **A** — solo CPU | en línea | lote nocturno | **no se ejecuta** (SRS 7.9) |
+| **B** — GPU 16 GB | en línea | en línea | lote nocturno (RNF-026) |
+| **C** — GPU 24 GB | en línea | en línea | en línea |
+
+Tres cosas que el SRS afirma y que el código habría contradicho en silencio:
+
+- **RF-203: en 16 GB el juez y el VLM no coexisten.** La aritmética simple dice que sí —6,5 + 9 =
+  15,5 en una tarjeta de 16— y no: lo que sobra no alcanza para la caché KV de ninguno. El perfil
+  declara una **reserva de VRAM**, y eso hace cierta la regla por aritmética en vez de por una lista
+  de pares prohibidos que se queda vieja al cambiar un modelo detrás de su alias.
+- **La degradación son dos campos, no uno.** «El hardware no puede» y «ahora mismo no cabe» son
+  situaciones distintas y el SRS las trata distinto: el VLM está *desactivado* en el perfil A y
+  *espera la noche* en el B. Con un solo campo, o se perdía en B o se encolaba para siempre en A.
+- **Un hecho permanente decide antes que uno temporal.** Decir «el servicio no responde; pasa al
+  lote nocturno» de un alias que ese hardware no puede ejecutar le promete al supervisor un informe
+  que nunca llega. Es el orden de dos comprobaciones, y sin un test se invierte en cualquier
+  refactor.
+
+**Y el aviso llega a quien decide.** El detalle de la revisión trae `degradations` con motivo, y la
+pantalla los muestra encima de la evidencia: quien va a decidir sin el informe del agente tiene que
+saberlo antes de leer, no después. La sección **no** aparece cuando no falta nada — un aviso
+permanente se vuelve parte del decorado, y entonces nadie lo lee el día que significa algo. Se
+calcula de la configuración, sin una sola llamada al servicio de modelos: una pantalla de revisión
+que esperara dos segundos para descubrir que no hay GPU le habría quitado dos segundos a alguien sin
+darle nada que pudiera hacer.
+
+Lo que falta de M19 es lo que necesita hardware: medir en la GPU real, el planificador ejecutándose
+dentro de Celery, y las métricas publicadas en Grafana. La política —qué corre, dónde y por qué— ya
+está y se prueba.
+
+---
 
 **Aceptación:** criterios del SRS 10.4 para agentes — recall de inconsistencias ≥ 0,85, kappa supervisor–agente ≥ 0,6 en la muestra ciega, −30 % de tiempo de revisión. Sin vulnerabilidades críticas ni altas. Cero observaciones sin evidencia citada. Todo límite regulatorio evaluado sale de `regulatory_parameter`, ninguno codificado.
 
@@ -608,7 +657,7 @@ Sin RAG (ADR-007). El nodo de normativa funciona con parámetros y reglas, no co
 ## Nota sobre el estado de verificación
 
 Los tests de integración **se ejecutaron contra PostgreSQL 16 + PostGIS 3.4 real**, no solo en CI:
-798 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las doce
+895 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las doce
 migraciones aplicadas y revertidas sobre una base limpia (25 tablas de la aplicación, más
 `alembic_version` y las de PostGIS).
 
@@ -648,8 +697,8 @@ niveles:
 
 | Nivel | Qué prueba | Cuántos |
 |---|---|---|
-| Lógica pura | Orden, severidad, PKCE, sesión, importador, contrato de validación | 174 |
-| Render (jsdom) | Que las pantallas muestren lo que hay que ver | 58 |
+| Lógica pura | Orden, severidad, PKCE, sesión, importador, contrato de validación | 178 |
+| Render (jsdom) | Que las pantallas muestren lo que hay que ver | 60 |
 | Navegador real (Chromium) | Que **el artefacto que se despliega** cargue y la puerta de login aguante | 3 |
 
 `pnpm lint` también era un comando documentado que no existía: no había `eslint.config.js`, así

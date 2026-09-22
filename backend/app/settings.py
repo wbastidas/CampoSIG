@@ -45,6 +45,14 @@ class Settings(BaseSettings):
     #: pointing at `localhost` is a QR that works only on the server that printed it.
     public_base_url: str = "http://localhost:8000"
 
+    # Model gateway (M19, RF-200). Empty means it is not deployed yet, and every model task
+    # degrades with a notice instead of failing — the same rule as the integration connectors, and
+    # the reason a supervisor can review and approve on a server with no GPU at all (RF-204).
+    model_gateway_url: str = ""
+    #: Which server profile of SRS 7.9 this deployment is. Decides what runs in line and what waits
+    #: for the night window (rule 17). "A" is the safe default: it assumes no GPU.
+    inference_profile: str = "A"
+
     # Object storage for evidence (SeaweedFS, S3 API).
     s3_endpoint_url: str = "http://localhost:8333"
     s3_bucket: str = "sigec-evidence"

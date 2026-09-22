@@ -15,6 +15,7 @@
 
 import type {
   ComplianceFinding,
+  Degradation,
   Provenance,
   QueueItem,
   ReviewDetail,
@@ -204,3 +205,27 @@ export function displayValue(value: unknown): string {
   // representación honesta no debe fingir una.
   return `(${typeof value})`;
 }
+
+/**
+ * What the AI layer will not do here, worth showing and worth ordering (RF-204).
+ *
+ * `unavailable` first, because it is the one a supervisor has to absorb: that report is not
+ * coming, so the decision is theirs on the deterministic evidence alone. A `night_batch` notice is
+ * information about a wait, which is a smaller thing to know.
+ */
+export function sortDegradations(entries: Degradation[]): Degradation[] {
+  const weight = (entry: Degradation): number =>
+    entry.placement === 'unavailable' ? 0 : entry.placement === 'night_batch' ? 1 : 2;
+  return [...entries].sort((a, b) => weight(a) - weight(b) || a.alias.localeCompare(b.alias));
+}
+
+/** Whether anything is missing at all, which is what decides if the section shows. */
+export function hasDegradations(detail: ReviewDetail): boolean {
+  return detail.degradations.some((entry) => entry.placement !== 'interactive');
+}
+
+export const PLACEMENT_LABEL: Record<Degradation['placement'], string> = {
+  unavailable: 'No se va a ejecutar',
+  night_batch: 'Queda para el lote nocturno',
+  interactive: 'En línea',
+};
