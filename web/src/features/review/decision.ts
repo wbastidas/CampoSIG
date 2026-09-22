@@ -14,6 +14,7 @@
  */
 
 import type {
+  AgentAgreement,
   AgentObservation,
   AgentReport,
   BatchOutcome,
@@ -338,4 +339,61 @@ export function batchOutcomeLines(outcome: BatchOutcome): string[] {
     lines.push(`Rechazadas: ${outcome.refused.length}.`);
   }
   return lines;
+}
+
+/**
+ * The blind sample, in the supervisor's terms (RF-111a).
+ *
+ * A withheld section with no explanation reads as a broken screen, and a supervisor who thinks the
+ * screen is broken goes looking for the report elsewhere — which defeats the whole measurement. So
+ * the notice says what is happening and why, in one breath, and promises the report right after.
+ */
+export function isBlind(detail: ReviewDetail): boolean {
+  return detail.agent_report?.blind === true;
+}
+
+export const BLIND_NOTICE =
+  'Esta OT está en la muestra ciega: el informe del agente se muestra después de que registre su ' +
+  'decisión. Es para medir si coincidimos, no para esconderle nada — lo determinista de arriba ' +
+  '(normativa, impedimentos, fotos) está completo.';
+
+/** Whether the missing-report reason should be shown. A blind order has its own notice. */
+export function missingReportNotice(detail: ReviewDetail): string | null {
+  if (isBlind(detail)) return BLIND_NOTICE;
+  return missingReportReason(detail);
+}
+
+/**
+ * Reading the agreement (RF-111a, RNF-060).
+ *
+ * The table is reported with the coefficient, and not only the coefficient, because a kappa of 0,58
+ * says nothing about *how* the two disagreed and the two ways cost very different things: the agent
+ * missing a problem is not the same as the agent raising a false alarm.
+ */
+export function kappaVerdict(rows: AgentAgreement): string {
+  if (rows.paired === 0) {
+    return rows.pending > 0
+      ? `Todavía sin pares: ${rows.pending} OT sorteada(s) esperan decisión.`
+      : 'Todavía no hay muestra ciega en esta unidad.';
+  }
+  if (rows.kappa === null) {
+    if (rows.paired < rows.min_sample) {
+      return `${rows.paired} de ${rows.min_sample} pares: aún no se reporta kappa.`;
+    }
+    // Los dos usaron una sola categoría. Reportar 1,00 sería reportar concordancia perfecta entre
+    // dos que nunca distinguieron nada.
+    return 'Kappa indefinido: supervisor y agente no distinguieron ningún caso.';
+  }
+  const said = rows.kappa.toFixed(2).replace('.', ',');
+  return rows.meets_floor
+    ? `Kappa ${said} sobre ${rows.paired} pares: cumple el piso de ${String(rows.kappa_floor).replace('.', ',')}.`
+    : `Kappa ${said} sobre ${rows.paired} pares: por debajo del piso de ${String(rows.kappa_floor).replace('.', ',')} (RNF-060).`;
+}
+
+/** The two disagreements, named by what they cost. */
+export function disagreementLines(rows: AgentAgreement): string[] {
+  return [
+    `El agente no vio lo que el supervisor sí: ${rows.supervisor_only}.`,
+    `El agente marcó lo que el supervisor aprobó: ${rows.agent_only}.`,
+  ];
 }

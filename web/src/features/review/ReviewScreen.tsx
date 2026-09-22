@@ -17,10 +17,12 @@ import { Fragment, useCallback, useEffect, useState } from 'react';
 import { FormView } from '../../forms/FormView';
 
 import {
+  type AgentAgreement,
   ApprovalBlocked,
   approveBatch,
   type BatchOutcome,
   type DecisionKind,
+  fetchAgreement,
   fetchBatchPreview,
   fetchDetail,
   fetchGisTray,
@@ -38,6 +40,10 @@ import {
   acceptanceRate,
   attentionFor,
   batchBarLabel,
+  disagreementLines,
+  isBlind,
+  kappaVerdict,
+  missingReportNotice,
   batchOutcomeLines,
   batchPlan,
   batchable,
@@ -45,7 +51,6 @@ import {
   displayValue,
   evidenceByStage,
   hasDegradations,
-  missingReportReason,
   needsArcFm,
   observationCitation,
   OUTCOME_LABEL,
@@ -89,6 +94,9 @@ export function ReviewScreen({ businessUnit, reviewer, now = () => new Date() }:
   const [sampled, setSampled] = useState<number | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [batchOutcome, setBatchOutcome] = useState<BatchOutcome | null>(null);
+  // La OT cuya decisión ciega acaba de liberar su informe (RF-111a). Se queda abierta a propósito.
+  const [revealed, setRevealed] = useState<string | null>(null);
+  const [accord, setAccord] = useState<AgentAgreement | null>(null);
 
   const loadQueue = useCallback(
     async (signal?: AbortSignal) => {
@@ -100,6 +108,20 @@ export function ReviewScreen({ businessUnit, reviewer, now = () => new Date() }:
       } catch (cause) {
         if ((cause as Error).name === 'AbortError') return;
         setError((cause as Error).message);
+      }
+    },
+    [businessUnit],
+  );
+
+  const loadAccord = useCallback(
+    async (signal?: AbortSignal) => {
+      try {
+        setAccord(await fetchAgreement(businessUnit, signal));
+      } catch (cause) {
+        if ((cause as Error).name === 'AbortError') return;
+        // El número es realimentación, no un requisito para decidir: su fallo no puede tapar la
+        // cola. Un analista ML lo verá en su propio tablero.
+        setAccord(null);
       }
     },
     [businessUnit],
@@ -126,8 +148,9 @@ export function ReviewScreen({ businessUnit, reviewer, now = () => new Date() }:
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadQueue(controller.signal);
     void loadTray(controller.signal);
+    void loadAccord(controller.signal);
     return () => controller.abort();
-  }, [loadQueue, loadTray]);
+  }, [loadQueue, loadTray, loadAccord]);
 
   useEffect(() => {
     // Nada que cargar: el detalle ya se limpió al cambiar la selección, no hace falta un
@@ -249,12 +272,21 @@ export function ReviewScreen({ businessUnit, reviewer, now = () => new Date() }:
       setBusy(true);
       setRefused([]);
       try {
-        await submitDecision(businessUnit, selected, {
+        const outcome = await submitDecision(businessUnit, selected, {
           decision,
           note: note || undefined,
         });
         setNote('');
-        setSelected(null);
+        if (outcome.was_blind) {
+          // La OT se queda abierta y se recarga el detalle: el informe ya está liberado y es lo que
+          // RF-111a promete mostrar. Cerrarla aquí sería retenerlo y no mostrarlo nunca.
+          setRevealed(selected);
+          setDetail(await fetchDetail(businessUnit, selected));
+          setAccord(await fetchAgreement(businessUnit));
+        } else {
+          setRevealed(null);
+          setSelected(null);
+        }
         await Promise.all([loadQueue(), loadTray()]);
       } catch (cause) {
         if (cause instanceof ApprovalBlocked) {
@@ -319,6 +351,7 @@ export function ReviewScreen({ businessUnit, reviewer, now = () => new Date() }:
                     type="button"
                     onClick={() => {
                       setDetail(null);
+                      setRevealed(null);
                       setSelected(item.work_order_id);
                     }}
                     aria-current={selected === item.work_order_id}
@@ -341,7 +374,7 @@ export function ReviewScreen({ businessUnit, reviewer, now = () => new Date() }:
           <article className="review-detail">
             <ReviewHeader detail={detail} />
             <Blockers detail={detail} refused={refused} />
-            <PreReview detail={detail} />
+            <PreReview detail={detail} justRevealed={revealed === selected} />
             <Degradations detail={detail} />
             {/* La captura misma, antes de la auditoría: se revisa lo que la cuadrilla escribió,
                 no solo lo que la plataforma opina de ello (I6, vista de formulario). */}
@@ -401,6 +434,7 @@ export function ReviewScreen({ businessUnit, reviewer, now = () => new Date() }:
         )}
       </div>
 
+      {accord && <AgentAgreementPanel rows={accord} />}
       {tray && <GisTrayPanel tray={tray} />}
     </section>
   );
@@ -485,6 +519,39 @@ function BatchApproval({
 }
 
 /**
+ * Supervisor–agent agreement over the blind sample (RF-111a, RNF-060).
+ *
+ * Here rather than only on an ML dashboard, because the person whose agreement is being measured is
+ * the one who should see it. A kappa nobody reads is a metric that drifts for a quarter.
+ *
+ * The table shows with the coefficient. A kappa of 0,58 says nothing about *how* the two disagreed,
+ * and the two ways cost very different things: the agent missing a problem is not the agent raising
+ * a false alarm.
+ */
+function AgentAgreementPanel({ rows }: { rows: AgentAgreement }) {
+  return (
+    <section className="review-accord" aria-label="Concordancia con el agente">
+      <h2>Concordancia con el agente</h2>
+      <p role="status">{kappaVerdict(rows)}</p>
+      <ul>
+        {disagreementLines(rows).map((line) => (
+          <li key={line}>{line}</li>
+        ))}
+        <li>Coincidieron en que no había problema: {rows.both_clear}.</li>
+        <li>Coincidieron en que sí: {rows.both_flagged}.</li>
+        {rows.pending > 0 && <li>Sorteadas sin decidir todavía: {rows.pending}.</li>}
+        {rows.unpaired > 0 && (
+          /* Decididas sin informe que comparar. No entran en el kappa: contarlas como
+             concordancia halagaría al agente y como discrepancia lo castigaría por un lote
+             nocturno que no había corrido. */
+          <li>Decididas sin informe que comparar: {rows.unpaired}.</li>
+        )}
+      </ul>
+    </section>
+  );
+}
+
+/**
  * The pre-review report (RF-111, RF-175).
  *
  * Above the evidence and below the blockers: it is context for reading the capture, not a verdict on
@@ -495,12 +562,15 @@ function BatchApproval({
  * yet" are different things to somebody about to decide without it, and neither of them is a reason
  * to wait: the deterministic findings above are complete either way (RF-204).
  */
-function PreReview({ detail }: { detail: ReviewDetail }) {
-  const missing = missingReportReason(detail);
+function PreReview({ detail, justRevealed }: { detail: ReviewDetail; justRevealed?: boolean }) {
+  const missing = missingReportNotice(detail);
   if (missing !== null) {
     return (
-      <section aria-label="Informe de pre-revisión">
-        <h3>Informe de pre-revisión</h3>
+      <section
+        aria-label="Informe de pre-revisión"
+        className={isBlind(detail) ? 'prereview--blind' : undefined}
+      >
+        <h3>{isBlind(detail) ? 'Informe de pre-revisión (retenido)' : 'Informe de pre-revisión'}</h3>
         <p role="status">{missing}</p>
       </section>
     );
@@ -515,6 +585,14 @@ function PreReview({ detail }: { detail: ReviewDetail }) {
         Informe de pre-revisión — {RISK_LABEL[report.risk_level]}{' '}
         <span className="prereview__meta">{report.graph_version}</span>
       </h3>
+      {justRevealed && (
+        /* La segunda mitad de RF-111a: «luego se muestra». Retenerlo y no mostrarlo nunca le
+           costaría al supervisor la realimentación y a la plataforma su única oportunidad de que
+           alguien le diga que el informe estaba equivocado. */
+        <p role="status" className="prereview__revealed">
+          Usted ya decidió. Esto es lo que había visto el agente, y la concordancia quedó registrada.
+        </p>
+      )}
       <p>{report.summary}</p>
 
       {report.discarded > 0 && (

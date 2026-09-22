@@ -36,6 +36,21 @@ const QUEUE = {
   ],
 };
 
+const NO_SAMPLE = {
+  both_clear: 0,
+  both_flagged: 0,
+  supervisor_only: 0,
+  agent_only: 0,
+  pending: 0,
+  unpaired: 0,
+  paired: 0,
+  observed_agreement: null,
+  kappa: null,
+  kappa_floor: 0.6,
+  meets_floor: null,
+  min_sample: 10,
+};
+
 function detail(overrides: Partial<ReviewDetail> = {}): ReviewDetail {
   return {
     work_order: {
@@ -91,6 +106,9 @@ function mockApi(body: ReviewDetail, onDecision?: (payload: unknown) => Response
         status: 200,
         json: async () => ({ decision: 'aprobada', work_order_state: 'aprobada' }),
       } as unknown as Response;
+    }
+    if (url.includes('/agent-agreement')) {
+      return { ok: true, status: 200, json: async () => NO_SAMPLE } as unknown as Response;
     }
     if (url.includes('/gis-tray')) {
       return {
@@ -452,6 +470,9 @@ describe('el acta (RF-115)', () => {
           blob: async () => new Blob(['%PDF-1.7'], { type: 'application/pdf' }),
         } as unknown as Response;
       }
+      if (url.includes('/agent-agreement')) {
+        return { ok: true, status: 200, json: async () => NO_SAMPLE } as unknown as Response;
+      }
       if (url.includes('/gis-tray')) {
         return { ok: true, status: 200, json: async () => ({ proposals: [], batches: [] }) } as unknown as Response;
       }
@@ -473,6 +494,8 @@ describe('el acta (RF-115)', () => {
                 crew_id: null,
                 sla_due_at: null,
                 updated_at: null,
+                pre_review_state: null,
+                risk_level: null,
               },
             ],
           }),
@@ -586,7 +609,7 @@ describe('el informe de pre-revisión en pantalla (RF-111)', () => {
   it('muestra el riesgo en palabras, el resumen y la evidencia que la observación señala', async () => {
     vi.stubGlobal(
       'fetch',
-      mockApi(detail({ agent_report: { run_state: 'parcial', error: null, report } })),
+      mockApi(detail({ agent_report: { run_state: 'parcial', error: null, report, blind: false } })),
     );
     render(<ReviewScreen businessUnit="GYE" reviewer="sup.1" />);
 
@@ -612,7 +635,12 @@ describe('el informe de pre-revisión en pantalla (RF-111)', () => {
       'fetch',
       mockApi(
         detail({
-          agent_report: { run_state: 'fallido', error: 'RuntimeError: el grafo se rompió', report: null },
+          agent_report: {
+            run_state: 'fallido',
+            error: 'RuntimeError: el grafo se rompió',
+            report: null,
+            blind: false,
+          },
         }),
       ),
     );
@@ -632,6 +660,7 @@ describe('el informe de pre-revisión en pantalla (RF-111)', () => {
             run_state: 'terminado',
             error: null,
             report: { ...report, discarded: 2, observations: [] },
+            blind: false,
           },
         }),
       ),
@@ -699,6 +728,9 @@ describe('aprobación en lote (RF-176)', () => {
               sample_note: '1 OT quedaron apartadas para verificación individual obligatoria',
             },
         } as unknown as Response;
+      }
+      if (url.includes('/agent-agreement')) {
+        return { ok: true, status: 200, json: async () => NO_SAMPLE } as unknown as Response;
       }
       if (url.includes('/gis-tray')) {
         return {
@@ -805,5 +837,139 @@ describe('aprobación en lote (RF-176)', () => {
     const button = await screen.findByRole('button', { name: /Aprobar 0 en lote/ });
     expect((button as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText(/Seleccione OT de riesgo bajo/)).toBeTruthy();
+  });
+});
+
+/**
+ * La muestra ciega, en pantalla (RF-111a).
+ *
+ * Las dos mitades del requerimiento son comprobables aquí: el informe **no se muestra** antes de la
+ * decisión —con el motivo, porque una sección oculta sin explicación se lee como una pantalla rota— y
+ * **se muestra después**, con la OT todavía abierta. Retenerlo y no mostrarlo nunca le costaría al
+ * supervisor la realimentación y a la plataforma su única oportunidad de que le digan que se equivocó.
+ */
+describe('muestra ciega (RF-111a)', () => {
+  const REPORT = {
+    work_order_id: 'wo-1',
+    graph_version: 'prereview-0.1.0',
+    hardware_profile: 'A',
+    risk_level: 'high' as const,
+    status: 'complete' as const,
+    summary: 'una foto repetida entre dos OT',
+    observations: [],
+    models: {},
+    budget: { llm_calls: 0, tokens: 0, duration_s: 0 },
+    skipped: [],
+    discarded: 0,
+  };
+
+  function blindApi(accord: unknown = NO_SAMPLE) {
+    let decided = false;
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/decision')) {
+        decided = true;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            decision: 'devuelta',
+            decided_at: null,
+            work_order_state: 'devuelta',
+            was_blind: true,
+          }),
+        } as unknown as Response;
+      }
+      if (url.includes('/agent-agreement')) {
+        return { ok: true, status: 200, json: async () => accord } as unknown as Response;
+      }
+      if (url.includes('/gis-tray')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ proposals: [], batches: [] }),
+        } as unknown as Response;
+      }
+      if (url.includes('/queue')) {
+        return { ok: true, status: 200, json: async () => QUEUE } as unknown as Response;
+      }
+      // El informe viaja solo después de la decisión: es el servidor quien lo retiene (RF-111a).
+      return {
+        ok: true,
+        status: 200,
+        json: async () =>
+          detail({
+            agent_report: decided
+              ? { run_state: 'terminado', error: null, report: REPORT, blind: false }
+              : { run_state: 'terminado', error: null, report: null, blind: true },
+          }),
+      } as unknown as Response;
+    });
+    return fetcher;
+  }
+
+  it('antes de decidir no se ve el informe, y se dice por qué', async () => {
+    vi.stubGlobal('fetch', blindApi());
+    render(<ReviewScreen businessUnit="GYE" reviewer="sup.1" now={() => NOW} />);
+
+    await openTheOrder();
+    expect(await screen.findByText(/está en la muestra ciega/)).toBeTruthy();
+    // Nada del informe: ni el riesgo ni el resumen. El anclaje lo produce el veredicto.
+    expect(screen.queryByText(/Riesgo alto/)).toBeNull();
+    expect(screen.queryByText(/una foto repetida/)).toBeNull();
+  });
+
+  it('el aviso dice que lo determinista sigue completo', async () => {
+    // Si no, el supervisor cree que le falta información para decidir y espera —y RF-204 dice que
+    // se puede aprobar sin informe ninguno.
+    vi.stubGlobal('fetch', blindApi());
+    render(<ReviewScreen businessUnit="GYE" reviewer="sup.1" now={() => NOW} />);
+
+    await openTheOrder();
+    expect(await screen.findByText(/normativa, impedimentos, fotos/)).toBeTruthy();
+  });
+
+  it('después de decidir el informe aparece y la OT sigue abierta', async () => {
+    vi.stubGlobal('fetch', blindApi());
+    render(<ReviewScreen businessUnit="GYE" reviewer="sup.1" now={() => NOW} />);
+
+    await openTheOrder();
+    (await screen.findByRole('button', { name: /Devolver con observaciones/ })).click();
+
+    expect(await screen.findByText(/Esto es lo que había visto el agente/)).toBeTruthy();
+    expect(screen.getByText(/una foto repetida entre dos OT/)).toBeTruthy();
+  });
+
+  it('el kappa se muestra con el piso de RNF-060', async () => {
+    vi.stubGlobal(
+      'fetch',
+      blindApi({
+        ...NO_SAMPLE,
+        both_clear: 30,
+        both_flagged: 20,
+        supervisor_only: 2,
+        agent_only: 3,
+        paired: 55,
+        observed_agreement: 0.909,
+        kappa: 0.81,
+        meets_floor: true,
+      }),
+    );
+    render(<ReviewScreen businessUnit="GYE" reviewer="sup.1" now={() => NOW} />);
+
+    expect(await screen.findByText(/Kappa 0,81/)).toBeTruthy();
+    expect(screen.getByText(/cumple el piso de 0,6/)).toBeTruthy();
+    // Los dos desacuerdos, nombrados por lo que cuestan.
+    expect(screen.getByText(/no vio lo que el supervisor sí: 2/)).toBeTruthy();
+  });
+
+  it('una respuesta de concordancia malformada no deja la cola en blanco', async () => {
+    // Pasó al escribir esto: el panel reventó en el render y la pantalla entera se quedó vacía. Es
+    // realimentación secundaria; no puede tumbar la pantalla con la que se aprueba trabajo.
+    vi.stubGlobal('fetch', blindApi({ kappa: null }));
+    render(<ReviewScreen businessUnit="GYE" reviewer="sup.1" now={() => NOW} />);
+
+    expect(await screen.findByRole('button', { name: /OT-000101/ })).toBeTruthy();
+    expect(screen.queryByText(/Concordancia con el agente/)).toBeNull();
   });
 });

@@ -31,6 +31,7 @@ from app.agents.report import AgentReport, RunStatus
 from app.org.models import BusinessUnit
 from app.prereview.models import AgentRun, AgentStepTrace, RunState, StoredReport
 from app.responses.models import Evidence, FormResponse, ValueOrigin
+from app.review.blind import assign as assign_blind
 from app.review.service import compliance_findings
 from app.settings import get_settings
 from app.workorders.models import WorkOrder
@@ -207,6 +208,10 @@ def execute(
         return run
 
     _store(session, run, report)
+    # Drawn here, before any human is involved: RF-111a measures whether a supervisor read the
+    # capture or agreed with the report, and a draw made on a request path would be a draw the thing
+    # being measured takes part in.
+    assign_blind(session, order.id, unit.id, rate=get_settings().blind_sample_rate)
     return run
 
 

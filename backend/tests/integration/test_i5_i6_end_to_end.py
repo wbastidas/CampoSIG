@@ -38,6 +38,7 @@ from app.responses.service import (
     unconfirmed_ai_values,
     verify_integrity,
 )
+from app.review.blind import assign as assign_blind
 from app.review.models import Decision
 from app.review.service import (
     ApprovalBlockedError,
@@ -342,19 +343,28 @@ class TestReview:
         decide(session, unit, order, decision=Decision.RETURNED, reviewer_sub="sup.a", note="1")
         assert len(decision_history(session, order)) == 1
 
-    def test_the_blind_sample_flag_is_recorded(self, session, unit, order):
-        """RF-111a: anchoring bias is measured, not assumed away."""
+    def test_rf_111a_el_sorteo_marca_la_decisión_y_no_la_marca_quien_la_toma(
+        self, session, unit, order
+    ):
+        """RF-111a: el sesgo de anclaje se mide, no se supone resuelto.
+
+        Y la marca sale del sorteo. Antes era un booleano que mandaba el navegador, es decir un
+        campo que rellenaba lo que se está midiendo.
+        """
         save_answers(session, unit, order, answers=full_answers(), submit=True)
+        assign_blind(session, order.id, unit.id, rate=1.0)
         row = decide(
-            session,
-            unit,
-            order,
-            decision=Decision.RETURNED,
-            reviewer_sub="sup.a",
-            note="x",
-            blind_sample=True,
+            session, unit, order, decision=Decision.RETURNED, reviewer_sub="sup.a", note="x"
         )
         assert row.blind_sample is True
+
+    def test_rf_111a_una_ot_no_sorteada_no_queda_marcada_como_ciega(self, session, unit, order):
+        """Si toda decisión se marcara ciega, el kappa se calcularía sobre la población entera."""
+        save_answers(session, unit, order, answers=full_answers(), submit=True)
+        row = decide(
+            session, unit, order, decision=Decision.RETURNED, reviewer_sub="sup.a", note="x"
+        )
+        assert row.blind_sample is None
 
 
 class TestAsBuiltStaging:

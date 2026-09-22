@@ -731,6 +731,38 @@ decía «riesgo medium». Los identificadores van en inglés (regla 11), así qu
 enum en una frase en español produce eso mismo en la pantalla de un supervisor. Las palabras viven
 ahora junto al enum, y un test falla si alguien añade un nivel sin la suya.
 
+**Y la muestra ciega de RF-111a, que es lo que hace que el kappa signifique algo.** El riesgo que el
+requerimiento nombra es el anclaje: un supervisor que lee «riesgo bajo, sin observaciones» antes de
+mirar la captura encuentra la captura bien. Cuando eso pasa por costumbre, la revisión es del agente,
+la concordancia es perfecta y nadie puede notarlo — un número calculado sobre revisiones que vieron
+el informe primero mide concordancia con una sugerencia, no entre dos juicios.
+
+Así que en una parte configurable de las OT (10 % por omisión) el informe **se retiene** hasta que el
+supervisor registra su decisión, y después se muestra. Tres decisiones de diseño sostienen el número:
+
+| Decisión | Por qué |
+|---|---|
+| El sorteo lo hace el servidor, al guardar el informe | `blind_sample` era un booleano que mandaba el navegador: un campo que rellenaba lo que se está midiendo. Y sortear en el camino de una petición sería sortear con el medido dentro |
+| El sorteo se guarda, no se recalcula | la tasa es configurable, y una métrica cuyo denominador cambia cuando alguien edita un ajuste no se puede defender en una reunión. La fila lleva la tasa que estaba en vigor |
+| Se retiene el informe, nunca lo determinista | los hallazgos normativos, los impedimentos y las fotos no son del agente: son de lo que depende una aprobación, y RF-204 exige poder aprobar sin informe ninguno |
+
+Y **se muestra después**, con la OT todavía abierta: retenerlo y no mostrarlo nunca le costaría al
+supervisor la realimentación y a la plataforma su única oportunidad de que alguien le diga que el
+informe estaba equivocado.
+
+La concordancia se reduce a dos categorías —«tenía problema» o no— porque comparar tres botones
+contra tres niveles de riesgo sería comparar escalas distintas: devolver y anular difieren en la
+consecuencia, no en el hallazgo. Sobre eso, el kappa de Cohen con el piso de RNF-060 (≥ 0,6), y dos
+negativas deliberadas: con menos de diez pares no se reporta kappa —sobre nueve casos es ruido con
+decimales— y si los dos usaron una sola categoría se reporta **indefinido** y no 1,00, que es
+exactamente el número que el requerimiento existe para no creerse. La tabla viaja con el
+coeficiente, porque un 0,58 no dice *cómo* discreparon y las dos formas cuestan cosas muy distintas:
+que el agente no viera un problema no es que el agente diera una falsa alarma.
+
+Del tablero RF-134 completo (tasa de aceptación por campo, correcciones por clase visual, WER,
+adopción de la voz, versiones en la flota) solo está esta parte, que es la que RF-111a pide; el resto
+queda en I12.
+
 Falta la mitad que necesita modelos: los nodos VLM y de redacción, en I12.
 
 ---

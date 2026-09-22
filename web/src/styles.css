@@ -557,3 +557,32 @@ fieldset {
   margin: 0.2rem 0 0 1rem;
   padding: 0;
 }
+
+/* Muestra ciega y concordancia (RF-111a). El informe retenido se marca como retenido, no como
+   ausente: una sección vacía sin explicación se lee como una pantalla rota. */
+.prereview--blind {
+  border-left: 3px solid var(--acento);
+  padding-left: 0.5rem;
+}
+
+.prereview__revealed {
+  font-weight: 600;
+}
+
+.review-accord {
+  border: 1px solid var(--borde);
+  border-radius: 4px;
+  padding: 0.6rem;
+  margin-top: 1rem;
+}
+
+.review-accord h2 {
+  font-size: 1rem;
+  margin: 0 0 0.3rem;
+}
+
+.review-accord ul {
+  margin: 0.3rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.85rem;
+}

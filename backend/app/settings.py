@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     #: for the night window (rule 17). "A" is the safe default: it assumes no GPU.
     inference_profile: str = "A"
 
+    #: Share of work orders whose pre-review report is withheld until the supervisor has recorded
+    #: their own decision (RF-111a). Zero turns the measurement off; the dashboard then says there
+    #: is no sample rather than showing a kappa computed over nothing.
+    blind_sample_rate: float = 0.10
+
     # Object storage for evidence (SeaweedFS, S3 API).
     s3_endpoint_url: str = "http://localhost:8333"
     s3_bucket: str = "sigec-evidence"

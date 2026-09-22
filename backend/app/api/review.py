@@ -30,6 +30,7 @@ from app.org.service import UnknownBusinessUnitError, get_business_unit_by_code
 from app.prereview.service import latest_report, latest_run, risk_levels_for
 from app.responses.models import FormResponse, ValueOrigin
 from app.responses.service import compose_for, missing_photos, photo_counts
+from app.review import blind
 from app.review.batch import approve_batch, orders_for_batch, sample_size
 from app.review.models import Decision
 from app.review.service import (
@@ -228,23 +229,37 @@ def detail(session: SessionDep, unit_code: str, order_id: uuid.UUID) -> dict[str
 
 
 def _agent_report(session: Session, order_id: uuid.UUID) -> dict[str, Any] | None:
-    """The stored report plus the state of its run.
+    """The stored report plus the state of its run, unless this order is in the blind sample.
 
     The run's state travels with it because "there is no report" has two very different
     meanings — it failed, or it has not run — and a supervisor deciding without one should know
-    which.
+    which. `blind` is a third meaning, and the most important one to say out loud: the report exists
+    and is being withheld on purpose until this supervisor has recorded their own reading (RF-111a).
+
+    Withheld here, at the only door the screen has. A client-side "do not render it yet" would be a
+    rule the report itself travelled past — and once it is in the browser it is in the browser.
     """
+    withheld = blind.pending_for(session, order_id)
     report = latest_report(session, order_id)
+    run = latest_run(session, order_id)
+    if withheld is not None:
+        # Nothing of the report crosses: not the risk, not the count of observations. A supervisor
+        # who reads "3 observaciones, riesgo alto" is already anchored.
+        return {
+            "run_state": run.state if run else None,
+            "error": None,
+            "report": None,
+            "blind": True,
+        }
     if report is None:
-        run = latest_run(session, order_id)
         if run is None:
             return None
-        return {"run_state": run.state, "error": run.error, "report": None}
-    run = latest_run(session, order_id)
+        return {"run_state": run.state, "error": run.error, "report": None, "blind": False}
     return {
         "run_state": run.state if run else None,
         "error": run.error if run else None,
         "report": report.model_dump(mode="json"),
+        "blind": False,
     }
 
 
@@ -260,9 +275,9 @@ class DecisionIn(BaseModel):
     # author the caller could type is a decision nobody signed.
     note: str | None = Field(default=None, max_length=2000)
     observations: list[ObservationIn] = Field(default_factory=list)
-    #: True when this order was drawn for the blind sample that measures agreement between
-    #: the supervisor and the agents (SRS 10.4).
-    blind_sample: bool | None = None
+    # No `blind_sample` either: whether this decision was made without seeing the report is read
+    # from the draw, not declared by the caller. A flag the browser fills in would let the thing
+    # being measured write its own scorecard (RF-111a).
 
 
 @router.post("/units/{unit_code}/work-orders/{order_id}/decision")
@@ -276,6 +291,10 @@ def submit_decision(
     """Record a decision (RF-112). Approval is refused when its preconditions are unmet."""
     unit = _unit(session, unit_code)
     order = _order(session, unit.id, order_id)
+    # Read before deciding: `decide` closes the draw, and afterwards there is nothing pending to
+    # tell the screen that this was a blind review whose report is now due (RF-111a).
+    was_blind = blind.pending_for(session, order.id) is not None
+    rated = latest_report(session, order.id)
     try:
         row = decide(
             session,
@@ -285,7 +304,7 @@ def submit_decision(
             reviewer_sub=principal.subject,
             note=payload.note,
             observations=[item.model_dump() for item in payload.observations],
-            blind_sample=payload.blind_sample,
+            agent_risk=rated.risk_level.value if rated else None,
         )
     except NotReviewableError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
@@ -301,6 +320,10 @@ def submit_decision(
         "decision": row.decision,
         "decided_at": row.decided_at.isoformat() if row.decided_at else None,
         "work_order_state": order.state,
+        # So the screen keeps the order open and shows what the agent had said. RF-111a is «luego se
+        # muestra»: withholding it and then never showing it would cost the supervisor the feedback
+        # and the platform its only chance to be told the report was wrong.
+        "was_blind": was_blind,
     }
 
 
@@ -363,6 +386,23 @@ def preview_batch(unit_code: str, size: int, session: SessionDep) -> dict[str, A
         "sampled": held,
         "would_approve": max(size - held, 0),
     }
+
+
+@router.get(
+    "/units/{unit_code}/agent-agreement",
+    summary="Concordancia supervisor-agente sobre la muestra ciega (RF-111a, RNF-060)",
+    dependencies=[Depends(require_roles(Role.SUPERVISOR, Role.ML_ANALYST))],
+)
+def agent_agreement(unit_code: str, session: SessionDep) -> dict[str, Any]:
+    """The kappa RF-111a's acceptance criterion asks for, with the table it came from.
+
+    The table travels, not only the coefficient: a kappa of 0,58 says nothing about *how* the two
+    disagreed, and the two ways cost very different things. The cell where the supervisor found
+    something the agent did not is the agent missing a problem; the opposite cell is a false alarm
+    that cost somebody a minute.
+    """
+    unit = _unit(session, unit_code)
+    return blind.agreement(session, unit.id).as_dict()
 
 
 @router.get("/units/{unit_code}/gis-tray")

@@ -7,7 +7,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text, func
+from sqlalchemy import DateTime, Float, ForeignKey, Index, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -82,3 +82,45 @@ class FieldObservation(Base):
     decision_row: Mapped[ReviewDecision] = relationship(back_populates="observations")
 
     __table_args__ = (Index("ix_field_observation_decision", "decision_id"),)
+
+
+class BlindReview(Base):
+    """One work order drawn for the anchoring-bias sample (RF-111a).
+
+    A row per draw, written when the report is stored and closed when the supervisor decides. Stored
+    rather than recomputed from a rate, because the rate is configurable and a metric whose
+    denominator changes when somebody edits a setting is a metric nobody can defend in a review
+    meeting.
+
+    `agent_verdict` is nullable on purpose: an order the agents never rated closes the draw with no
+    pair. Counting it as agreement would flatter the agent; counting it as disagreement would
+    punish it for a night batch that had not run.
+    """
+
+    __tablename__ = "blind_review"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    business_unit_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("business_unit.id", ondelete="CASCADE"), nullable=False
+    )
+    work_order_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("work_order.id", ondelete="CASCADE"), nullable=False
+    )
+    #: The rate in force when this order was drawn, so a changed setting does not rewrite history.
+    rate: Mapped[float] = mapped_column(Float, nullable=False)
+    drawn_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    #: When the supervisor's own decision released the report. Null while it is still withheld.
+    revealed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    #: 'sin_problema' or 'con_problema' — two categories, because a button and a risk level are not
+    #: the same scale.
+    supervisor_verdict: Mapped[str | None] = mapped_column(String(16))
+    agent_verdict: Mapped[str | None] = mapped_column(String(16))
+
+    __table_args__ = (
+        # One draw per work order: a re-run of the pre-review must not give it a second chance at
+        # being measured, nor release a report that was meant to be withheld.
+        UniqueConstraint("work_order_id", name="uq_blind_review_work_order"),
+        Index("ix_blind_review_unit", "business_unit_id", "revealed_at"),
+    )

@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type {
+  AgentAgreement,
   AgentObservation,
   AgentReport,
   ComplianceFinding,
@@ -24,6 +25,10 @@ import {
   acceptanceRate,
   batchBar,
   batchBarLabel,
+  disagreementLines,
+  isBlind,
+  kappaVerdict,
+  missingReportNotice,
   batchOutcomeLines,
   batchPlan,
   batchable,
@@ -462,12 +467,16 @@ describe('el informe de pre-revisión (RF-111, RF-175)', () => {
     expect(missingReportReason(detail({ agent_report: null }))).toContain('todavía no se ha ejecutado');
     expect(
       missingReportReason(
-        detail({ agent_report: { run_state: 'fallido', error: 'RuntimeError: x', report: null } }),
+        detail({
+          agent_report: { run_state: 'fallido', error: 'RuntimeError: x', report: null, blind: false },
+        }),
       ),
     ).toContain('falló');
     expect(
       missingReportReason(
-        detail({ agent_report: { run_state: 'pendiente', error: null, report: null } }),
+        detail({
+          agent_report: { run_state: 'pendiente', error: null, report: null, blind: false },
+        }),
       ),
     ).toContain('pendiente');
   });
@@ -475,7 +484,9 @@ describe('el informe de pre-revisión (RF-111, RF-175)', () => {
   it('con informe no hay motivo que mostrar', () => {
     expect(
       missingReportReason(
-        detail({ agent_report: { run_state: 'terminado', error: null, report: report() } }),
+        detail({
+          agent_report: { run_state: 'terminado', error: null, report: report(), blind: false },
+        }),
       ),
     ).toBeNull();
   });
@@ -568,5 +579,82 @@ describe('aprobación en lote (RF-176)', () => {
       sample_note: '',
     });
     expect(lines.some((line) => line.includes('Rechazadas: 1'))).toBe(true);
+  });
+});
+
+describe('muestra ciega y concordancia (RF-111a)', () => {
+  function rows(overrides: Partial<AgentAgreement> = {}): AgentAgreement {
+    return {
+      both_clear: 0,
+      both_flagged: 0,
+      supervisor_only: 0,
+      agent_only: 0,
+      pending: 0,
+      unpaired: 0,
+      paired: 0,
+      observed_agreement: null,
+      kappa: null,
+      kappa_floor: 0.6,
+      meets_floor: null,
+      min_sample: 10,
+      ...overrides,
+    };
+  }
+
+  it('cuando el informe está retenido se dice por qué, y que lo determinista sigue completo', () => {
+    // Una sección oculta sin explicación se lee como una pantalla rota, y quien cree que la
+    // pantalla está rota va a buscar el informe por otro lado —que es justo lo que arruina la
+    // medición.
+    const withheld = detail({
+      agent_report: { run_state: 'terminado', error: null, report: null, blind: true },
+    });
+    expect(isBlind(withheld)).toBe(true);
+    const said = missingReportNotice(withheld);
+    expect(said).toContain('muestra ciega');
+    expect(said).toContain('después de que registre su decisión');
+    expect(said).toContain('normativa, impedimentos, fotos');
+  });
+
+  it('una OT fuera de la muestra sigue diciendo el motivo de siempre', () => {
+    const failed = detail({
+      agent_report: { run_state: 'fallido', error: 'RuntimeError: x', report: null, blind: false },
+    });
+    expect(isBlind(failed)).toBe(false);
+    expect(missingReportNotice(failed)).toContain('falló');
+  });
+
+  it('sin pares todavía no se reporta nada, y se distingue de «no hay muestra»', () => {
+    expect(kappaVerdict(rows())).toContain('no hay muestra ciega');
+    expect(kappaVerdict(rows({ pending: 3 }))).toContain('3 OT sorteada(s)');
+  });
+
+  it('con muestra pequeña se dice cuántos pares faltan', () => {
+    expect(kappaVerdict(rows({ paired: 4, both_clear: 4 }))).toContain('4 de 10 pares');
+  });
+
+  it('el veredicto compara con el piso de RNF-060 y lo nombra', () => {
+    const good = kappaVerdict(rows({ paired: 40, kappa: 0.71, meets_floor: true }));
+    expect(good).toContain('Kappa 0,71');
+    expect(good).toContain('cumple el piso de 0,6');
+    const poor = kappaVerdict(rows({ paired: 40, kappa: 0.31, meets_floor: false }));
+    expect(poor).toContain('por debajo del piso');
+    expect(poor).toContain('RNF-060');
+  });
+
+  it('el kappa indefinido no se muestra como concordancia perfecta', () => {
+    // Es el número que el requerimiento existe para no creerse.
+    const said = kappaVerdict(rows({ paired: 40, both_clear: 40, kappa: null, meets_floor: null }));
+    expect(said).toContain('indefinido');
+    expect(said).not.toContain('1,00');
+  });
+
+  it('los dos desacuerdos se nombran por lo que cuestan', () => {
+    const lines = disagreementLines(rows({ supervisor_only: 3, agent_only: 7 }));
+    expect(lines[0]).toContain('no vio lo que el supervisor sí: 3');
+    expect(lines[1]).toContain('marcó lo que el supervisor aprobó: 7');
+  });
+
+  it('los números se escriben con coma decimal, como en Ecuador', () => {
+    expect(kappaVerdict(rows({ paired: 20, kappa: 0.6, meets_floor: true }))).not.toContain('0.6');
   });
 });

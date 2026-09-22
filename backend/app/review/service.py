@@ -20,6 +20,7 @@ from app.regulatory import rules as compliance
 from app.regulatory.facts import facts_from
 from app.responses.models import FormResponse, ResponseState
 from app.responses.service import compose_for, missing_photos, unconfirmed_ai_values
+from app.review import blind
 from app.review.models import Decision, FieldObservation, ReviewDecision
 from app.workorders.models import WorkOrder, WorkOrderState
 from app.workorders.service import transition
@@ -147,12 +148,18 @@ def decide(
     reviewer_sub: str,
     note: str | None = None,
     observations: list[dict[str, Any]] | None = None,
-    blind_sample: bool | None = None,
+    agent_risk: str | None = None,
 ) -> ReviewDecision:
     """Record a supervisor's decision and move the work order (RF-112).
 
+    :param agent_risk: the risk the pre-review assigned, when there is a report. Used to close a
+        blind draw (RF-111a); passed in rather than read here because `app.prereview` reads this
+        module and the import would close a cycle.
     :raises NotReviewableError: if the work order is not awaiting a decision.
     :raises ApprovalBlockedError: on approval, when preconditions are unmet.
+
+    Whether this decision was a blind one is **not** a parameter: it is read from the draw. A
+    caller-supplied flag would let the thing being measured fill in its own scorecard (RF-111a).
     """
     if order.state not in (WorkOrderState.SYNCED, WorkOrderState.IN_REVIEW):
         raise NotReviewableError(f"una OT en estado '{order.state}' no está esperando revisión")
@@ -171,6 +178,10 @@ def decide(
     if order.state == WorkOrderState.SYNCED:
         transition(session, order, WorkOrderState.IN_REVIEW)
 
+    # The draw decides, and it is read before the reveal closes it: after `blind.reveal` there is
+    # nothing pending to find, and this decision would look like an ordinary one.
+    was_blind = blind.pending_for(session, order.id) is not None
+
     row = ReviewDecision(
         business_unit_id=unit.id,
         work_order_id=order.id,
@@ -178,7 +189,7 @@ def decide(
         decision=decision,
         reviewer_sub=reviewer_sub,
         note=note,
-        blind_sample=blind_sample,
+        blind_sample=was_blind or None,
     )
     session.add(row)
     session.flush()
@@ -223,6 +234,10 @@ def decide(
             response.state = ResponseState.RETURNED
     elif decision == Decision.CANCELLED:
         transition(session, order, WorkOrderState.CANCELLED, reason=note or "anulada en revisión")
+
+    # The agreement is written in the decision's own transaction (RF-111a): a pair with one half
+    # missing is a row that would quietly bias the kappa.
+    blind.reveal(session, order.id, decision=decision, risk=agent_risk)
 
     session.flush()
     return row

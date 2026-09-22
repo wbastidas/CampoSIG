@@ -129,6 +129,12 @@ export interface AgentReportEnvelope {
   run_state: string | null;
   error: string | null;
   report: AgentReport | null;
+  /**
+   * True when the report exists and is being withheld on purpose until this supervisor records
+   * their own reading (RF-111a). A third meaning of "no report", and the one that must be said out
+   * loud: a hidden section with no explanation reads as a broken screen.
+   */
+  blind: boolean;
 }
 
 export interface ReviewDetail {
@@ -277,9 +283,17 @@ export function submitDecision(
     // (ADR-013). Mandarlo igual sería un campo que parece autoritativo y no lo es.
     note?: string;
     observations?: { field_key: string; message: string; suggested_value?: unknown }[];
-    blind_sample?: boolean;
+    // No `blind_sample`: whether the decision was made without seeing the report is read from the
+    // draw on the server. A flag the browser filled in would let the thing being measured write
+    // its own scorecard (RF-111a).
   },
-): Promise<{ decision: string; decided_at: string | null; work_order_state: string }> {
+): Promise<{
+  decision: string;
+  decided_at: string | null;
+  work_order_state: string;
+  /** True when this was a blind review: the screen keeps the order open to show the report now. */
+  was_blind: boolean;
+}> {
   return request(
     `${BASE}/units/${encodeURIComponent(businessUnit)}/work-orders/${workOrderId}/decision`,
     { method: 'POST', body: JSON.stringify(body) },
@@ -322,6 +336,65 @@ export function approveBatch(
     method: 'POST',
     body: JSON.stringify({ work_order_ids: workOrderIds, note: note || undefined }),
   });
+}
+
+/** Supervisor–agent agreement over the blind sample (RF-111a, RNF-060). */
+export interface AgentAgreement {
+  both_clear: number;
+  both_flagged: number;
+  /** The supervisor found something the agent did not: the agent missed it. */
+  supervisor_only: number;
+  /** The agent flagged what the supervisor approved: a false alarm. */
+  agent_only: number;
+  pending: number;
+  /** Decided, but with no report to compare against. */
+  unpaired: number;
+  paired: number;
+  observed_agreement: number | null;
+  /** Null while the sample is too small to mean anything, or when both raters used one category. */
+  kappa: number | null;
+  kappa_floor: number;
+  meets_floor: boolean | null;
+  min_sample: number;
+}
+
+/**
+ * Whether a payload has the shape the panel needs.
+ *
+ * Checked rather than trusted, and not out of general suspicion: this number is secondary feedback
+ * shown beside the queue, and a web build newer than the API it is talking to is exactly the case
+ * where a missing field would otherwise throw during render and blank the screen a supervisor needs
+ * to approve work. The fetch's own catch cannot save a render.
+ */
+export function isAgreement(body: unknown): body is AgentAgreement {
+  if (typeof body !== 'object' || body === null) return false;
+  const rows = body as Record<string, unknown>;
+  const numbers = [
+    'both_clear',
+    'both_flagged',
+    'supervisor_only',
+    'agent_only',
+    'pending',
+    'unpaired',
+    'paired',
+    'kappa_floor',
+    'min_sample',
+  ];
+  return numbers.every((key) => typeof rows[key] === 'number');
+}
+
+export async function fetchAgreement(
+  businessUnit: string,
+  signal?: AbortSignal,
+): Promise<AgentAgreement> {
+  const body = await request<unknown>(
+    `${BASE}/units/${encodeURIComponent(businessUnit)}/agent-agreement`,
+    { signal },
+  );
+  if (!isAgreement(body)) {
+    throw new ApiError(200, 'la respuesta de concordancia no tiene la forma esperada');
+  }
+  return body;
 }
 
 export function fetchGisTray(businessUnit: string, signal?: AbortSignal): Promise<GisTray> {
