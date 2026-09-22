@@ -31,6 +31,15 @@ class Settings(BaseSettings):
     #: authentication silently disabled is an API that eventually does.
     allow_dev_identity: bool = False
 
+    # Corporate systems the integration adapters talk to (RF-120, RF-124). Empty means the
+    # connector is not configured, and the worker skips it instead of failing every event
+    # against a URL nobody set — a connector that is not deployed yet is not an error.
+    work_order_system_url: str = ""
+    call_centre_url: str = ""
+    #: How many events one worker pass delivers. Bounded so a backlog is drained in visible
+    #: chunks rather than in one pass that either finishes or dies holding everything.
+    integration_batch_size: int = 50
+
     # Object storage for evidence (SeaweedFS, S3 API).
     s3_endpoint_url: str = "http://localhost:8333"
     s3_bucket: str = "sigec-evidence"

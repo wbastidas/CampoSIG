@@ -314,13 +314,19 @@ Ruta T y la Ruta W, el paquete de modelos del teléfono, la UI de revisión IA e
 | Adaptador de call center (RF-124) | ✅ reclamo → OT una sola vez; aprobar la OT encola el cierre del reclamo |
 | Simulador de call center | ✅ `tools/call-centre-mock`, en el Compose de desarrollo |
 | Pruebas de contrato contra los simuladores | ✅ los simuladores se **levantan dentro del test** y se verifica el ida y vuelta completo |
+| *Worker* periódico de entrega | ✅ `app/workers/`: drena los eventos vencidos cada minuto, **una transacción por evento** |
 | Conector ArcGIS de bajada programada (RF-340) | Pendiente: necesita el agente contra un ArcMap real (I1) |
-| *Worker* periódico de entrega | Pendiente: la entrega se invoca desde la API y los tests; pasa a un worker en I9 |
 
 **El fallo que esto impide.** Una cuadrilla repone la luminaria, el supervisor aprueba, todos
 consideran el caso cerrado — y el reclamo del cliente sigue abierto, porque cerrarlo era un
 efecto secundario que nadie garantizó. Ahora el cierre se escribe junto con la aprobación: si
 la aprobación se guardó, el evento existe.
+
+**Y el worker no puede perderlo.** Cada evento se entrega y se marca en su propia transacción:
+un worker que muera a mitad de un pase deja entregado lo entregado y el resto intacto, listo
+para el siguiente pase. Una transacción alrededor del lote reenviaría todo tras un reinicio. Un
+conector en mantenimiento no detiene a los otros, y uno sin URL configurada se salta en vez de
+quemarle los reintentos: que un conector no esté desplegado todavía no es un error.
 
 ---
 
@@ -479,7 +485,7 @@ Sin RAG (ADR-007). El nodo de normativa funciona con parámetros y reglas, no co
 ## Nota sobre el estado de verificación
 
 Los tests de integración **se ejecutaron contra PostgreSQL 16 + PostGIS 3.4 real**, no solo en CI:
-622 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las diez
+633 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las diez
 migraciones aplicadas y revertidas sobre una base limpia (23 tablas de la aplicación, más
 `alembic_version` y las de PostGIS).
 
