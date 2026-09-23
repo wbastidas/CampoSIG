@@ -27,6 +27,7 @@ from app.agents.facts import (
     RegulatoryFact,
 )
 from app.agents.graph import GRAPH_VERSION, run_pre_review
+from app.agents.guardrails import Validation, with_reask
 from app.agents.report import AgentReport, RunStatus
 from app.org.models import BusinessUnit
 from app.prereview.models import AgentRun, AgentStepTrace, RunState, StoredReport
@@ -199,7 +200,14 @@ def execute(
 
     try:
         facts = build_facts(session, unit, order)
-        report = run_pre_review(facts, run.hardware_profile, gateway_reachable=gateway_reachable)
+        # Through the guardrail, always (RF-182). Nothing is stored unvalidated: a report with a
+        # customer's phone number in it is a report that has already been read by the time anybody
+        # notices, and the golden sets of RNF-060 measure a corpus, not this run.
+        report, validation, attempts = with_reask(
+            lambda _attempt: run_pre_review(
+                facts, run.hardware_profile, gateway_reachable=gateway_reachable
+            )
+        )
     except Exception as cause:  # a failed run is a state, not an escape
         run.state = RunState.FAILED
         run.error = f"{type(cause).__name__}: {cause}"
@@ -207,7 +215,7 @@ def execute(
         session.flush()
         return run
 
-    _store(session, run, report)
+    _store(session, run, report, validation=validation, attempts=attempts)
     # Drawn here, before any human is involved: RF-111a measures whether a supervisor read the
     # capture or agreed with the report, and a draw made on a request path would be a draw the thing
     # being measured takes part in.
@@ -215,7 +223,14 @@ def execute(
     return run
 
 
-def _store(session: Session, run: AgentRun, report: AgentReport) -> None:
+def _store(
+    session: Session,
+    run: AgentRun,
+    report: AgentReport,
+    *,
+    validation: Validation | None = None,
+    attempts: int = 1,
+) -> None:
     document = report.model_dump(mode="json")
     run.state = RunState.PARTIAL if report.status is RunStatus.PARTIAL else RunState.DONE
     run.tokens = report.budget.tokens
@@ -245,6 +260,19 @@ def _store(session: Session, run: AgentRun, report: AgentReport) -> None:
                 duration_ms=0,
             )
         )
+    # The guardrail's own trace (RF-180, RF-182). Written even when it changed nothing, because
+    # «the guardrail ran and found nothing» and «the guardrail did not run» are different answers to
+    # the question an auditor asks, and only one of them is reassuring.
+    if validation is not None:
+        session.add(
+            AgentStepTrace(
+                agent_run_id=run.id,
+                node="guardrails",
+                output={**validation.as_dict(), "attempts": attempts},
+                duration_ms=0,
+            )
+        )
+
     for reason in report.skipped:
         node, _, detail = reason.partition(":")
         session.add(

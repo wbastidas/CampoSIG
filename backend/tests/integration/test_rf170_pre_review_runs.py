@@ -17,13 +17,23 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.agents.report import (
+    AgentReport,
+    Category,
+    EvidenceRef,
+    EvidenceType,
+    Observation,
+    RiskLevel,
+    RunStatus,
+    Severity,
+)
 from app.auth.dependencies import current_principal
 from app.auth.principal import Principal, Role
 from app.gis_gateway.ingest import ingest_metadata
 from app.infra.database import get_session
 from app.main import create_app
 from app.org.models import BusinessUnit, Organization
-from app.prereview.models import AgentRun, RunState
+from app.prereview.models import AgentRun, AgentStepTrace, RunState
 from app.prereview.service import (
     build_facts,
     execute,
@@ -338,3 +348,115 @@ class TestTheReviewScreen:
             json={"decision": "aprobada", "note": "Sin informe de agente."},
         )
         assert answer.status_code == 200, answer.text
+
+
+class TestTheGuardrailIsOnThePath:
+    """RF-182: nothing is stored unvalidated.
+
+    The golden sets of RNF-060 measure a corpus after the fact; this measures the report a
+    supervisor is about to read. The graph is patched to produce personal data on purpose: the
+    deterministic nodes never would, and that is exactly why the measure read zero without anything
+    preventing anything.
+    """
+
+    def _seeded_report(self, work_order_id: str) -> AgentReport:
+        return AgentReport(
+            work_order_id=work_order_id,
+            graph_version="test",
+            hardware_profile="A",
+            risk_level=RiskLevel.LOW,
+            status=RunStatus.COMPLETE,
+            summary="El cliente 0926687856 confirmó al 0991234567",
+            observations=[
+                Observation(
+                    id="SEMBRADA-1",
+                    category=Category.COHERENCE,
+                    severity=Severity.MEDIUM,
+                    message="Contactar a cliente@correo.com para confirmar la hora",
+                    evidence=[EvidenceRef(type=EvidenceType.FIELD, json_path="$.answers.note")],
+                ),
+                Observation(
+                    id="SEMBRADA-2",
+                    category=Category.COHERENCE,
+                    severity=Severity.HIGH,
+                    message="El técnico mintió sobre la hora de llegada",
+                    evidence=[EvidenceRef(type=EvidenceType.FIELD, json_path="$.answers.note")],
+                ),
+            ],
+        )
+
+    def test_personal_data_never_reaches_the_stored_report(
+        self, session: Session, unit: BusinessUnit, monkeypatch
+    ):
+        order = make_order(session, unit, code="OT-GR-1", photo_hash="a" * 64)
+        monkeypatch.setattr(
+            "app.prereview.service.run_pre_review",
+            lambda *args, **kwargs: self._seeded_report(str(order.id)),
+        )
+        execute(session, unit, order)
+        stored = latest_report(session, order.id)
+        assert stored is not None
+        rendered = stored.model_dump_json()
+        for secret in ("0926687856", "0991234567", "cliente@correo.com"):
+            assert secret not in rendered, secret
+
+    def test_the_accusatory_observation_is_refused_and_counted(
+        self, session: Session, unit: BusinessUnit, monkeypatch
+    ):
+        order = make_order(session, unit, code="OT-GR-2", photo_hash="b" * 64)
+        monkeypatch.setattr(
+            "app.prereview.service.run_pre_review",
+            lambda *args, **kwargs: self._seeded_report(str(order.id)),
+        )
+        execute(session, unit, order)
+        stored = latest_report(session, order.id)
+        assert stored is not None
+        assert [item.id for item in stored.observations] == ["SEMBRADA-1"]
+        assert stored.discarded == 1
+
+    def test_the_finding_survives_the_redaction(
+        self, session: Session, unit: BusinessUnit, monkeypatch
+    ):
+        """Deleting the observation would have cost a real finding; the address was incidental."""
+        order = make_order(session, unit, code="OT-GR-3", photo_hash="c" * 64)
+        monkeypatch.setattr(
+            "app.prereview.service.run_pre_review",
+            lambda *args, **kwargs: self._seeded_report(str(order.id)),
+        )
+        execute(session, unit, order)
+        stored = latest_report(session, order.id)
+        assert stored is not None
+        assert "para confirmar la hora" in stored.observations[0].message
+
+    def test_the_guardrail_leaves_a_trace_even_when_it_changed_nothing(
+        self, session: Session, unit: BusinessUnit
+    ):
+        """«It ran and found nothing» and «it did not run» are different answers, and only one of
+        them is reassuring (RF-180)."""
+        order = make_order(session, unit, code="OT-GR-4", photo_hash="d" * 64)
+        run = execute(session, unit, order)
+        traces = [
+            trace
+            for trace in session.query(AgentStepTrace).filter(AgentStepTrace.agent_run_id == run.id)
+            if trace.node == "guardrails"
+        ]
+        assert len(traces) == 1
+        assert traces[0].output["attempts"] == 1
+        assert traces[0].output["redactions"] == []
+
+    def test_the_trace_records_what_was_redacted(
+        self, session: Session, unit: BusinessUnit, monkeypatch
+    ):
+        order = make_order(session, unit, code="OT-GR-5", photo_hash="e" * 64)
+        monkeypatch.setattr(
+            "app.prereview.service.run_pre_review",
+            lambda *args, **kwargs: self._seeded_report(str(order.id)),
+        )
+        run = execute(session, unit, order)
+        trace = next(
+            trace
+            for trace in session.query(AgentStepTrace).filter(AgentStepTrace.agent_run_id == run.id)
+            if trace.node == "guardrails"
+        )
+        assert trace.output["redactions"]
+        assert trace.output["dropped"][0]["observation_id"] == "SEMBRADA-2"

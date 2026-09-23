@@ -830,6 +830,56 @@ Falta la mitad que necesita modelos: los nodos VLM y de redacción, en I12.
 
 ---
 
+### RF-182: los guardrails que faltaban, y por qué el cero no probaba nada
+
+Los conjuntos dorados de RNF-060 **medían** las fugas de datos personales desde el día que se
+escribieron, y la medida daba cero. Eso no es lo mismo que impedirlas: los nodos deterministas citan
+poco texto libre, así que el cero venía de lo que los nodos hacen, no de que algo los detuviera. El
+día que un nodo LLM redacte un resumen desde el dictado de un técnico —I12— el primer teléfono de
+cliente entrará en un informe, y el conjunto dorado lo reportará *después*, sobre un corpus, no sobre
+el informe que un supervisor tiene delante.
+
+Así que esto es la mitad de tiempo de ejecución, y la forma la dicta lo que cada defecto merece:
+
+* **El dato personal se redacta, no se descarta.** Una observación que dice «el cliente reportó al
+  0991234567 que la luminaria falla» es una observación **útil**; el número es incidental. Borrar la
+  observación costaría el hallazgo, y rechazar el informe costaría todos.
+* **Una frase no neutral se descarta, no se reescribe.** RF-174 pide un informe que marque para
+  verificación y no acuse. Una regla determinista no puede reescribir una acusación en neutral —una
+  acusación reformulada sigue siendo una acusación— así que lo honesto es negar la observación y
+  contarla, igual que hace la guarda de evidencia.
+* **Nada es silencioso.** Cada redacción y cada negativa vuelven en la traza del run, incluso cuando
+  no hubo ninguna: «el guardrail corrió y no encontró nada» y «el guardrail no corrió» son
+  respuestas distintas a la pregunta de un auditor, y solo una tranquiliza.
+
+**El dígito verificador de la cédula es el detalle que decide si la guarda sobrevive.** Redactar toda
+corrida de diez dígitos se comería códigos de activo, números de medidor y referencias de cuenta, y
+una guarda que estropea datos reales la quita quien tenga que explicar el informe estropeado — y
+entonces ya no protege nada. Así que está el algoritmo real: provincia 01–24 o 30, tercer dígito menor
+que 6, y el módulo 10 sobre los nueve primeros. Hay una clase de tests entera dedicada a los falsos
+positivos: «transformador T-4521 de 50 kVA», «medidor 8891234», «alimentador 04BH07T11»,
+«coordenadas -2.170000, -79.900000».
+
+**Y una ambigüedad del dominio que vale escribir:** en Ecuador una cédula del Guayas empieza «09» y
+todos los celulares también. La comprobación de cédula resuelve casi todo —el tercer dígito de un
+celular es un prefijo de operadora de 6 o más, que la regla de persona natural rechaza— pero un
+celular «093» puede pasar el dígito verificador por coincidencia y reportarse como cédula. Las dos
+cosas son datos personales y las dos se quitan igual, así que la ambigüedad cuesta una etiqueta y
+nunca la protección.
+
+El **re-ask** existe y está acotado por dos cosas: para en cuanto una salida valida, y para cuando la
+salida se repite — el grafo determinista es función pura de sus hechos, así que volver a pedirle gasta
+el presupuesto para recibir las mismas negativas. El número de intento llega al productor, porque «sin
+datos personales» funciona mejor como corrección que como instrucción permanente, y eso es lo que los
+nodos LLM de I12 van a necesitar.
+
+Catorce guardas rotas a propósito y detectadas. Una de ellas —la regla del tercer dígito— no se
+detectaba: el número de prueba fallaba también el dígito verificador, así que el test pasaba por la
+razón equivocada y la regla podía desaparecer sin que nadie lo notara. Ahora el número tiene dígito
+verificador válido y solo el tercer dígito lo descalifica.
+
+---
+
 ### RF-147: el diccionario vivo, y el camino que no estaba conectado
 
 El criterio es «un término añadido llega al móvil en el siguiente sync de catálogos», y con RF-034 los
