@@ -473,6 +473,12 @@ class TestApprovalClosesTheClaim:
                 "reported_failure": "apagada_de_noche",
                 "cause_found": "lampara_o_modulo",
                 "operative_at_close": True,
+                # F-AP-01 lleva ahora el bloque de atributos del activo (B05), así que el
+                # formulario pide identificar la luminaria y su tecnología: es lo que permite
+                # medir la modernización a LED (RF-131) y llevar el censo.
+                "code": "LUM-000123",
+                "feeder_code": "04BH070T11",
+                "technology": "led",
                 "final_state": "resuelto",
                 "photos_before": ["s3://a.jpg"],
                 "photos_after": ["s3://b.jpg"],

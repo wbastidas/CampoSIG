@@ -830,6 +830,58 @@ Falta la mitad que necesita modelos: los nodos VLM y de redacción, en I12.
 
 ---
 
+### RF-131: el tablero de alumbrado, con el plazo como dato
+
+El número que este tablero produce —qué porcentaje de luminarias se repuso dentro del plazo— va a un
+informe al regulador. Así que la propiedad que importa no es el promedio: es que el número se pueda
+defender.
+
+**El plazo no está en el código.** Vive en `regulatory_parameter` con su vigencia, su referencia a la
+norma y su marca de verificación, y el tablero pregunta **la misma regla** que la compuerta de
+aprobación. Dos consecuencias que son el módulo entero:
+
+* se cambia el parámetro y el veredicto cambia con él, sin tocar una línea — hay un test que sube el
+  plazo de 48 a 72 horas y ve las mismas atenciones pasar de incumplir a cumplir;
+* un periodo de marzo se juzga con el plazo de marzo, porque el parámetro lleva sus fechas. Un
+  porcentaje guardado sería una segunda copia de la verdad, libre de separarse de la regla que lo
+  produjo.
+
+**Y un límite sin verificar se reporta como provisional**, en el panel y en cada fila de la tabla.
+Nadie lo ha comprobado contra el texto oficial, y un porcentaje calculado contra un número que
+alguien escribió de memoria —presentado como si citara la regulación— es peor que no tener
+porcentaje: invita al lector a dejar de comprobar. La pantalla no pone la norma al lado de un límite
+así, y hay un test de que no la pone.
+
+Las atenciones que la regla no pudo juzgar se cuentan junto al porcentaje, y cuando son más de la
+mitad del periodo el tablero lo dice: un 100 % sobre cinco medibles de doscientas capturadas no es
+una tasa de cumplimiento. Sin parámetro cargado no se inventa un plazo — la omisión es de la oficina,
+y la plataforma la reporta.
+
+**La tasa de falla dice de qué está dividida:** luminarias con al menos una falla en el periodo, no
+el total instalado. El inventario vive en el SIG y dividir por un total que la plataforma no conoce
+sería inventar el denominador. Con la reincidencia al lado, que es la señal de que el reemplazo no
+arregló el problema.
+
+**Para las tecnologías hubo que arreglar algo antes.** F-AP-01 no llevaba el bloque de atributos del
+activo, así que la plataforma podía atender miles de luminarias en falla sin saber de qué tecnología
+era ninguna. Se añadió B05 al formulario, que es el bloque que el generador rellena desde el perfil
+de la unidad (RF-303, regla 3): la tecnología y la potencia vienen del modelo de datos, no escritas a
+mano. Y son obligatorias, así que una captura nueva sin tecnología ya no se puede enviar —mejor que
+contarlas: que no ocurran— aunque el panel sigue contando las antiguas, porque una composición de
+flota calculada solo sobre las capturas que la registraron informa la forma de los formularios bien
+llenados y no la de la flota.
+
+**La exportación es un CSV que abre bien en el Excel que esta área tiene**: punto y coma, decimales
+con coma y marca de orden de bytes. No es una preferencia — un Excel configurado para Ecuador lee un
+archivo separado por comas como una sola columna y «1.5» como quince, así que «exportable a Excel»
+significa esto y no un archivo técnicamente válido que llega ilegible. Se pide con el token y no con
+un enlace: un `<a href>` bajaría una página de login llamada «.csv».
+
+Faltan RF-132 (exportación de interrupciones para FMIK y TTIK) y RF-133 (defectos por alimentador,
+reincidencia por activo, hallazgos por criticidad).
+
+---
+
 ### RF-130: el tablero operativo, que la bitácora hizo posible
 
 Cuatro preguntas que un supervisor hace antes del almuerzo: qué hay dónde, qué está atrasado, quién

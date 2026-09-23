@@ -12,13 +12,14 @@ becomes a performance file, and the roles are where that line gets drawn.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 
-from app.analytics import ai_dashboard, operations
+from app.analytics import ai_dashboard, apg, operations
 from app.auth.dependencies import require_roles, unit_scope
 from app.auth.principal import Role
 from app.infra.database import get_session
@@ -104,3 +105,66 @@ def operational(
     unit = _unit(session, unit_code)
     _period_or_422(since, until)
     return operations.build(session, unit.id, since=since, until=until).as_dict()
+
+
+#: How far back the APG board looks when nobody says. A month: the regulator reports monthly, and a
+#: shorter window over a small operation has too few attentions to report a percentage at all.
+APG_DEFAULT_DAYS = 30
+
+
+def _apg_period(since: datetime | None, until: datetime | None) -> tuple[datetime, datetime]:
+    _period_or_422(since, until)
+    end = until or datetime.now(UTC)
+    return since or (end - timedelta(days=APG_DEFAULT_DAYS)), end
+
+
+@router.get(
+    "/units/{unit_code}/apg",
+    summary="Tablero de alumbrado público: reposición contra el plazo regulatorio, fallas y flota",
+    dependencies=[Depends(require_roles(Role.SUPERVISOR, Role.PLANNER))],
+)
+def apg_board(
+    unit_code: str,
+    session: SessionDep,
+    since: Annotated[datetime | None, Query()] = None,
+    until: Annotated[datetime | None, Query()] = None,
+) -> dict[str, Any]:
+    """RF-131. The deadline comes from `regulatory_parameter`, never from this code (ADR-007).
+
+    Which means the board asks the same rule the approval gate asks, and re-running it over a March
+    period reproduces March's deadline: the parameter carries its own period of force.
+    """
+    unit = _unit(session, unit_code)
+    start, end = _apg_period(since, until)
+    return apg.build(session, unit.id, since=start, until=end).as_dict()
+
+
+@router.get(
+    "/units/{unit_code}/apg.csv",
+    summary="Incumplimientos de plazo de APG, exportables a Excel o CSV (RF-131)",
+    dependencies=[Depends(require_roles(Role.SUPERVISOR, Role.PLANNER))],
+    response_class=PlainTextResponse,
+)
+def apg_csv(
+    unit_code: str,
+    session: SessionDep,
+    since: Annotated[datetime | None, Query()] = None,
+    until: Annotated[datetime | None, Query()] = None,
+) -> PlainTextResponse:
+    """The breach list as a file the area can open and work on.
+
+    Text and not a spreadsheet library: a CSV with semicolons, comma decimals and a byte-order mark
+    opens correctly in the Excel this area actually has, and it costs no dependency. `charset=utf-8`
+    with the mark, because the one without it turns «Tecnología» into mojibake on a Windows default.
+    """
+    unit = _unit(session, unit_code)
+    start, end = _apg_period(since, until)
+    board = apg.build(session, unit.id, since=start, until=end)
+    stamp = board.computed_at.strftime("%Y%m%d")
+    return PlainTextResponse(
+        apg.as_csv(board),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="apg-incumplimientos-{stamp}.csv"',
+        },
+    )

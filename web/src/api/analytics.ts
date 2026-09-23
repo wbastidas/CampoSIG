@@ -160,3 +160,74 @@ export function fetchOperationalBoard(
 ): Promise<OperationalBoard> {
   return read<OperationalBoard>(`${BASE}/units/${encodeURIComponent(businessUnit)}/operations`, signal);
 }
+
+/** One attention that missed the regulator's deadline (RF-131). */
+export interface ApgBreach {
+  work_order_id: string;
+  order_code: string | null;
+  asset_code: string | null;
+  hours: number | null;
+  limit_hours: number | null;
+  within_limit: boolean | null;
+  /** False when nobody has checked the limit against the official text (ADR-007). */
+  limit_verified: boolean;
+  norm_ref: string | null;
+  article_ref: string | null;
+  message: string;
+}
+
+export interface ApgBoard {
+  computed_at: string;
+  since: string;
+  until: string;
+  attentions: number;
+  restoration: {
+    within: number;
+    breached: number;
+    judged: number;
+    /** Captured but not judgeable: no times, or no parameter loaded. */
+    not_measurable: number;
+    /** Judged against a limit nobody verified. */
+    against_unverified_limit: number;
+    compliance: number | null;
+    median_hours: number | null;
+    p90_hours: number | null;
+    worst_hours: number | null;
+    min_sample: number;
+  };
+  fleet: { by_technology: Record<string, number>; without_technology: number };
+  failures: {
+    by_cause: Record<string, number>;
+    distinct_luminaires: number;
+    failures_per_luminaire: number | null;
+    /** What the rate is divided by, in the server's own words. Shown, not paraphrased. */
+    denominator: string;
+    repeat_offenders: { asset_code: string; failures: number }[];
+  };
+  breaches: ApgBreach[];
+}
+
+export function fetchApgBoard(
+  businessUnit: string,
+  signal?: AbortSignal,
+): Promise<ApgBoard> {
+  return read<ApgBoard>(`${BASE}/units/${encodeURIComponent(businessUnit)}/apg`, signal);
+}
+
+/**
+ * The breach export, as a blob the screen hands to the browser (RF-131).
+ *
+ * Fetched rather than linked, for the same reason the acta is: the request carries the bearer token
+ * and a plain `<a href>` would not, so the link would download an HTML login page named `.csv` —
+ * which is the kind of bug somebody discovers a week later with the file already circulating.
+ */
+export async function downloadApgCsv(businessUnit: string): Promise<Blob> {
+  const response = await fetch(`${BASE}/units/${encodeURIComponent(businessUnit)}/apg.csv`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    if (response.status === 401) notifyExpired();
+    throw new ApiError(response.status, `${response.status} ${response.statusText}`);
+  }
+  return response.blob();
+}

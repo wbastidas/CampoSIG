@@ -4,7 +4,11 @@ form:
   version: 1.0.0
   title: Atención de luminaria en falla
   area: apg
-  blocks: [B01, B02, B03, AP01, B06, B09, B10, B12]
+  # B05 entra aquí para que el generador inyecte los atributos del activo —tecnología y potencia
+  # de la luminaria— desde el perfil de la unidad (RF-303, regla 3). Sin él, la plataforma atiende
+  # miles de luminarias en falla y no sabe de qué tecnología es ninguna, que es justo lo que RF-131
+  # necesita para medir la modernización a LED.
+  blocks: [B01, B02, B03, AP01, B05, B06, B09, B10, B12]
   min_photos: {before: 1, after: 1}
   requires_ats: true
   applies_to_asset_types: [street_light]

@@ -717,3 +717,28 @@ fieldset {
   border-radius: var(--radio);
   font-weight: 600;
 }
+
+/* Alumbrado público (RF-131). Reutiliza la rejilla de paneles: es la misma clase de pantalla. */
+.apg-board table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.apg-board th,
+.apg-board td {
+  text-align: left;
+  padding: 0.2rem 0.3rem;
+  border-bottom: 1px solid var(--borde);
+}
+
+.apg-board h3 {
+  font-size: 0.9rem;
+  margin: 0.6rem 0 0.2rem;
+}
+
+/* Un plazo sin verificar contra el texto oficial no puede parecer una cita de la norma (ADR-007). */
+.apg-provisional {
+  color: var(--alarma);
+  font-style: italic;
+}
