@@ -9,16 +9,19 @@
 
 import { describe, expect, it } from 'vitest';
 
-import type { Leg, OperationalBoard } from '../../api/analytics';
+import type { InterruptionBase, Leg, OperationalBoard } from '../../api/analytics';
 import {
+  classificationLine,
   duration,
   freshness,
   legCaveats,
   legHeadline,
   legTail,
+  numeratorLines,
   openTotal,
   orderedStates,
   stateLabel,
+  thousands,
 } from './board';
 
 function leg(overrides: Partial<Leg> = {}): Leg {
@@ -153,5 +156,57 @@ describe('la frescura del tablero', () => {
   it('un reloj adelantado no produce un tiempo negativo', () => {
     const said = freshness('2026-09-20T12:00:00+00:00', new Date('2026-09-20T11:59:00+00:00'));
     expect(said).not.toContain('-');
+  });
+});
+
+describe('la base de interrupciones (RF-132)', () => {
+  function interruptions(overrides: Partial<InterruptionBase> = {}): InterruptionBase {
+    return {
+      since: '2026-08-21T12:00:00+00:00',
+      until: '2026-09-20T12:00:00+00:00',
+      interruptions: 12,
+      computable: 9,
+      not_computable: 3,
+      unclassified: 0,
+      numerators: {
+        kva_affected: 12500,
+        kva_hours: 31250.5,
+        missing_kva: 0,
+        note: 'la plataforma no calcula los índices: el denominador es el kVA instalado',
+      },
+      formats: ['arcernnr-002-20'],
+      ...overrides,
+    };
+  }
+
+  it('los miles se agrupan con punto y los decimales con coma', () => {
+    // Al revés del comportamiento por omisión de JavaScript, que es lo que produjo el «6,480 m».
+    expect(thousands(12500)).toBe('12.500,00');
+    expect(thousands(31250.5)).toBe('31.250,50');
+    expect(thousands(0)).toBe('0,00');
+  });
+
+  it('los numeradores se nombran como numeradores', () => {
+    const lines = numeratorLines(interruptions());
+    expect(lines[0]).toContain('12.500,00');
+    expect(lines[1]).toContain('31.250,50');
+  });
+
+  it('las interrupciones sin kVA avisan de que los numeradores quedan cortos', () => {
+    const lines = numeratorLines(interruptions({
+      numerators: { ...interruptions().numerators, missing_kva: 4 },
+    }));
+    expect(lines.some((line) => line.includes('por debajo de la realidad'))).toBe(true);
+  });
+
+  it('la clasificación incluye las que no se pudieron clasificar', () => {
+    // Suponerlas computables inflaría los índices; suponer lo contrario escondería interrupciones.
+    const said = classificationLine(interruptions({ unclassified: 2 }));
+    expect(said).toContain('2 sin clasificar');
+    expect(said).toContain('falta duración o umbral');
+  });
+
+  it('sin interrupciones lo dice en vez de mostrar ceros', () => {
+    expect(classificationLine(interruptions({ interruptions: 0 }))).toContain('Sin interrupciones');
   });
 });

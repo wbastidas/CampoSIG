@@ -1,0 +1,16 @@
+# F-OP-03 — Registro de interrupción (SRS 4.4, ARCERNNR-002/20).
+#
+# Sin fotos: no es un trabajo de campo con evidencia visual, es el registro del evento que alimenta
+# FMIK y TTIK. Por eso tampoco lleva bloque de evidencias ni de cierre con firma.
+form:
+  code: F-OP-03
+  version: 1.0.0
+  title: Registro de interrupción
+  area: operacion
+  blocks: [B01, B02, OP03, B10]
+  min_photos: {before: 0, after: 0}
+  requires_ats: false
+  applies_to_asset_types:
+    - line_segment
+    - fuse_switch
+    - distribution_transformer

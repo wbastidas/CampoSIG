@@ -14,13 +14,22 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-import { fetchOperationalBoard, type Leg, type OperationalBoard } from '../../api/analytics';
 import {
+  downloadInterruptions,
+  fetchInterruptionBase,
+  fetchOperationalBoard,
+  type InterruptionBase,
+  type Leg,
+  type OperationalBoard,
+} from '../../api/analytics';
+import {
+  classificationLine,
   freshness,
   legCaveats,
   legHeadline,
   legTail,
   openTotal,
+  numeratorLines,
   orderedStates,
   REFRESH_MS,
   stateLabel,
@@ -40,13 +49,22 @@ export function OperationsBoard({
   now = () => new Date(),
 }: OperationsBoardProps) {
   const [board, setBoard] = useState<OperationalBoard | null>(null);
+  const [interruptions, setInterruptions] = useState<InterruptionBase | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
       try {
         setBoard(await fetchOperationalBoard(businessUnit, signal));
         setError(null);
+        // La base de interrupciones va detrás y en su propio try: es un panel secundario, y su
+        // fallo no puede dejar sin tablero a quien responde por el SLA.
+        try {
+          setInterruptions(await fetchInterruptionBase(businessUnit, signal));
+        } catch (cause) {
+          if ((cause as Error).name !== 'AbortError') setInterruptions(null);
+        }
       } catch (cause) {
         if ((cause as Error).name === 'AbortError') return;
         // El tablero anterior se queda en pantalla con el aviso encima: borrarlo dejaría al
@@ -69,6 +87,27 @@ export function OperationsBoard({
       clearInterval(timer);
     };
   }, [load, refreshMs]);
+
+  const exportInterruptions = useCallback(
+    async (format: string) => {
+      setBusy(true);
+      try {
+        const blob = await downloadInterruptions(businessUnit, format);
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `interrupciones-${format}-${businessUnit}.csv`;
+        link.click();
+        URL.revokeObjectURL(url);
+        setError(null);
+      } catch (cause) {
+        setError((cause as Error).message);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [businessUnit],
+  );
 
   return (
     <section className="ops-board">
@@ -95,6 +134,13 @@ export function OperationsBoard({
           <StatesPanel board={board} />
           <TimesPanel board={board} />
           <CrewsPanel board={board} />
+          {interruptions && (
+            <InterruptionsPanel
+              base={interruptions}
+              busy={busy}
+              onExport={(format) => void exportInterruptions(format)}
+            />
+          )}
         </div>
       )}
     </section>
@@ -194,6 +240,47 @@ function CrewsPanel({ board }: { board: OperationalBoard }) {
             ))}
           </tbody>
         </table>
+      )}
+    </section>
+  );
+}
+
+/**
+ * The interruption base and its export (RF-132).
+ *
+ * The numerators are labelled as numerators and the server's explanation travels with them, because
+ * the failure this panel could cause is somebody copying a number into a regulatory report as if it
+ * were FMIK. The platform does not hold the installed kVA that both indices divide by.
+ */
+function InterruptionsPanel({
+  base,
+  busy,
+  onExport,
+}: {
+  base: InterruptionBase;
+  busy: boolean;
+  onExport: (format: string) => void;
+}) {
+  return (
+    <section aria-label="Interrupciones">
+      <h2>Interrupciones</h2>
+      <p role="status">{classificationLine(base)}</p>
+      <h3>Numeradores de FMIK y TTIK</h3>
+      <ul>
+        {numeratorLines(base).map((line) => (
+          <li key={line}>{line}</li>
+        ))}
+      </ul>
+      {/* La explicación del servidor, sin parafrasear: los índices no se publican aquí. */}
+      <p className="ai-board-note">{base.numerators.note}</p>
+      {base.formats.length === 0 ? (
+        <p className="ai-board-note">No hay formatos de exportación cargados en el servidor.</p>
+      ) : (
+        base.formats.map((format) => (
+          <button key={format} type="button" disabled={busy} onClick={() => onExport(format)}>
+            Exportar {format}
+          </button>
+        ))
       )}
     </section>
   );

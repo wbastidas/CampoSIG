@@ -176,3 +176,93 @@ describe('cuando el servidor falla', () => {
     expect(screen.queryByText(/Cargando el tablero/)).toBeNull();
   });
 });
+
+/**
+ * La base de interrupciones dentro del tablero (RF-132).
+ *
+ * El fallo que este panel podría causar es que alguien copie un numerador a un informe regulatorio
+ * como si fuera FMIK. Así que lo que se comprueba es que los numeradores se llamen numeradores, que
+ * la explicación del servidor esté a la vista, y que un payload con otra forma deje el panel fuera en
+ * vez de tumbar el tablero con el que se persigue el SLA.
+ */
+describe('las interrupciones', () => {
+  const BASE = {
+    since: '2026-08-21T12:00:00+00:00',
+    until: '2026-09-20T12:00:00+00:00',
+    interruptions: 12,
+    computable: 9,
+    not_computable: 2,
+    unclassified: 1,
+    numerators: {
+      kva_affected: 12500,
+      kva_hours: 31250.5,
+      missing_kva: 2,
+      note: 'la plataforma no calcula los índices: el denominador es el kVA instalado de la unidad',
+    },
+    formats: ['arcernnr-002-20'],
+  };
+
+  function mockWith(interruptions: unknown) {
+    const urls: string[] = [];
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      urls.push(url);
+      if (url.includes('/interruptions.csv')) {
+        return {
+          ok: true,
+          status: 200,
+          blob: async () => new Blob(['﻿a;b\r\n'], { type: 'text/csv' }),
+        } as unknown as Response;
+      }
+      if (url.includes('/interruptions')) {
+        return { ok: true, status: 200, json: async () => interruptions } as unknown as Response;
+      }
+      return { ok: true, status: 200, json: async () => board() } as unknown as Response;
+    });
+    return { fetcher, urls };
+  }
+
+  it('muestra los numeradores nombrados como tales, con la nota del servidor', async () => {
+    const { fetcher } = mockWith(BASE);
+    vi.stubGlobal('fetch', fetcher);
+    render(<OperationsBoard businessUnit="GYE" now={() => NOW} />);
+
+    expect(await screen.findByText(/Numeradores de FMIK y TTIK/)).toBeTruthy();
+    expect(screen.getByText(/12\.500,00/)).toBeTruthy();
+    expect(screen.getByText(/no calcula los índices/)).toBeTruthy();
+    // Y avisa de que dos interrupciones sin kVA dejan los numeradores cortos.
+    expect(screen.getByText(/por debajo de la realidad/)).toBeTruthy();
+  });
+
+  it('las que no se pudieron clasificar se dicen', async () => {
+    const { fetcher } = mockWith(BASE);
+    vi.stubGlobal('fetch', fetcher);
+    render(<OperationsBoard businessUnit="GYE" now={() => NOW} />);
+    expect(await screen.findByText(/1 sin clasificar/)).toBeTruthy();
+  });
+
+  it('exporta en el formato que el servidor declara', async () => {
+    const { fetcher, urls } = mockWith(BASE);
+    vi.stubGlobal('fetch', fetcher);
+    vi.stubGlobal('URL', { createObjectURL: vi.fn(() => 'blob:x'), revokeObjectURL: vi.fn() });
+    render(<OperationsBoard businessUnit="GYE" now={() => NOW} />);
+
+    (await screen.findByRole('button', { name: /Exportar arcernnr-002-20/ })).click();
+    await waitFor(() =>
+      expect(urls.some((url) => url.includes('/interruptions.csv?format=arcernnr-002-20'))).toBe(
+        true,
+      ),
+    );
+  });
+
+  it('un payload con otra forma deja el panel fuera y no tumba el tablero', async () => {
+    // Es la lección del panel de concordancia: el fallo de un panel secundario no puede dejar sin
+    // tablero a quien responde por el SLA.
+    const { fetcher } = mockWith({ interruptions: 'doce' });
+    vi.stubGlobal('fetch', fetcher);
+    render(<OperationsBoard businessUnit="GYE" now={() => NOW} />);
+
+    expect(await screen.findByText(/Mediana 52 min/)).toBeTruthy();
+    expect(screen.queryByText(/Numeradores de FMIK y TTIK/)).toBeNull();
+  });
+});

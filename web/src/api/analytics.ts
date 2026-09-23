@@ -231,3 +231,80 @@ export async function downloadApgCsv(businessUnit: string): Promise<Blob> {
   }
   return response.blob();
 }
+
+/** The interruption base of a period (RF-132). Never the indices — see `note`. */
+export interface InterruptionBase {
+  since: string;
+  until: string;
+  interruptions: number;
+  computable: number;
+  not_computable: number;
+  /** Neither computable nor not: no duration, or no threshold loaded. Never assumed either way. */
+  unclassified: number;
+  numerators: {
+    kva_affected: number;
+    kva_hours: number;
+    /** Computable interruptions with no kVA recorded. Each leaves both numerators too low. */
+    missing_kva: number;
+    /** Why the platform does not publish FMIK or TTIK, in the server's own words. */
+    note: string;
+  };
+  /** Export layouts on the server, by the code the export endpoint accepts. */
+  formats: string[];
+}
+
+/**
+ * Whether a payload has the shape the panel needs.
+ *
+ * Checked and not trusted, for the reason the agreement panel taught: this is a secondary panel
+ * beside the board a supervisor uses to chase the SLA, and a web build newer than the API it talks
+ * to would otherwise throw during render and blank the whole screen. The fetch's own catch cannot
+ * save a render.
+ */
+export function isInterruptionBase(body: unknown): body is InterruptionBase {
+  if (typeof body !== 'object' || body === null) return false;
+  const rows = body as Record<string, unknown>;
+  const numbers = ['interruptions', 'computable', 'not_computable', 'unclassified'];
+  if (!numbers.every((key) => typeof rows[key] === 'number')) return false;
+  if (!Array.isArray(rows.formats)) return false;
+  const numerators = rows.numerators as Record<string, unknown> | undefined;
+  if (typeof numerators !== 'object' || numerators === null) return false;
+  return (
+    typeof numerators.kva_affected === 'number' &&
+    typeof numerators.kva_hours === 'number' &&
+    typeof numerators.missing_kva === 'number' &&
+    typeof numerators.note === 'string'
+  );
+}
+
+export async function fetchInterruptionBase(
+  businessUnit: string,
+  signal?: AbortSignal,
+): Promise<InterruptionBase> {
+  const body = await read<unknown>(
+    `${BASE}/units/${encodeURIComponent(businessUnit)}/interruptions`,
+    signal,
+  );
+  if (!isInterruptionBase(body)) {
+    throw new ApiError(200, 'la respuesta de interrupciones no tiene la forma esperada');
+  }
+  return body;
+}
+
+/** The interruption export, in the named layout. Fetched with the token, like every export. */
+export async function downloadInterruptions(
+  businessUnit: string,
+  format: string,
+): Promise<Blob> {
+  const response = await fetch(
+    `${BASE}/units/${encodeURIComponent(businessUnit)}/interruptions.csv?format=${encodeURIComponent(
+      format,
+    )}`,
+    { headers: authHeaders() },
+  );
+  if (!response.ok) {
+    if (response.status === 401) notifyExpired();
+    throw new ApiError(response.status, `${response.status} ${response.statusText}`);
+  }
+  return response.blob();
+}

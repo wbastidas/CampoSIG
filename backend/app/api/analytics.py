@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 
-from app.analytics import ai_dashboard, apg, operations
+from app.analytics import ai_dashboard, apg, interruptions, operations
 from app.auth.dependencies import require_roles, unit_scope
 from app.auth.principal import Role
 from app.infra.database import get_session
@@ -166,5 +166,65 @@ def apg_csv(
         media_type="text/csv; charset=utf-8",
         headers={
             "Content-Disposition": f'attachment; filename="apg-incumplimientos-{stamp}.csv"',
+        },
+    )
+
+
+@router.get(
+    "/units/{unit_code}/interruptions",
+    summary="Base de interrupciones para el cálculo de FMIK y TTIK (RF-132)",
+    dependencies=[Depends(require_roles(Role.SUPERVISOR, Role.PLANNER))],
+)
+def interruption_base(
+    unit_code: str,
+    session: SessionDep,
+    since: Annotated[datetime | None, Query()] = None,
+    until: Annotated[datetime | None, Query()] = None,
+) -> dict[str, Any]:
+    """The base and the two numerators — never the indices themselves.
+
+    FMIK and TTIK divide by the unit's installed kVA, which lives in the corporate systems and not
+    here. Publishing an index against a denominator this platform had guessed would be publishing a
+    number the utility then has to defend before the regulator.
+    """
+    unit = _unit(session, unit_code)
+    start, end = _apg_period(since, until)
+    return interruptions.collect(session, unit.id, since=start, until=end).as_dict()
+
+
+@router.get(
+    "/units/{unit_code}/interruptions.csv",
+    summary="Exportar la base de interrupciones en un formato configurable (RF-132)",
+    dependencies=[Depends(require_roles(Role.SUPERVISOR, Role.PLANNER))],
+    response_class=PlainTextResponse,
+)
+def interruption_export(
+    unit_code: str,
+    session: SessionDep,
+    layout: Annotated[str, Query(alias="format")] = "arcernnr-002-20",
+    since: Annotated[datetime | None, Query()] = None,
+    until: Annotated[datetime | None, Query()] = None,
+) -> PlainTextResponse:
+    """The export, in the layout the caller names.
+
+    An unknown layout is a 404 and never a silent fallback to the default: an export that quietly
+    used another format would produce a file the regulator rejects for reasons nobody can trace.
+    """
+    unit = _unit(session, unit_code)
+    start, end = _apg_period(since, until)
+    try:
+        chosen = interruptions.load_format(layout)
+    except interruptions.UnknownFormatError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+
+    base = interruptions.collect(session, unit.id, since=start, until=end)
+    stamp = end.strftime("%Y%m%d")
+    return PlainTextResponse(
+        interruptions.render(base, chosen),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="interrupciones-{chosen.code}-{stamp}.csv"'
+            )
         },
     )

@@ -1,0 +1,76 @@
+# Bloque específico del registro de interrupción (F-OP-03, SRS 4.4).
+#
+# Los campos son los que la Regulación ARCERNNR-002/20 exige para el registro de interrupciones,
+# que es lo que alimenta el cálculo de FMIK y TTIK. La regla del umbral de «no computable» **no está
+# aquí**: vive en `regulatory_parameter` y la evalúa la regla determinista (ADR-007), porque el
+# umbral cambia con cada regulación y un número escrito en un formulario se queda viejo en silencio.
+block:
+  code: OP03
+  title: Registro de interrupción
+  required: true
+fields:
+  # La subestación y el alimentador no están aquí: los trae B02 (ubicación), y duplicarlos daría
+  # dos campos con el mismo nombre en un formulario — el composer lo avisa y se queda con uno.
+  interruption_kind:
+    type: string
+    title: Tipo de interrupción
+    enum: [programada, no_programada]
+    x-voice: true
+  interruption_origin:
+    type: string
+    title: Origen
+    # Interna de la distribuidora, o externa: transmisor o generación. La distinción es la que
+    # decide si la interrupción entra en los índices de la distribuidora.
+    enum: [interna, externa_transmisor, externa_generacion]
+    x-voice: true
+  started_at_interruption:
+    type: string
+    format: date-time
+    title: Inicio de la interrupción
+    x-voice: true
+  restored_at_interruption:
+    type: string
+    format: date-time
+    title: Reposición total
+    x-voice: true
+  partial_restorations:
+    type: array
+    title: Reposiciones parciales
+    x-repeatable-table: true
+    x-voice: true
+    items:
+      type: object
+      properties:
+        restored_at: {type: string, format: date-time, title: Hora, x-voice: true}
+        section: {type: string, title: Tramo, x-voice: true}
+        kva_restored: {type: number, title: kVA repuestos, minimum: 0, x-voice: true}
+      required: [restored_at, kva_restored]
+  protection_operated:
+    type: string
+    title: Equipo de protección que operó
+    x-catalog-ref: protection_device
+    x-voice: true
+  transformers_affected:
+    type: number
+    title: Transformadores afectados
+    minimum: 0
+    x-voice: true
+  kva_affected:
+    type: number
+    title: kVA afectados
+    minimum: 0
+    # Se autocalcula desde la topología del GIS cuando está disponible; dictable cuando no.
+    x-voice: true
+  interruption_cause:
+    type: string
+    title: Causa
+    x-catalog-ref: interruption_cause
+    x-voice: true
+  # Calculado de las dos horas de arriba. Lo lee la regla del umbral (ADR-007), que decide si la
+  # interrupción es computable — el formulario no clasifica nada.
+  interruption_seconds:
+    type: number
+    title: Duración (s)
+    readOnly: true
+    x-computed: true
+    x-regulatory-parameter: interruption.non_computable_seconds

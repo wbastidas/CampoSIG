@@ -830,6 +830,39 @@ Falta la mitad que necesita modelos: los nodos VLM y de redacción, en I12.
 
 ---
 
+### RF-132: la base de interrupciones, y el índice que la plataforma no publica
+
+Lo que este módulo **no** hace es su decisión principal: no calcula FMIK ni TTIK. Los dos índices
+dividen por el kVA instalado de la unidad, que vive en los sistemas corporativos y no aquí. Una
+plataforma que publicara un índice contra un denominador supuesto estaría publicando un número que la
+distribuidora tiene que defender después ante el regulador.
+
+Así que se exporta la base y se calculan **los dos numeradores** —kVA fuera de servicio y kVA·hora—
+que salen solo de las interrupciones y por tanto sí son de la plataforma. La explicación de qué falta
+viaja en el payload y la pantalla la muestra sin parafrasear, porque el fallo que este panel podría
+causar es que alguien copie un numerador a un informe como si fuera el índice. Y un test comprueba que
+no existe ningún **campo** llamado `fmik` ni `ttik`: que la nota los nombre para explicar por qué no
+están es justo lo contrario.
+
+**Hizo falta el formulario antes.** F-OP-03 estaba especificado en el SRS y no existía, así que se
+construyó con los campos que ARCERNNR-002/20 exige: tipo, origen, inicio y reposición total,
+reposiciones parciales como tabla, protección que operó, transformadores y kVA afectados, y causa. El
+umbral de «no computable» **no está en el formulario**: lo evalúa la regla determinista sobre
+`regulatory_parameter`, y el campo solo declara contra qué parámetro se mide. Una guarda de CI lo
+comprobó enseguida — la primera versión citaba un código de parámetro que ninguna regla conoce.
+
+**El formato es un archivo.** «Formato configurable» del requerimiento significa que las columnas, sus
+cabeceras, su orden y el separador viven en `seeds/export-formats/`: la regulación los renombra cada
+pocos años, y eso debería ser un archivo que se añade. Un formato que no existe da 404 y nunca cae al
+de por omisión en silencio — una exportación que usara otro formato produciría un archivo que el
+regulador rechaza por razones que nadie puede rastrear.
+
+Las interrupciones que la regla no pudo clasificar se cuentan aparte y **no se suponen** en ninguna
+dirección: suponerlas computables inflaría los índices, y suponer lo contrario esconderia
+interrupciones que ocurrieron.
+
+---
+
 ### RF-131: el tablero de alumbrado, con el plazo como dato
 
 El número que este tablero produce —qué porcentaje de luminarias se repuso dentro del plazo— va a un

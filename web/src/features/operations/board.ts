@@ -7,7 +7,7 @@
  * screen says how many are still out there.
  */
 
-import type { Leg, OperationalBoard } from '../../api/analytics';
+import type { InterruptionBase, Leg, OperationalBoard } from '../../api/analytics';
 
 /** RF-130: «los datos se actualizan cada 5 min». */
 export const REFRESH_MS = 5 * 60 * 1000;
@@ -137,4 +137,52 @@ export function freshness(computedAt: string, now: Date): string {
   if (age < 90) return 'Calculado hace menos de un minuto.';
   const minutes = Math.round(age / 60);
   return `Calculado hace ${minutes} minuto(s).`;
+}
+
+/**
+ * Reading the interruption base (RF-132).
+ *
+ * The one thing this must never do is present a numerator as an index. FMIK and TTIK divide by the
+ * unit's installed kVA, which the platform does not hold, so the panel shows the numerators, labels
+ * them as such, and repeats the server's own explanation of what is missing.
+ */
+export function numeratorLines(base: InterruptionBase): string[] {
+  const lines = [
+    `kVA fuera de servicio: ${thousands(base.numerators.kva_affected)}.`,
+    `kVA·hora fuera de servicio: ${thousands(base.numerators.kva_hours)}.`,
+  ];
+  if (base.numerators.missing_kva > 0) {
+    // Cada una deja los dos numeradores por debajo de la realidad.
+    lines.push(
+      `${base.numerators.missing_kva} interrupción(es) computable(s) sin kVA registrado: ambos ` +
+        'numeradores quedan por debajo de la realidad.',
+    );
+  }
+  return lines;
+}
+
+/**
+ * A quantity with thousands separated the way Ecuador does it: point for thousands, comma for
+ * decimals.
+ *
+ * The opposite of the JavaScript default, and the reason the agents' distances read as «6,480 m»
+ * once. `toLocaleString('es-EC')` would do it, and is left alone deliberately: the Node build that
+ * runs the tests may carry a trimmed ICU, and a number that formats differently in CI than in a
+ * browser is a number nobody can write a test for.
+ */
+export function thousands(value: number): string {
+  const [whole, decimals] = value.toFixed(2).split('.');
+  const grouped = (whole ?? '0').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return `${grouped},${decimals ?? '00'}`;
+}
+
+/** How the classification of the period reads, including what could not be classified. */
+export function classificationLine(base: InterruptionBase): string {
+  if (base.interruptions === 0) return 'Sin interrupciones registradas en el periodo.';
+  const parts = [`${base.computable} computable(s)`, `${base.not_computable} no computable(s)`];
+  if (base.unclassified > 0) {
+    // Suponerla computable inflaría los índices; suponer lo contrario esconderia interrupciones.
+    parts.push(`${base.unclassified} sin clasificar (falta duración o umbral)`);
+  }
+  return `${base.interruptions} interrupción(es): ${parts.join(', ')}.`;
 }
