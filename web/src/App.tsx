@@ -19,6 +19,7 @@ import { AuditScreen } from './features/audit/AuditScreen';
 import { DispatchBoard } from './features/dispatch/DispatchBoard';
 import { IntegrationsScreen } from './features/integrations/IntegrationsScreen';
 import { ModelProfileScreen } from './features/model-profile/ModelProfileScreen';
+import { OperationsBoard } from './features/operations/OperationsBoard';
 import { ReviewScreen } from './features/review/ReviewScreen';
 
 /**
@@ -36,6 +37,7 @@ type Screen =
   | 'planificacion'
   | 'despliegue'
   | 'revision'
+  | 'operacion'
   | 'ia'
   | 'integraciones'
   | 'bitacora'
@@ -45,6 +47,8 @@ const SCREENS: { key: Screen; label: string; roles: string[] }[] = [
   { key: 'planificacion', label: 'Planificación', roles: ['planificador', 'supervisor'] },
   { key: 'despliegue', label: 'Despliegue', roles: ['planificador', 'supervisor'] },
   { key: 'revision', label: 'Revisión', roles: ['supervisor', 'inspector'] },
+  // El tablero operativo es de quien reparte y de quien responde por el SLA (RF-130).
+  { key: 'operacion', label: 'Operación', roles: ['supervisor', 'planificador'] },
   // RF-134 nombra los dos roles: el analista ML porque es su trabajo, y el supervisor porque es
   // quien decide con esos números. El servidor exige lo mismo.
   { key: 'ia', label: 'Tablero de IA', roles: ['analista_ml', 'supervisor'] },
@@ -125,6 +129,7 @@ export function App() {
         )}
         {screen === 'despliegue' && <DispatchBoard businessUnit={unit} />}
         {screen === 'revision' && <ReviewScreen businessUnit={unit} reviewer={operator} />}
+        {screen === 'operacion' && <OperationsBoard businessUnit={unit} />}
         {screen === 'ia' && <AiDashboardScreen businessUnit={unit} />}
         {screen === 'integraciones' && (
           <IntegrationsScreen businessUnit={unit} operator={operator} />

@@ -18,24 +18,45 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.analytics import ai_dashboard
+from app.analytics import ai_dashboard, operations
 from app.auth.dependencies import require_roles, unit_scope
 from app.auth.principal import Role
 from app.infra.database import get_session
 from app.org.service import UnknownBusinessUnitError, get_business_unit_by_code
 from app.review import blind
 
+# `unit_scope` at the door for every board here (ADR-009). The roles differ per board, so each one
+# declares its own: the AI dashboard is the ML analyst's and the supervisor's, and the operational
+# board is the supervisor's and the planner's.
 router = APIRouter(
-    prefix="/api/v1/analytics",
-    tags=["analytics"],
-    dependencies=[Depends(unit_scope), Depends(require_roles(Role.ML_ANALYST, Role.SUPERVISOR))],
+    prefix="/api/v1/analytics", tags=["analytics"], dependencies=[Depends(unit_scope)]
 )
 
 SessionDep = Annotated[Session, Depends(get_session)]
 
 
+def _unit(session: Session, code: str):  # type: ignore[no-untyped-def]
+    try:
+        return get_business_unit_by_code(session, code)
+    except UnknownBusinessUnitError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+
+
+def _period_or_422(since: datetime | None, until: datetime | None) -> None:
+    """A backwards period is refused rather than answered with an empty board.
+
+    An empty board reads as «no hubo trabajo», which is the opposite of «preguntaste mal».
+    """
+    if since is not None and until is not None and since > until:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "el inicio del periodo es posterior a su fin",
+        )
+
+
 @router.get(
     "/units/{unit_code}/ai-dashboard",
+    dependencies=[Depends(require_roles(Role.ML_ANALYST, Role.SUPERVISOR))],
     summary="Tablero de IA: aceptación por campo, correcciones por clase, error de palabras, "
     "adopción de la voz y versiones en la flota",
 )
@@ -51,16 +72,8 @@ def ai(
     week's numbers cover the work the crews did that week and not whenever their phones found
     signal.
     """
-    try:
-        unit = get_business_unit_by_code(session, unit_code)
-    except UnknownBusinessUnitError as exc:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
-
-    if since is not None and until is not None and since > until:
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
-            "el inicio del periodo es posterior a su fin",
-        )
+    unit = _unit(session, unit_code)
+    _period_or_422(since, until)
 
     body = ai_dashboard.build(session, unit.id, since=since, until=until).as_dict()
     # RF-111a's acceptance criterion is literal: «el tablero RF-134 muestra el kappa
@@ -68,3 +81,26 @@ def ai(
     # over the blind sample and nothing else.
     body["agreement"] = blind.agreement(session, unit.id).as_dict()
     return body
+
+
+@router.get(
+    "/units/{unit_code}/operations",
+    summary="Tablero operativo: OT por estado, SLA, productividad por cuadrilla y tiempos",
+    dependencies=[Depends(require_roles(Role.SUPERVISOR, Role.PLANNER))],
+)
+def operational(
+    unit_code: str,
+    session: SessionDep,
+    since: Annotated[datetime | None, Query()] = None,
+    until: Annotated[datetime | None, Query()] = None,
+) -> dict[str, Any]:
+    """RF-130, computed live on every call.
+
+    Live and not cached: the acceptance criterion is that the data is no more than five minutes
+    old, and the way to guarantee that is for the screen to ask again every five minutes. A cache
+    would add an invalidation bug in exchange for a query a supervisor makes twelve times an hour.
+    `computed_at` travels so the screen can say how fresh the number on it is.
+    """
+    unit = _unit(session, unit_code)
+    _period_or_422(since, until)
+    return operations.build(session, unit.id, since=since, until=until).as_dict()

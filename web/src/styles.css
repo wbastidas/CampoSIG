@@ -687,3 +687,33 @@ fieldset {
   border-bottom: 1px solid var(--borde);
   vertical-align: top;
 }
+
+/* Tablero operativo (RF-130). Reutiliza la rejilla de paneles del tablero de IA: son la misma
+   clase de pantalla y aprender dos layouts para lo mismo es trabajo del supervisor, no del CSS. */
+.ops-board table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.ops-board th,
+.ops-board td {
+  text-align: left;
+  padding: 0.2rem 0.3rem;
+  border-bottom: 1px solid var(--borde);
+}
+
+.ops-leg + .ops-leg {
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--borde);
+}
+
+/* Un SLA vencido no puede leerse como un dato más de la tabla. */
+.ops-late {
+  color: var(--alarma);
+  background: var(--alarma-fondo);
+  padding: 0.2rem 0.4rem;
+  border-radius: var(--radio);
+  font-weight: 600;
+}

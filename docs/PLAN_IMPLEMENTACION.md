@@ -830,6 +830,47 @@ Falta la mitad que necesita modelos: los nodos VLM y de redacción, en I12.
 
 ---
 
+### RF-130: el tablero operativo, que la bitácora hizo posible
+
+Cuatro preguntas que un supervisor hace antes del almuerzo: qué hay dónde, qué está atrasado, quién
+está sacando trabajo y cuánto tarda el trabajo. Las tres primeras salen de las OT. La cuarta sale de
+la bitácora, y hasta que la bitácora existió no se podía responder.
+
+Los tiempos son donde un tablero operativo engaña con más facilidad, así que las tres decisiones que
+lo sostienen son negativas:
+
+| Decisión | Qué evita |
+|---|---|
+| Medianas y percentil 90, no promedios | dos OT abiertas durante un fin de semana mueven un promedio horas y no dicen nada del día normal. La mediana dice cómo es un día normal; el p90, cuánto duran los que no lo son |
+| Una OT en curso no es un cero | un trabajo despachado hace una hora no ha tardado cero en llegar: no ha llegado. Contarlo arrastraría el promedio hacia abajo justo cuando las cuadrillas están ocupadas |
+| El reloj arranca en el **primer** despacho | una reasignación no lo reinicia. El tiempo que cuesta reasignar es tiempo que el trabajo tardó, y un tablero que lo esconde es uno con el que no se puede averiguar por qué |
+
+Cada tramo informa tres números distintos que un promedio solo fundiría: lo que midió, lo que sigue
+en curso y lo que no pudo medir. Lo último son las OT anteriores a la bitácora, y se cuentan en vez
+de ignorarse: un promedio calculado solo sobre las que quedaron bien registradas informa el mejor
+caso. Y el máximo viaja al lado del p90, porque en una muestra pequeña el percentil interpolado
+esconde justo la cola que interesa —con nueve trabajos de media hora y uno de cinco, el p90 da 57
+minutos: aritmética correcta y respuesta inútil a «¿cuál fue la peor?».
+
+Del SLA se informan las vencidas **y abiertas** —un tablero que grita por trabajo terminado es uno
+que se deja de mirar— y también **cuántas OT abiertas no tienen fecha cargada**, porque «0 vencidas»
+sobre cien de esas no informa de nada.
+
+La productividad de una cuadrilla se mide por lo que cerró **en campo**. Lo que pase después en
+revisión es trabajo de la oficina, y contarlo aquí haría que el número de una cuadrilla se moviera
+porque alguien más estaba de vacaciones.
+
+El criterio de aceptación —datos de menos de cinco minutos— es un refresco y no una caché: el
+tablero se recalcula en cada llamada y la pantalla vuelve a pedirlo cada cinco minutos. Una caché
+añadiría un error de invalidación a cambio de una consulta que un supervisor hace doce veces por
+hora. Y la pantalla **dice cuándo se calculó**: uno que se refresca en silencio parece igual de
+fresco cuando el refresco lleva una hora fallando.
+
+Faltan RF-131 (APG contra el máximo regulatorio), RF-132 (exportación de interrupciones para FMIK y
+TTIK) y RF-133 (mapa de calor de defectos, reincidencia por activo, hallazgos por criticidad).
+
+---
+
 ### M16: la bitácora que se daba por hecha
 
 Este plan decía «M16 del SRS completo» desde el principio. No lo estaba. La migración de base

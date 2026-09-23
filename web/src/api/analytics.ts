@@ -76,21 +76,17 @@ export interface AiDashboard {
   agreement: AgentAgreement;
 }
 
-export async function fetchAiDashboard(
-  businessUnit: string,
-  options: { since?: string; until?: string } = {},
-  signal?: AbortSignal,
-): Promise<AiDashboard> {
-  const params = new URLSearchParams();
-  if (options.since) params.set('since', options.since);
-  if (options.until) params.set('until', options.until);
-  const query = params.toString();
-  const response = await fetch(
-    `/api/v1/analytics/units/${encodeURIComponent(businessUnit)}/ai-dashboard${
-      query ? `?${query}` : ''
-    }`,
-    { headers: authHeaders(), signal },
-  );
+const BASE = '/api/v1/analytics';
+
+/**
+ * A board, or the server's reason for not giving one.
+ *
+ * Shared by the two boards rather than written twice: they differ in their query and in nothing
+ * else, and two copies of the error handling would be two chances for one of them to swallow a
+ * detail the screen needs to show.
+ */
+async function read<T>(path: string, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(path, { headers: authHeaders(), signal });
   if (!response.ok) {
     if (response.status === 401) notifyExpired();
     let detail = `${response.status} ${response.statusText}`;
@@ -102,5 +98,65 @@ export async function fetchAiDashboard(
     }
     throw new ApiError(response.status, detail);
   }
-  return (await response.json()) as AiDashboard;
+  return (await response.json()) as T;
+}
+
+export function fetchAiDashboard(
+  businessUnit: string,
+  options: { since?: string; until?: string } = {},
+  signal?: AbortSignal,
+): Promise<AiDashboard> {
+  const params = new URLSearchParams();
+  if (options.since) params.set('since', options.since);
+  if (options.until) params.set('until', options.until);
+  const query = params.toString();
+  return read<AiDashboard>(
+    `${BASE}/units/${encodeURIComponent(businessUnit)}/ai-dashboard${query ? `?${query}` : ''}`,
+    signal,
+  );
+}
+
+/** One stretch of a job's life, timed (RF-130). */
+export interface Leg {
+  key: string;
+  label: string;
+  measured: number;
+  /** Jobs that started the leg and have not finished it. Not zeros — still running. */
+  in_progress: number;
+  /** Jobs that finished with no record of one end, usually from before the trail existed. */
+  unrecorded: number;
+  median_minutes: number | null;
+  p90_minutes: number | null;
+  worst_minutes: number | null;
+  min_sample: number;
+}
+
+export interface CrewProductivity {
+  crew_id: string;
+  crew_name: string;
+  closed_in_field: number;
+  approved: number;
+  open_now: number;
+}
+
+export interface OperationalBoard {
+  computed_at: string;
+  since: string;
+  by_state: Record<string, number>;
+  sla: {
+    overdue: number;
+    due_soon: number;
+    due_soon_hours: number;
+    /** Open orders with no SLA at all. «0 vencidas» over a hundred of these says nothing. */
+    without_sla: number;
+  };
+  legs: Leg[];
+  crews: CrewProductivity[];
+}
+
+export function fetchOperationalBoard(
+  businessUnit: string,
+  signal?: AbortSignal,
+): Promise<OperationalBoard> {
+  return read<OperationalBoard>(`${BASE}/units/${encodeURIComponent(businessUnit)}/operations`, signal);
 }
