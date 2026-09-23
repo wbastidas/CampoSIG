@@ -14,6 +14,7 @@ import pytest
 from app.model_profile.amd import load_asset_model
 from app.model_profile.profile import load_profile
 from app.model_profile.resolver import ModelResolver
+from app.settings import get_settings
 
 ALL_PROFILE_IDS = ["cnel-gye", "alt-synthetic"]
 
@@ -33,6 +34,26 @@ def _isolate_profile_caches():
     yield
     load_profile.cache_clear()
     load_asset_model.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def _no_blind_draw_unless_asked():
+    """Turn the blind sample off for the suite, and let a test switch it on (RF-111a).
+
+    The draw is random by design — a supervisor who could predict which order is measured is not
+    being measured — and a random draw inside a shared code path is a suite that fails one run in
+    ten. It did: a test that executes the pre-review and then reads the report found it withheld,
+    which is correct behaviour and a useless test failure.
+
+    Off by default rather than seeded, because "seeded" still means every test that runs the
+    pre-review depends on how many draws happened before it. The tests that care about the draw set
+    the rate themselves, and they are clearer for saying so.
+    """
+    settings = get_settings()
+    original = settings.blind_sample_rate
+    settings.blind_sample_rate = 0.0
+    yield
+    settings.blind_sample_rate = original
 
 
 @pytest.fixture
