@@ -24,9 +24,12 @@ from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     Date,
     DateTime,
+    ForeignKey,
+    Identity,
     Index,
     String,
     Text,
@@ -76,8 +79,17 @@ class RegulatoryParameter(Base):
     #: for limits whose breach has a legal consequence.
     strict: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
+    #: Who loaded the row, and who last touched it (RF-150: «usuario que modificó»). Different
+    #: from `verified_by`, which is a stronger claim: that somebody read the official text. A
+    #: person can correct a typo in a description without certifying the figure.
+    created_by: Mapped[str | None] = mapped_column(String(255))
+    updated_by: Mapped[str | None] = mapped_column(String(255))
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
     __table_args__ = (
@@ -97,3 +109,63 @@ class RegulatoryParameter(Base):
         if moment < self.effective_from:
             return False
         return self.effective_to is None or moment <= self.effective_to
+
+
+class RevisionAction:
+    """What happened to a parameter. Plain constants; the set grows by addition."""
+
+    #: A new period opened.
+    CREATED = "creado"
+    #: An existing period was edited in place — a corrected figure, a fixed citation.
+    CORRECTED = "corregido"
+    #: A period was closed because a newer resolution opened the next one.
+    CLOSED = "cerrado"
+    #: Somebody stated they had read the official text and the value matches (ADR-007).
+    VERIFIED = "verificado"
+
+
+class RegulatoryRevision(Base):
+    """Every edit to a parameter, with who made it and what the row said before.
+
+    The periods are the history of the *values* a regulator published. This is the history of the
+    *edits* — and it exists because the one mutation the model allows is a correction to an open
+    period, which would otherwise overwrite a figure with no trace. «Usuario que modificó» is only
+    useful next to what they modified it from.
+
+    Append-only by construction: nothing in the platform updates or deletes a row here, and there
+    is no endpoint that could. It is **not** the M16 trail and does not share its hash chain: that
+    trail is per business unit and is about field work, while a regulatory parameter is national
+    (ADR-009 puts nothing corporate inside a unit's trail).
+    """
+
+    __tablename__ = "regulatory_revision"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+
+    #: Insertion order, from the database. `at` cannot carry it: PostgreSQL's `now()` is the
+    #: *transaction* clock, so every revision written in one request shares a timestamp to the
+    #: microsecond and sorting by it returns them in whatever order the index felt like. A log
+    #: whose order is arbitrary cannot answer «what did it say before», which is the only reason it
+    #: exists.
+    sequence: Mapped[int] = mapped_column(
+        BigInteger, Identity(always=False), nullable=False, unique=True
+    )
+
+    parameter_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("regulatory_parameter.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    #: Denormalised on purpose: the code is what a person searches by, and a revision must stay
+    #: readable even if somebody ever removes the parameter row it points at.
+    code: Mapped[str] = mapped_column(String(128), nullable=False)
+    action: Mapped[str] = mapped_column(String(16), nullable=False)
+    actor: Mapped[str] = mapped_column(String(255), nullable=False)
+    #: The fields that moved, as {field: {from, to}}. Empty for a creation, where everything is new.
+    changed: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    note: Mapped[str | None] = mapped_column(Text)
+    at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (Index("ix_regulatory_revision_code", "code", "sequence"),)

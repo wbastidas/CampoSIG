@@ -23,6 +23,7 @@ import { MaintenanceScreen } from './features/maintenance/MaintenanceScreen';
 import { ModelProfileScreen } from './features/model-profile/ModelProfileScreen';
 import { OperationsBoard } from './features/operations/OperationsBoard';
 import { PolicyScreen } from './features/policy/PolicyScreen';
+import { RegulatoryScreen } from './features/regulatory/RegulatoryScreen';
 import { ReviewScreen } from './features/review/ReviewScreen';
 import { ZonesScreen } from './features/zones/ZonesScreen';
 
@@ -49,6 +50,7 @@ type Screen =
   | 'bitacora'
   | 'zonas'
   | 'politica'
+  | 'normativa'
   | 'perfil';
 
 const SCREENS: { key: Screen; label: string; roles: string[] }[] = [
@@ -71,6 +73,9 @@ const SCREENS: { key: Screen; label: string; roles: string[] }[] = [
   // La política de captura la fija el área y la obedece el teléfono. El supervisor entra a
   // mirar, porque es quien pregunta por qué una cuadrilla hizo lo que hizo (RF-151).
   { key: 'politica', label: 'Política de captura', roles: ['admin_funcional', 'supervisor'] },
+  // Los límites regulatorios son nacionales, no de una unidad. Quien los carga afirma haber
+  // leído el texto oficial, y el auditor necesita ver quién lo afirmó (RF-150, ADR-007).
+  { key: 'normativa', label: 'Parámetros regulatorios', roles: ['admin_funcional', 'auditor'] },
   // La bitácora es del auditor, y de TI para poder responder durante un incidente. No del
   // supervisor: un registro de auditoría no es un informe de gestión (RF-161).
   { key: 'bitacora', label: 'Bitácora', roles: ['auditor', 'admin_ti'] },
@@ -160,6 +165,9 @@ export function App() {
         )}
         {screen === 'politica' && (
           <PolicyScreen businessUnit={unit} mayEdit={roles.includes('admin_funcional')} />
+        )}
+        {screen === 'normativa' && (
+          <RegulatoryScreen mayEdit={roles.includes('admin_funcional')} />
         )}
         {screen === 'perfil' && <ModelProfileScreen businessUnit={unit} />}
       </main>

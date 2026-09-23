@@ -20,7 +20,7 @@ import yaml
 from sqlalchemy.orm import Session
 
 from app.regulatory.models import RegulatoryParameter
-from app.regulatory.service import set_parameter
+from app.regulatory.service import SYSTEM_ACTOR, set_parameter
 
 
 class SeedError(Exception):
@@ -83,6 +83,7 @@ def apply_seed(
     path: str | Path | None = None,
     verified_by: str | None = None,
     only_verified: bool = False,
+    actor: str | None = None,
 ) -> list[RegulatoryParameter]:
     """Write a seed file's parameters into the database.
 
@@ -90,6 +91,10 @@ def apply_seed(
         entries the file itself marks ``verified: true`` are recorded as verified, even when
         this is given — otherwise one careless flag would certify seven numbers nobody read.
     :param only_verified: skip unverified entries entirely. What a production install uses.
+    :param actor: who ran the load, for RF-150's «usuario que modificó». Defaults to whoever
+        verified, and to the seed-loader constant when nobody did: a load from a console has
+        no token, and attributing it to a person who was not there would be worse than a
+        generic name that is obviously a script.
     """
     seed = data if data is not None else load_seed(path)
     written: list[RegulatoryParameter] = []
@@ -114,6 +119,7 @@ def apply_seed(
                 # supplies who did it.
                 verified_by=verified_by if file_verified else None,
                 strict=bool(entry.get("strict")),
+                actor=actor or verified_by or SYSTEM_ACTOR,
             )
         )
     return written

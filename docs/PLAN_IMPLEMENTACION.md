@@ -830,6 +830,56 @@ Falta la mitad que necesita modelos: los nodos VLM y de redacción, en I12.
 
 ---
 
+### RF-150: el autor de un parámetro, y desde qué valor lo cambió
+
+La mayor parte de RF-150 ya estaba: la vigencia desde/hasta, la referencia a la norma y el criterio
+que importa —«los cálculos usan el parámetro vigente en la fecha del evento»— viven en
+`regulatory_parameter` desde ADR-007 y tienen sus tests. Lo que faltaba era **el usuario que
+modificó**, y la mitad W del canal.
+
+**El autor no es el verificador**, y tenerlos en un solo campo habría hecho que una corrección
+pareciera una certificación. `created_by` y `updated_by` dicen quién cargó y quién editó; `verified_by`
+es una afirmación más fuerte: que alguien leyó el texto oficial. Una persona puede arreglar un numeral
+mal citado sin certificar la cifra.
+
+**Y «quién lo cambió» solo sirve al lado de «desde qué valor».** Los períodos son la historia de los
+valores que publicó el regulador; la única mutación que el modelo permite es corregir un período
+existente, y eso sobrescribía una cifra sin dejar rastro. De ahí `regulatory_revision`: creación,
+corrección, cierre y verificación, con el diff de lo que se movió. Solo lo que se movió —un registro
+que lista diez campos iguales esconde el que cambió— y con el valor **desenvuelto**, porque quien lee
+una revisión busca la cifra y no `{"v": 24}`.
+
+**La corrección que vale anotar: ordenar por la marca de tiempo no ordena nada.** El `now()` de
+PostgreSQL es el reloj de la *transacción*, así que todas las revisiones de una misma petición
+comparten la marca al microsegundo y el orden que devuelve la consulta es el que el índice quiera.
+Peor: una marca puede ser anterior a la de la fila previa —un ajuste de reloj, una inserción con
+fecha atrasada—. Así que hay una columna `sequence` de la base y el log se ordena por ella. Lo
+descubrió la comprobación en negativo: sustituir el orden por `at` **no rompía ningún test**, porque
+el recorrido físico devolvía las filas en orden de inserción por casualidad. El test que ahora lo fija
+inserta una revisión con `at` de 2001 y exige que se lea al final.
+
+**La verificación sale del token, no del cuerpo de la petición.** El endpoint de escritura aceptaba un
+`verified_by` que el navegador podía escribir, que es una verificación que nadie hizo. Ahora la
+verificación es su propio endpoint —cargar una cifra y certificarla son dos actos, y juntarlos es cómo
+una importación masiva marca siete valores verificados por una bandera— y firma con el sujeto del
+token. El cargador de semilla sigue recibiendo un nombre, porque corre en una consola sin token.
+
+**Y existe el comando que el propio archivo de semilla mandaba usar.** `seeds/regulatory-ec.yaml`
+decía «cargarlo con `--verified-by`» y ese comando no existía; ahora es
+`uv run python -m app.regulatory.cli`, con `--dry-run`, y el archivo cita la línea exacta. El comando
+imprime al final las dos listas que una lista de verificación de despliegue tiene que tener vacías, y
+avisa cuando alguien pasó `--verified-by` sobre un archivo que no marca nada como verificado: esa
+persona cree estar certificando algo.
+
+En la pantalla esas dos listas van **separadas**. No son el mismo problema: un código que ninguna
+regla encuentra hace que la regla informe que no puede juzgar —lo que en un tablero se parece a
+cumplir—, y un código cargado sin verificar la hace juzgar contra un número que alguien escribió. Una
+es silencio y la otra es una respuesta verosímil, y se arreglan de distinta manera.
+
+Cinco guardas rotas a propósito y las cinco detectadas.
+
+---
+
 ### RF-151: la política de captura, y por dónde llega al teléfono
 
 El criterio de aceptación no habla de la escritura, habla de la entrega: «cambiar la política se

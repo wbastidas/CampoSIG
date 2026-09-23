@@ -10,7 +10,11 @@
 # Para poner esto en producción hay que, por cada parámetro:
 #   1. abrir la resolución de la ARCONEL / ARCERNNR que se cita,
 #   2. confirmar el valor y el numeral exacto,
-#   3. cargarlo con `--verified-by "nombre.apellido"`.
+#   3. cargarlo desde `backend/` con:
+#        uv run python -m app.regulatory.cli --verified-by "nombre.apellido"
+#      y, antes, con `--dry-run` para ver qué haría sin escribir nada. El archivo decide qué
+#      cuenta como verificado: `--verified-by` no certifica nada que aquí no diga
+#      `verified: true`, para que un descuido no certifique siete cifras que nadie leyó.
 #
 # Mientras `verified` sea falso, las reglas siguen comparando —es información útil— pero el
 # hallazgo sale marcado como no verificado y nadie puede citarlo como si viniera del texto

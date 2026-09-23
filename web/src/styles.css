@@ -865,3 +865,56 @@ fieldset {
 .pol-status {
   color: var(--exito);
 }
+
+.reg-screen section {
+  margin-bottom: 1.5rem;
+}
+
+.reg-screen table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.reg-screen th,
+.reg-screen td {
+  text-align: left;
+  padding: 0.2rem 0.3rem;
+  border-bottom: 1px solid var(--borde);
+}
+
+.reg-headline {
+  font-weight: 600;
+}
+
+/* Un código que falta hace que la regla calle, y callar se parece a cumplir: se marca más fuerte
+   que uno que está cargado pero sin verificar. */
+.reg-missing {
+  color: var(--alarma);
+  font-weight: 600;
+}
+
+.reg-unverified {
+  color: var(--alarma);
+}
+
+.reg-in-force th {
+  font-weight: 700;
+}
+
+.reg-revisions {
+  padding-left: 1.2rem;
+}
+
+.reg-when {
+  color: var(--texto-suave);
+  font-variant-numeric: tabular-nums;
+}
+
+.reg-help {
+  font-size: 0.8rem;
+  color: var(--texto-suave);
+}
+
+.reg-status {
+  color: var(--exito);
+}
