@@ -742,3 +742,42 @@ fieldset {
   color: var(--alarma);
   font-style: italic;
 }
+
+/* Mantenimiento (RF-133). La intensidad por alimentador va como barra proporcional: la plataforma no
+   tiene la geometría de los alimentadores —vive en el SIG—, así que lo honesto es mostrar el reparto
+   y no dibujar un mapa con datos que no están. */
+.mnt-board table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.mnt-board th,
+.mnt-board td {
+  text-align: left;
+  padding: 0.2rem 0.3rem;
+  border-bottom: 1px solid var(--borde);
+}
+
+.mnt-heat {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.mnt-heat > li + li {
+  margin-top: 0.5rem;
+}
+
+.mnt-bar {
+  display: block;
+  height: 0.5rem;
+  background: var(--acento);
+  border-radius: 2px;
+  margin: 0.15rem 0;
+}
+
+.mnt-share {
+  font-size: 0.8rem;
+  color: var(--texto-suave);
+}

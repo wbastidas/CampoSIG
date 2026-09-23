@@ -19,6 +19,7 @@ import { ApgScreen } from './features/apg/ApgScreen';
 import { AuditScreen } from './features/audit/AuditScreen';
 import { DispatchBoard } from './features/dispatch/DispatchBoard';
 import { IntegrationsScreen } from './features/integrations/IntegrationsScreen';
+import { MaintenanceScreen } from './features/maintenance/MaintenanceScreen';
 import { ModelProfileScreen } from './features/model-profile/ModelProfileScreen';
 import { OperationsBoard } from './features/operations/OperationsBoard';
 import { ReviewScreen } from './features/review/ReviewScreen';
@@ -40,6 +41,7 @@ type Screen =
   | 'revision'
   | 'operacion'
   | 'alumbrado'
+  | 'mantenimiento'
   | 'ia'
   | 'integraciones'
   | 'bitacora'
@@ -53,6 +55,8 @@ const SCREENS: { key: Screen; label: string; roles: string[] }[] = [
   { key: 'operacion', label: 'Operación', roles: ['supervisor', 'planificador'] },
   // El área de APG responde por el plazo de reposición ante el regulador (RF-131).
   { key: 'alumbrado', label: 'Alumbrado', roles: ['supervisor', 'planificador'] },
+  // El área de mantenimiento planifica con los hallazgos de las inspecciones (RF-133).
+  { key: 'mantenimiento', label: 'Mantenimiento', roles: ['supervisor', 'planificador'] },
   // RF-134 nombra los dos roles: el analista ML porque es su trabajo, y el supervisor porque es
   // quien decide con esos números. El servidor exige lo mismo.
   { key: 'ia', label: 'Tablero de IA', roles: ['analista_ml', 'supervisor'] },
@@ -135,6 +139,7 @@ export function App() {
         {screen === 'revision' && <ReviewScreen businessUnit={unit} reviewer={operator} />}
         {screen === 'operacion' && <OperationsBoard businessUnit={unit} />}
         {screen === 'alumbrado' && <ApgScreen businessUnit={unit} />}
+        {screen === 'mantenimiento' && <MaintenanceScreen businessUnit={unit} />}
         {screen === 'ia' && <AiDashboardScreen businessUnit={unit} />}
         {screen === 'integraciones' && (
           <IntegrationsScreen businessUnit={unit} operator={operator} />

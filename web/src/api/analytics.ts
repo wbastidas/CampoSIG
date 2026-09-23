@@ -308,3 +308,65 @@ export async function downloadInterruptions(
   }
   return response.blob();
 }
+
+/** How the period's defects distribute across feeders (RF-133). The "heat" the screen draws. */
+export interface FeederHeat {
+  feeder_code: string;
+  defects: number;
+  share: number;
+  top_defect: { defect_code: string; times: number } | null;
+}
+
+export interface AssetRecurrence {
+  asset_code: string;
+  findings: number;
+  /** Distinct defects seen on it: one repeated is a repair that did not hold. */
+  defects: Record<string, number>;
+  worst_criticality: string;
+}
+
+export interface OpenFinding {
+  work_order_id: string;
+  order_code: string | null;
+  asset_code: string | null;
+  defect_code: string;
+  criticality: string;
+  feeder_code: string | null;
+  recorded_at: string | null;
+  wants_order: boolean;
+}
+
+export interface MaintenanceBoard {
+  since: string;
+  until: string;
+  defect_filter: string | null;
+  findings: number;
+  heat: { by_feeder: FeederHeat[]; without_feeder: number };
+  recurrence: AssetRecurrence[];
+  backlog: {
+    open_by_criticality: Record<string, number>;
+    open: number;
+    attended: number;
+    /** Open findings with no asset code: they cannot be followed either way. */
+    untrackable: number;
+    wants_order: number;
+    /** What «open» means here, in the server's own words. A definition, not a fact. */
+    definition: string;
+  };
+  by_defect: Record<string, number>;
+  open_findings: OpenFinding[];
+}
+
+export function fetchMaintenanceBoard(
+  businessUnit: string,
+  options: { defectCode?: string } = {},
+  signal?: AbortSignal,
+): Promise<MaintenanceBoard> {
+  const params = new URLSearchParams();
+  if (options.defectCode) params.set('defect_code', options.defectCode);
+  const query = params.toString();
+  return read<MaintenanceBoard>(
+    `${BASE}/units/${encodeURIComponent(businessUnit)}/maintenance${query ? `?${query}` : ''}`,
+    signal,
+  );
+}

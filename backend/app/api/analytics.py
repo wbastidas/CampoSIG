@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 
-from app.analytics import ai_dashboard, apg, interruptions, operations
+from app.analytics import ai_dashboard, apg, interruptions, maintenance, operations
 from app.auth.dependencies import require_roles, unit_scope
 from app.auth.principal import Role
 from app.infra.database import get_session
@@ -228,3 +228,28 @@ def interruption_export(
             )
         },
     )
+
+
+@router.get(
+    "/units/{unit_code}/maintenance",
+    summary="Mantenimiento: defectos por alimentador, reincidencia por activo y hallazgos abiertos",
+    dependencies=[Depends(require_roles(Role.SUPERVISOR, Role.PLANNER))],
+)
+def maintenance_board(
+    unit_code: str,
+    session: SessionDep,
+    since: Annotated[datetime | None, Query()] = None,
+    until: Annotated[datetime | None, Query()] = None,
+    defect_code: Annotated[str | None, Query()] = None,
+) -> dict[str, Any]:
+    """RF-133, with the period and defect-type filters the requirement asks for.
+
+    «Abierto» is a definition and not a fact — a finding lives inside a capture's JSONB and has no
+    state — so the payload carries the definition in words. A backlog number whose definition nobody
+    can see is one that gets argued about instead of worked.
+    """
+    unit = _unit(session, unit_code)
+    start, end = _apg_period(since, until)
+    return maintenance.build(
+        session, unit.id, since=start, until=end, defect_code=defect_code
+    ).as_dict()

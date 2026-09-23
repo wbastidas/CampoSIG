@@ -830,6 +830,45 @@ Falta la mitad que necesita modelos: los nodos VLM y de redacción, en I12.
 
 ---
 
+### RF-133: el tablero de mantenimiento, y lo que «abierto» quiere decir
+
+Este tablero responde tres preguntas de planificación —qué alimentadores concentran defectos, qué
+activos reinciden y qué hallazgos siguen sin atender— y las tres se apoyan en una definición, no en un
+hecho. «Hallazgo abierto» no es un campo: es el resultado de comparar cuándo se registró el defecto
+con cuándo se atendió por última vez el activo. Dos planificadores pueden entender cosas distintas por
+la misma palabra, así que la definición exacta viaja en el payload (`OPEN_DEFINITION`) y la pantalla
+la muestra sin parafrasear. Un tablero que dijera «12 hallazgos abiertos» sin decir contra qué los
+contó estaría pidiendo que se le crea.
+
+**La corrección que vale escribir: el backlog lee la bitácora, no `work_order.updated_at`.** La
+primera versión tomaba la última atención de ese campo, y es falso en producción: `updated_at` se
+mueve con cualquier edición de la fila —una nota, una reasignación—, así que reasignar hoy una OT
+vieja habría cerrado un hallazgo de ayer sin que nadie tocara el activo. Ahora la fecha sale de los
+eventos `TRANSITION` de M16, que es el único registro de que alguien llegó al activo. La bitácora
+inmutable se construyó para auditoría y termina siendo la fuente de la que dependen tres tableros.
+
+**El «calor» por alimentador es una proporción, no un mapa.** La plataforma no guarda la geometría del
+alimentador —vive en la geodatabase— así que el tablero reparte los defectos entre los alimentadores
+que las capturas nombran y muestra el peso relativo de cada uno. Es lo que se puede afirmar con los
+datos propios; pintar un mapa exigiría llamar al GIS por cada carga de pantalla.
+
+**Reincidencia: un defecto repetido y varios defectos distintos no dicen lo mismo.** El mismo código
+dos veces en el mismo activo es una reparación que no aguantó; tres códigos distintos es un activo al
+final de su vida. El consejo que la pantalla da distingue los dos casos porque la acción del
+planificador es distinta: revisar la cuadrilla y el material en el primero, programar el reemplazo en
+el segundo.
+
+Los hallazgos se leen de **dos** bloques de formulario: la tabla `findings` de B11 y la lista simple
+`defects` de B05. Un tablero que solo mirara el bloque nuevo habría reportado cero para todas las
+inspecciones ya levantadas.
+
+**Y una falla del método, no del código.** La comprobación en negativo del orden temporal no detectaba
+nada, y la razón era que `ruff format` había colapsado el `if` objetivo en una sola línea: el parche de
+sabotaje no coincidía y por tanto no se aplicaba, y yo leía «la guarda no detecta» donde decía «no
+cambié nada». Desde aquí todo parche de sabotaje afirma primero que encontró su patrón.
+
+---
+
 ### RF-132: la base de interrupciones, y el índice que la plataforma no publica
 
 Lo que este módulo **no** hace es su decisión principal: no calcula FMIK ni TTIK. Los dos índices
