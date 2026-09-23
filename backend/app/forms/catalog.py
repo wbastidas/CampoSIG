@@ -94,6 +94,15 @@ class FormHeader(BaseModel):
     gates_execution: bool = False
     track_route: bool = False
     applies_to_asset_types: list[str] = Field(default_factory=list)
+    #: Competencies a crew must hold to execute this form's work (RF-005, RF-021). Declared here
+    #: rather than in code because a form *is* the per-work-type data, and because the areas have to
+    #: validate this list against their own practice — like the forms themselves, it is a baseline
+    #: built from the sector's, not a rule the platform invented.
+    #:
+    #: Empty means «no hard requirement», and that is a decision, not an omission: inventing a
+    #: safety requirement would make the assisted assignment refuse crews for no reason, and the
+    #: planner would learn to ignore it.
+    requires_competencies: list[str] = Field(default_factory=list)
 
 
 class FormDefinition(BaseModel):

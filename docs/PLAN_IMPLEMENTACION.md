@@ -830,6 +830,52 @@ Falta la mitad que necesita modelos: los nodos VLM y de redacción, en I12.
 
 ---
 
+### RF-021: la sugerencia de cuadrilla, y por qué el puntaje se puede discutir
+
+«La sugerencia devuelve el top 3 de cuadrillas con puntaje explicable» es el criterio, y
+*explicable* es todo el diseño. Un planificador que no puede ver por qué una cuadrilla quedó
+primera hará una de dos cosas: seguir el número a ciegas o ignorarlo. Las dos son peores que no
+tener sugerencia.
+
+**Lo duro excluye; lo blando puntúa.** Una cuadrilla sin la competencia que el formulario exige no
+aparece, por cerca que esté. Meter la seguridad en una suma ponderada dejaría que la cercanía le
+gane a «no está habilitada para trabajar en tensión», y el día que eso pase hay alguien lastimado.
+
+**Y lo excluido se devuelve con su razón.** Omitir C-03 en silencio deja al planificador preguntándose
+si la plataforma la olvidó o la descartó, y lo primero lo invita a asignarla a mano.
+
+**Las competencias son dato, no código.** Se declaran en `forms/definitions/` —el formulario *es* el
+dato por tipo de trabajo (regla 3)— y una lista vacía significa «sin requisito duro», que es una
+decisión y no un olvido: inventar un requisito de seguridad haría que la sugerencia rechace cuadrillas
+sin motivo y el planificador aprendería a ignorarla. Las áreas tienen que validar esa lista contra su
+práctica, igual que los formularios.
+
+**«No se sabe» se dice, no se puntúa como cero.** La plataforma no guarda el GPS de las cuadrillas
+—el «último GPS reportado» de RF-020 todavía no se captura—, así que la cercanía se estima desde el
+centroide del trabajo abierto de la cuadrilla: un proxy defendible (una cuadrilla con seis OT en el
+norte está en el norte) pero un proxy. Cuando no hay trabajo abierto desde donde estimar, la razón lo
+dice con esas palabras en vez de no sumar nada y parecer mal encaje.
+
+Los cuatro factores suman 100 en números enteros —zona 40, cercanía 30, carga 20, presión de SLA 10—
+para que comparar 72 con 68 no necesite calculadora. Y la pantalla dice cuándo esa diferencia **no**
+es una recomendación: dos puntos son ruido de redondeo, y presentarlos como consejo sería prestarle
+al número una autoridad que no tiene.
+
+La carga **no** es un tope duro: un planificador puede querer darle la novena OT a la cuadrilla que ya
+está en esa calle, y el puntaje debe mostrarle el costo, no prohibírselo.
+
+**Un hallazgo del camino: `create_work_order` no aceptaba `sla_due_at`.** La columna existía desde
+I3, RF-010 la pide, el tablero de SLA de RF-130 la lee y la presión de SLA de aquí la necesita — y
+nada la escribía nunca. Estaba llena de nulos.
+
+Siete guardas rotas a propósito y detectadas. La octava —el desempate por código— **no** se detecta, y
+queda anotado en el código por qué: el orden ya lo garantizan el `ORDER BY code` de la consulta y la
+estabilidad del `sort` de Python, así que la clave explícita es redundante a propósito, para que la
+propiedad sobreviva a que alguien cambie la consulta. Un test no puede distinguir los dos mecanismos;
+el comentario es el registro de que la redundancia es deliberada.
+
+---
+
 ### RF-150: el autor de un parámetro, y desde qué valor lo cambió
 
 La mayor parte de RF-150 ya estaba: la vigencia desde/hasta, la referencia a la norma y el criterio

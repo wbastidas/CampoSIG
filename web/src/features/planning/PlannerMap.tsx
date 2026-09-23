@@ -23,11 +23,21 @@ import {
   ApiError,
   assignSelection,
   type Crew,
+  type CrewSuggestion,
   fetchCrews,
+  fetchSuggestedCrews,
   fetchWorkOrders,
   type WorkOrderCollection,
   type WorkOrderFeature,
 } from '../../api/planning';
+import {
+  candidateHeadline,
+  exclusionLines,
+  hasCandidates,
+  marginAdvice,
+  reasonLines,
+  requirementLine,
+} from '../assignment/suggestion';
 import {
   boundsFromCorners,
   isLasso,
@@ -67,6 +77,9 @@ export function PlannerMap({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [crews, setCrews] = useState<Crew[]>([]);
   const [crewId, setCrewId] = useState<string>('');
+  /** The suggestion for the one selected order, or null. Cleared whenever the selection
+   *  changes: a suggestion computed for another OT is worse than none (RF-021). */
+  const [suggestion, setSuggestion] = useState<CrewSuggestion | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [truncated, setTruncated] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -258,6 +271,7 @@ export function PlannerMap({
       setStatus(parts.join('; '));
       setSelected(new Set());
       paintSelection(new Set());
+      setSuggestion(null);
       await reload();
     } catch (error) {
       setStatus(
@@ -269,6 +283,23 @@ export function PlannerMap({
       setBusy(false);
     }
   }, [businessUnit, crewId, paintSelection, reload, selected]);
+
+  // --- suggestion (RF-021) --------------------------------------------------------
+  const onSuggest = useCallback(async () => {
+    const only = [...selected][0];
+    if (selected.size !== 1 || !only) return;
+    setBusy(true);
+    setStatus(null);
+    try {
+      setSuggestion(await fetchSuggestedCrews(businessUnit, only));
+    } catch (error) {
+      setStatus(
+        error instanceof ApiError ? error.message : 'No se pudo pedir la sugerencia',
+      );
+    } finally {
+      setBusy(false);
+    }
+  }, [businessUnit, selected]);
 
   const summary = summarise(features.filter((feature) => selected.has(feature.id)));
 
@@ -303,6 +334,72 @@ export function PlannerMap({
             {summary.reassignment} de las seleccionadas ya están asignadas a otra cuadrilla.
             Al confirmar se les quitará el trabajo.
           </p>
+        )}
+
+        <button
+          type="button"
+          onClick={() => void onSuggest()}
+          disabled={busy || summary.total !== 1}
+        >
+          Sugerir cuadrilla
+        </button>
+        {summary.total > 1 && (
+          <p className="planner__hint">
+            La sugerencia es por OT: seleccione una sola para pedirla.
+          </p>
+        )}
+
+        {suggestion && (
+          <section className="planner__suggestion" aria-label="Sugerencia de cuadrilla">
+            <h3>Sugerencia</h3>
+            {requirementLine(suggestion) && <p>{requirementLine(suggestion)}</p>}
+            {suggestion.caveats.map((line) => (
+              <p key={line} role="status" className="planner__warning">
+                {line}
+              </p>
+            ))}
+            {hasCandidates(suggestion) ? (
+              <>
+                {marginAdvice(suggestion) && <p>{marginAdvice(suggestion)}</p>}
+                <ol className="planner__candidates">
+                  {suggestion.candidates.map((candidate, position) => (
+                    <li key={candidate.crew_id}>
+                      <strong>{candidateHeadline(candidate, position + 1)}</strong>
+                      <ul>
+                        {reasonLines(candidate).map((line) => (
+                          <li
+                            key={line.factor}
+                            className={line.empty ? 'planner__reason-empty' : undefined}
+                          >
+                            {line.points} {line.factor}: {line.detail}
+                          </li>
+                        ))}
+                      </ul>
+                      <button type="button" onClick={() => setCrewId(candidate.crew_id)}>
+                        Usar {candidate.code}
+                      </button>
+                    </li>
+                  ))}
+                </ol>
+              </>
+            ) : (
+              <p role="status" className="planner__warning">
+                Ninguna cuadrilla activa cumple lo que exige este formulario.
+              </p>
+            )}
+            {exclusionLines(suggestion).length > 0 && (
+              <>
+                <h4>Descartadas</h4>
+                <ul className="planner__excluded">
+                  {exclusionLines(suggestion).map((item) => (
+                    <li key={item.crew_id}>
+                      {item.code}: {item.reason}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </section>
         )}
 
         <label htmlFor="crew">Cuadrilla</label>

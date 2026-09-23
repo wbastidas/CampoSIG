@@ -132,3 +132,53 @@ export function assignSelection(
     body: JSON.stringify({ work_order_ids: workOrderIds, crew_id: crewId, reason }),
   });
 }
+
+/** One factor's contribution to a crew's score, with the sentence that explains it (RF-021). */
+export interface SuggestionReason {
+  factor: string;
+  points: number;
+  detail: string;
+}
+
+export interface SuggestedCrew {
+  crew_id: string;
+  code: string;
+  name: string;
+  score: number;
+  reasons: SuggestionReason[];
+}
+
+export interface ExcludedCrew {
+  crew_id: string;
+  code: string;
+  name: string;
+  reason: string;
+}
+
+export interface CrewSuggestion {
+  work_order_id: string;
+  /** What the order's form demands. Shown so the planner sees why a crew is missing. */
+  required_competencies: string[];
+  candidates: SuggestedCrew[];
+  /** Ruled out, never silently dropped: otherwise the planner assigns them by hand. */
+  excluded: ExcludedCrew[];
+  /** What the score could not take into account, in the server's words. */
+  caveats: string[];
+}
+
+/**
+ * Ask which crews fit a work order (RF-021).
+ *
+ * A suggestion, not an assignment: nothing changes until the planner clicks.
+ */
+export function fetchSuggestedCrews(
+  businessUnit: string,
+  workOrderId: string,
+  signal?: AbortSignal,
+): Promise<CrewSuggestion> {
+  const params = new URLSearchParams({ business_unit: businessUnit });
+  return request<CrewSuggestion>(
+    `${BASE}/work-orders/${encodeURIComponent(workOrderId)}/suggested-crews?${params}`,
+    { signal },
+  );
+}

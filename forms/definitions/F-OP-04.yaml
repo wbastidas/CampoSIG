@@ -10,4 +10,6 @@ form:
   min_photos: {before: 1, after: 0}
   requires_ats: true
   track_route: true
+  # Trabajo sobre la red de media tensión (RF-021).
+  requires_competencies: ['MT']
   applies_to_asset_types: [support_structure, line_segment]

@@ -11,4 +11,7 @@ form:
   blocks: [B01, B02, B03, AP01, B05, B06, B09, B10, B12]
   min_photos: {before: 1, after: 1}
   requires_ats: true
+  # La cuadrilla tiene que ser de APG (RF-021). El resto —altura, por ejemplo— lo decide
+  # el área al validar este formulario contra su práctica.
+  requires_competencies: ['APG']
   applies_to_asset_types: [street_light]

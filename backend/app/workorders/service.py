@@ -120,6 +120,9 @@ def create_work_order(
     latitude: float | None = None,
     feeder_code: str | None = None,
     zone: str | None = None,
+    #: When the work is due (RF-010). The column existed and nothing set it, so every board that
+    #: reads it — the SLA one of RF-130, the SLA pressure of RF-021 — saw nothing but nulls.
+    sla_due_at: datetime | None = None,
     planner_id: str | None = None,
 ) -> WorkOrder:
     """Create a work order for one business unit.
@@ -141,6 +144,7 @@ def create_work_order(
         asset_code=asset_code,
         feeder_code=feeder_code,
         zone=zone,
+        sla_due_at=sla_due_at,
         planner_id=planner_id,
         state=WorkOrderState.PLANNED if planner_id else WorkOrderState.DRAFT,
     )

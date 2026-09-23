@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.assignment.suggest import TOP_N, suggest_crews
 from app.auth.dependencies import require_roles, unit_scope_query
 from app.auth.principal import Role
 from app.infra.database import get_session
@@ -183,6 +184,29 @@ def work_orders_geojson(
 def crews_with_workload(session: SessionDep, business_unit: str) -> list[dict[str, Any]]:
     """The shared board several planners work against (RF-313)."""
     return crew_workload(session, _unit(session, business_unit))
+
+
+@router.get(
+    "/work-orders/{order_id}/suggested-crews",
+    dependencies=[Depends(require_roles(Role.PLANNER, Role.SUPERVISOR))],
+    summary="Top 3 de cuadrillas con puntaje explicable (RF-021)",
+)
+def suggested_crews(
+    session: SessionDep,
+    order_id: uuid.UUID,
+    business_unit: str,
+    top: Annotated[int, Query(ge=1, le=10)] = TOP_N,
+) -> dict[str, Any]:
+    """A suggestion, not an assignment: the planner still clicks.
+
+    The reasons travel with the score because a number a planner cannot argue with is one they will
+    either follow blindly or ignore, and both are worse than no suggestion at all.
+    """
+    unit = _unit(session, business_unit)
+    order = session.get(WorkOrder, order_id)
+    if order is None or order.business_unit_id != unit.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "la OT no existe en esta unidad de negocio")
+    return suggest_crews(session, unit, order, top=top).as_dict()
 
 
 @router.post(

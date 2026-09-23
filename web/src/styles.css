@@ -918,3 +918,38 @@ fieldset {
 .reg-status {
   color: var(--exito);
 }
+
+/* --- RF-021: la sugerencia de cuadrilla en el panel del planificador --- */
+.planner__suggestion {
+  border-top: 1px solid var(--borde);
+  padding-top: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.planner__candidates {
+  padding-left: 1.2rem;
+  margin: 0;
+}
+
+.planner__candidates > li + li {
+  margin-top: 0.6rem;
+}
+
+.planner__candidates ul {
+  list-style: none;
+  padding-left: 0;
+  margin: 0.2rem 0;
+  font-size: 0.85rem;
+}
+
+/* Un factor que no aportó nada se atenúa pero no se esconde: ocultarlo haría que una cuadrilla
+   con 40 puntos de cuatro factores se leyera como una con 40 de uno. */
+.planner__reason-empty {
+  color: var(--texto-suave);
+}
+
+.planner__excluded {
+  font-size: 0.85rem;
+  color: var(--texto-suave);
+  padding-left: 1.2rem;
+}
