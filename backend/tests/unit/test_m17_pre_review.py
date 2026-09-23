@@ -616,3 +616,29 @@ def test_la_guarda_de_la_regla_14_detecta_un_import_prohibido() -> None:
         if isinstance(node, ast.ImportFrom) and node.module == "app.review.service"
     ]
     assert found == ["app.review.service"]
+
+
+def test_rf_171_la_hora_futura_se_encuentra_aunque_el_informe_corra_mucho_despues() -> None:
+    """Regresión: `now` tenía precedencia sobre el envío, así que la regla se callaba.
+
+    Cualquiera que pasara un `now` —el lote nocturno, la evaluación de los conjuntos dorados—
+    comparaba contra el momento equivocado. Lo encontró `ml/agents_eval`: nueve de nueve casos
+    sembrados con una hora posterior al envío pasaban sin que nadie los levantara, y el recall
+    seguía por encima del piso. Una compuerta puede pasar con una regla entera muda.
+    """
+    found = coherence.check_times_are_not_in_the_future(
+        facts(answers={"finished_at": (SUBMITTED + timedelta(hours=3)).isoformat()}),
+        SUBMITTED + timedelta(days=2),
+    )
+    assert len(found) == 1
+    assert "posterior al envío" in found[0].message
+
+
+def test_rf_171_sin_hora_de_envio_el_reloj_es_el_respaldo() -> None:
+    """Es el único caso en que comparar contra el reloj de quien corre es lo correcto: no hay otra
+    referencia, y una hora declarada en 2027 sigue siendo una hora futura."""
+    found = coherence.check_times_are_not_in_the_future(
+        facts(answers={"finished_at": "2027-01-01T08:00:00+00:00"}, submitted_at=None),
+        SUBMITTED,
+    )
+    assert len(found) == 1

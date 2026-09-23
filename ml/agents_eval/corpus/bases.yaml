@@ -1,0 +1,192 @@
+# Capturas limpias de las que se siembra (guía de entrenamiento 11.2).
+#
+# Son la mitad limpia del conjunto y, a la vez, el punto de partida de la mitad sembrada: cada
+# perturbación se aplica sobre una de estas, así que un falso positivo y un verdadero positivo se
+# miden sobre la misma captura y la diferencia es la perturbación y nada más.
+#
+# Variadas a propósito. Un conjunto de diez copias del mismo caso da una precisión preciosa y no
+# dice nada: lo que descubre un falso positivo es la captura legítima que se parece a un problema
+# —la cuadrilla que trabajó al borde de la tolerancia del GPS, la que cerró en cinco minutos, la
+# que aceptó una propuesta de IA con confianza justa— y esas son las que hay que tener aquí.
+#
+# Nada de nombres del modelo de datos de CNEL (regla 4): los campos son las claves canónicas del
+# perfil sintético.
+
+bases:
+  - id: base-01-inspeccion-normal
+    note: Inspección de rutina, todo en orden y con holgura.
+    answers:
+      work_order_code: OT-001001
+      work_type: inspeccion_preventiva
+      priority: media
+      general_condition: regular
+      dispatched_at: "2026-09-14T07:05:00-05:00"
+      departed_at: "2026-09-14T07:20:00-05:00"
+      arrived_at: "2026-09-14T08:10:00-05:00"
+      started_at: "2026-09-14T08:15:00-05:00"
+      finished_at: "2026-09-14T09:40:00-05:00"
+      gps: {latitude: -2.1710, longitude: -79.9002}
+    asset: {latitude: -2.1712, longitude: -79.9001}
+    submitted_at: "2026-09-14T10:05:00-05:00"
+    photos:
+      - {id: ev-01a, stage: antes, hash: "1a01", verified: true}
+      - {id: ev-01b, stage: despues, hash: "1b01", verified: true}
+
+  - id: base-02-cambio-luminaria-rapido
+    note: Cambio de luminaria accesible. Seis minutos es corto y es real.
+    answers:
+      work_order_code: OT-001002
+      work_type: mantenimiento_correctivo
+      priority: alta
+      general_condition: bueno
+      arrived_at: "2026-09-14T11:00:00-05:00"
+      started_at: "2026-09-14T11:02:00-05:00"
+      finished_at: "2026-09-14T11:08:00-05:00"
+      gps: {latitude: -2.1500, longitude: -79.8800}
+    asset: {latitude: -2.1501, longitude: -79.8799}
+    submitted_at: "2026-09-14T11:30:00-05:00"
+    photos:
+      - {id: ev-02a, stage: antes, hash: "2a02", verified: true}
+      - {id: ev-02b, stage: despues, hash: "2b02", verified: true}
+
+  - id: base-03-gps-al-borde
+    note: >-
+      El activo está a 230 m de donde se capturó: bajo arbolado o junto a un muro de subestación
+      eso pasa, y está dentro de la tolerancia. Es la captura legítima que más se parece a un
+      problema.
+    answers:
+      work_order_code: OT-001003
+      work_type: inspeccion_preventiva
+      priority: baja
+      general_condition: regular
+      arrived_at: "2026-09-15T09:00:00-05:00"
+      started_at: "2026-09-15T09:05:00-05:00"
+      finished_at: "2026-09-15T10:00:00-05:00"
+      gps: {latitude: -2.1700, longitude: -79.9000}
+    asset: {latitude: -2.1720, longitude: -79.9002}
+    submitted_at: "2026-09-15T10:20:00-05:00"
+    photos:
+      - {id: ev-03a, stage: antes, hash: "3a03", verified: true}
+
+  - id: base-04-voz-confianza-justa
+    note: Valor dictado con 0,62 de confianza y aceptado sin cambios. Por encima del umbral.
+    answers:
+      work_order_code: OT-001004
+      work_type: inspeccion_preventiva
+      priority: media
+      general_condition: malo
+      started_at: "2026-09-15T14:00:00-05:00"
+      finished_at: "2026-09-15T15:10:00-05:00"
+      gps: {latitude: -2.2000, longitude: -79.9100}
+    asset: {latitude: -2.2001, longitude: -79.9101}
+    submitted_at: "2026-09-15T15:40:00-05:00"
+    photos:
+      - {id: ev-04a, stage: antes, hash: "4a04", verified: true}
+      - {id: ev-04b, stage: despues, hash: "4b04", verified: true}
+    ai_values:
+      - {field: material, origin: voz, confidence: 0.62, accepted_unchanged: true, confirmed_by: "kc|tecnico.7"}
+
+  - id: base-05-vision-confirmada
+    note: Propuesta de visión corregida por la persona; la confianza baja ya no importa.
+    answers:
+      work_order_code: OT-001005
+      work_type: inspeccion_preventiva
+      priority: media
+      general_condition: regular
+      started_at: "2026-09-16T08:00:00-05:00"
+      finished_at: "2026-09-16T09:00:00-05:00"
+      gps: {latitude: -2.1800, longitude: -79.8900}
+    asset: {latitude: -2.1802, longitude: -79.8901}
+    submitted_at: "2026-09-16T09:20:00-05:00"
+    photos:
+      - {id: ev-05a, stage: antes, hash: "5a05", verified: true}
+    ai_values:
+      - {field: material, origin: vision, confidence: 0.41, accepted_unchanged: false, confirmed_by: "kc|tecnico.3"}
+
+  - id: base-06-jornada-larga
+    note: Trabajo de media jornada, con toda la secuencia de tiempos.
+    answers:
+      work_order_code: OT-001006
+      work_type: mantenimiento_correctivo
+      priority: alta
+      general_condition: malo
+      dispatched_at: "2026-09-16T06:30:00-05:00"
+      departed_at: "2026-09-16T06:45:00-05:00"
+      arrived_at: "2026-09-16T07:50:00-05:00"
+      started_at: "2026-09-16T08:00:00-05:00"
+      finished_at: "2026-09-16T13:30:00-05:00"
+      gps: {latitude: -2.2200, longitude: -79.9300}
+    asset: {latitude: -2.2199, longitude: -79.9301}
+    submitted_at: "2026-09-16T14:00:00-05:00"
+    photos:
+      - {id: ev-06a, stage: antes, hash: "6a06", verified: true}
+      - {id: ev-06b, stage: despues, hash: "6b06", verified: true}
+      - {id: ev-06c, stage: despues, hash: "6c06", verified: true}
+
+  - id: base-07-vecina-en-la-misma-calle
+    note: >-
+      Otra OT de la cuadrilla a 40 m: dos postes de la misma calle. Distinto punto, fotos
+      distintas. Es la vecindad normal de un trabajo de red, y no es un patrón.
+    answers:
+      work_order_code: OT-001007
+      work_type: inspeccion_preventiva
+      priority: media
+      general_condition: bueno
+      started_at: "2026-09-17T09:00:00-05:00"
+      finished_at: "2026-09-17T10:15:00-05:00"
+      gps: {latitude: -2.1600, longitude: -79.8850}
+    asset: {latitude: -2.1601, longitude: -79.8851}
+    submitted_at: "2026-09-17T10:40:00-05:00"
+    photos:
+      - {id: ev-07a, stage: antes, hash: "7a07", verified: true}
+    other_orders:
+      - {id: wo-vecina, code: OT-000999, hashes: ["9a99"], latitude: -2.1604, longitude: -79.8850}
+
+  - id: base-08-sin-tiempos
+    note: Captura antigua sin secuencia de tiempos. Escasa, no incoherente.
+    answers:
+      work_order_code: OT-001008
+      work_type: inspeccion_preventiva
+      priority: baja
+      general_condition: regular
+      gps: {latitude: -2.1900, longitude: -79.9200}
+    asset: {latitude: -2.1901, longitude: -79.9199}
+    submitted_at: "2026-09-17T16:00:00-05:00"
+    photos:
+      - {id: ev-08a, stage: antes, hash: "8a08", verified: true}
+
+  - id: base-09-normativa-cumple
+    note: Hallazgo normativo que cumple; no es una observación que el informe deba levantar.
+    answers:
+      work_order_code: OT-001009
+      work_type: mantenimiento_correctivo
+      priority: alta
+      general_condition: bueno
+      started_at: "2026-09-18T08:00:00-05:00"
+      finished_at: "2026-09-18T09:30:00-05:00"
+      gps: {latitude: -2.1750, longitude: -79.8950}
+    asset: {latitude: -2.1751, longitude: -79.8951}
+    submitted_at: "2026-09-18T10:00:00-05:00"
+    photos:
+      - {id: ev-09a, stage: antes, hash: "9a09", verified: true}
+    regulatory:
+      - rule: plazo_apg
+        outcome: cumple
+        severity: low
+        message: "Atendida dentro del plazo."
+        norm_ref: "ARCERNNR 002/20"
+        article_ref: "Art. 12"
+        limit_verified: true
+
+  - id: base-10-sin-fotos
+    note: Captura sin evidencia. Lo bloquea la compuerta de aprobación (I6), no el informe.
+    answers:
+      work_order_code: OT-001010
+      work_type: inspeccion_preventiva
+      priority: media
+      general_condition: regular
+      started_at: "2026-09-18T14:00:00-05:00"
+      finished_at: "2026-09-18T15:00:00-05:00"
+      gps: {latitude: -2.2100, longitude: -79.9250}
+    asset: {latitude: -2.2101, longitude: -79.9251}
+    submitted_at: "2026-09-18T15:30:00-05:00"

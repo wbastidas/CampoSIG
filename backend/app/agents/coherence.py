@@ -98,8 +98,13 @@ def check_times_are_not_in_the_future(
     Compared against the submission, not against the clock of whoever runs the report: a night batch
     that ran twelve hours later would otherwise find nothing, and a run in a different timezone
     would find everything.
+
+    That ordering is the whole rule, and it used to be the other way round: `now` took precedence,
+    so any caller that passed one — the night batch, the golden-set evaluation — silently compared
+    against the wrong moment and the rule went quiet. The clock is only the fallback for a capture
+    that carries no submission time, where there is nothing else to compare against.
     """
-    reference = now or facts.submitted_at
+    reference = facts.submitted_at or now
     if reference is None:
         return []
     found: list[Observation] = []

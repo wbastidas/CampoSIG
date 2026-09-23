@@ -27,22 +27,50 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 #    customer's geodatabase (docs/modelo-datos-cnel/). These belong in profiles/ only.
 #    Generic words (CODIGO, VOLTAJE) are excluded on purpose: they would produce false
 #    positives without proving anything.
+# fmt: off
+# Compacto a propósito: es una lista de nombres del cliente, y una por línea la vuelve
+# ilegible sin decir nada más. El formateador la respeta, no la sufre.
 CUSTOMER_MODEL_IDENTIFIERS = [
     # Feature classes / tables
-    "EstructuraSoporte", "ESTRUCTURAENPOSTE", "EstructuraANivel", "CATALOGOESTRUCTURA",
-    "PuestoTransfDistribucion", "UNIDADTRANSFDISTRIBUCION", "PuestoTransfPotencia",
-    "UNIDADTRANSFPOTENCIA", "PuestoSeccionador", "PuestoSeccionadorFusible",
-    "PuestoProteccionDinamico", "UNIDADPROTECCIONDINAMICO", "PuestoProteccionBajaTension",
-    "PuestoReguladorTension", "UNIDADREGULADORTENSION", "PuestoCorrectorFactorPotencia",
-    "UNIDADCAPACITOR", "TramoDistribucionAereo", "TramoDistribucionSubterraneo",
-    "TramoBajaTensionAereo", "TramoBajaTensionSubterraneo", "TramoSubtransmisionAereo",
-    "TramoSubtransmisionSubterraneo", "CIRCUITOFUENTE", "CONEXIONCONSUMIDOR",
-    "ATRIBUTOSCONSUMIDOR", "PuntoCarga", "PuntoApertura", "PuntoMiscelaneo",
-    "GeneradorDistribuido", "OPERADORAENPOSTE", "INSTITUCIONENPOSTE", "DATOSOPERADORA",
-    "Electrico_RedGeom", "Electrico_Complementos",
+    "EstructuraSoporte",
+    "ESTRUCTURAENPOSTE",
+    "EstructuraANivel",
+    "CATALOGOESTRUCTURA",
+    "PuestoTransfDistribucion",
+    "UNIDADTRANSFDISTRIBUCION",
+    "PuestoTransfPotencia",
+    "UNIDADTRANSFPOTENCIA",
+    "PuestoSeccionador",
+    "PuestoSeccionadorFusible",
+    "PuestoProteccionDinamico",
+    "UNIDADPROTECCIONDINAMICO",
+    "PuestoProteccionBajaTension",
+    "PuestoReguladorTension",
+    "UNIDADREGULADORTENSION",
+    "PuestoCorrectorFactorPotencia",
+    "UNIDADCAPACITOR",
+    "TramoDistribucionAereo",
+    "TramoDistribucionSubterraneo",
+    "TramoBajaTensionAereo",
+    "TramoBajaTensionSubterraneo",
+    "TramoSubtransmisionAereo",
+    "TramoSubtransmisionSubterraneo",
+    "CIRCUITOFUENTE",
+    "CONEXIONCONSUMIDOR",
+    "ATRIBUTOSCONSUMIDOR",
+    "PuntoCarga",
+    "PuntoApertura",
+    "PuntoMiscelaneo",
+    "GeneradorDistribuido",
+    "OPERADORAENPOSTE",
+    "INSTITUCIONENPOSTE",
+    "DATOSOPERADORA",
+    "Electrico_RedGeom",
+    "Electrico_Complementos",
     # Volatile-by-business-unit domain field (01_Dominios.md warning).
     "ALIMENTADORID",
 ]
+# fmt: on
 
 # 2) CONNECTIVITY — Esri's own geometric-network fields. These are NOT customer schema:
 #    they are identical in every geometric network, in every utility. So they are not a
@@ -56,7 +84,9 @@ CUSTOMER_MODEL_IDENTIFIERS = [
 #    enforced where it actually matters — at runtime, by ModelResolver.assert_writable
 #    and the agent's guards, both of which include it and are covered by tests.
 CONNECTIVITY_IDENTIFIERS = [
-    "ANCILLARYROLE", "CIRCUITSOURCEGUID", "PARENTCIRCUITSOURCEGUID",
+    "ANCILLARYROLE",
+    "CIRCUITSOURCEGUID",
+    "PARENTCIRCUITSOURCEGUID",
     "ELECTRICTRACEWEIGHT",
 ]
 
@@ -132,10 +162,10 @@ def main() -> int:
     findings = scan()
     if not findings:
         print(
-        f"OK — sin fugas del modelo de datos "
-        f"({len(CUSTOMER_MODEL_IDENTIFIERS)} identificadores del cliente + "
-        f"{len(CONNECTIVITY_IDENTIFIERS)} campos de conectividad vigilados)"
-    )
+            f"OK — sin fugas del modelo de datos "
+            f"({len(CUSTOMER_MODEL_IDENTIFIERS)} identificadores del cliente + "
+            f"{len(CONNECTIVITY_IDENTIFIERS)} campos de conectividad vigilados)"
+        )
         return 0
 
     print("FALLA RF-305 — identificadores del modelo de datos real fuera de profiles/:\n")

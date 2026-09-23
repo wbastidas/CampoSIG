@@ -62,7 +62,7 @@ class Py3OnlyVisitor(ast.NodeVisitor):
             self._flag(node, "anotación de retorno en def")
         for arg in list(node.args.args) + list(node.args.kwonlyargs):
             if arg.annotation is not None:
-                self._flag(node, "anotación de argumento '%s'" % arg.arg)
+                self._flag(node, f"anotación de argumento '{arg.arg}'")
         if node.args.kwonlyargs:
             self._flag(node, "argumentos keyword-only")
         self.generic_visit(node)
@@ -84,7 +84,7 @@ def check_file(path: Path) -> list[tuple[int, str]]:
     try:
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     except SyntaxError as exc:
-        return [(exc.lineno or 0, "no parsea: %s" % exc.msg)]
+        return [(exc.lineno or 0, f"no parsea: {exc.msg}")]
     visitor = Py3OnlyVisitor()
     visitor.visit(tree)
     return visitor.findings
@@ -103,26 +103,25 @@ def main() -> int:
         elif path.is_file():
             files.append(path)
         else:
-            print("AVISO — no existe: %s" % raw)
+            print(f"AVISO — no existe: {raw}")
 
     total = 0
     for path in files:
         findings = check_file(path)
         if findings:
             total += len(findings)
-            print("\n%s:" % path)
+            print(f"\n{path}:")
             for lineno, what in findings:
-                print("  línea %d: %s" % (lineno, what))
+                print(f"  línea {lineno}: {what}")
 
     if total:
         print(
             "\nFALLA ADR-008 — el agente debe ser Python 2.7 válido: es el único arcpy "
-            "que edita redes geométricas (H12). %d problema(s) en %d archivo(s)."
-            % (total, len(files))
+            f"que edita redes geométricas (H12). {total} problema(s) en {len(files)} archivo(s)."
         )
         return 1
 
-    print("OK — %d archivo(s) compatibles con Python 2.7" % len(files))
+    print(f"OK — {len(files)} archivo(s) compatibles con Python 2.7")
     return 0
 
 

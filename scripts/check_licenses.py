@@ -230,7 +230,10 @@ def main() -> int:
     elections: list[tuple[str, str, list[str]]] = []
     skipped = 0
 
-    for dist in sorted(metadata.distributions(), key=lambda d: (d.metadata.get("Name") or "").lower()):
+    def sort_key(dist: metadata.Distribution) -> str:
+        return (dist.metadata.get("Name") or "").lower()
+
+    for dist in sorted(metadata.distributions(), key=sort_key):
         name = dist.metadata.get("Name")
         if not name:
             continue

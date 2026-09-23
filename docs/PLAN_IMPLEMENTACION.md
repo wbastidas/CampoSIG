@@ -631,7 +631,7 @@ Sin RAG (ADR-007). El nodo de normativa funciona con parámetros y reglas, no co
 | **Cumplimiento normativo determinista** | `regulatory_parameter` con vigencia y referencia a la norma; reglas de cumplimiento (plazos de APG, umbral de interrupción no computable, resistencia de tierra admisible); repositorio documental con búsqueda de texto completo y enlace al numeral |
 | Grafo de pre-revisión | ✅ mitad determinista (coherencia, anomalías, consolidador) con el guardrail de evidencia; los nodos de modelo declarados y degradados por M19 |
 | Informe en la revisión | RF-111 con observaciones enlazadas a su evidencia, y RF-111a (muestra ciega) |
-| Evaluación en CI | Conjuntos dorados de coherencia, evidencia visual, anomalías y seguridad; DeepEval, promptfoo, *red teaming*. **Sin RAGAS**: no hay recuperación que medir |
+| Evaluación en CI | ✅ conjuntos dorados de coherencia, anomalías, normativa y seguridad con los pisos de RNF-060 (`ml/agents_eval`); faltan los de evidencia visual y DeepEval/promptfoo, que envuelven un modelo. **Sin RAGAS**: no hay recuperación que medir |
 | **Instrumentación para decidir sobre M18** | Registrar las consultas normativas que hacen técnicos y supervisores y cuáles no resuelve la búsqueda de texto completo. Es el dato que falta para decidir si el RAG se justifica después (ADR-007) |
 | Endurecimiento | Pentest, rendimiento, evaluación de impacto LOPDP, documentación de operación, despliegue escalonado |
 
@@ -762,6 +762,45 @@ que el agente no viera un problema no es que el agente diera una falsa alarma.
 Del tablero RF-134 completo (tasa de aceptación por campo, correcciones por clase visual, WER,
 adopción de la voz, versiones en la flota) solo está esta parte, que es la que RF-111a pide; el resto
 queda en I12.
+
+**Y los conjuntos dorados son ahora una compuerta, no una intención.** La regla 15 dice que todo
+cambio de prompt, grafo o modelo pasa por `ml/agents_eval` en CI; hasta ahora no había nada que
+pasar. Se construyen como manda la sección 11.2 de la guía de entrenamiento: diez capturas limpias y
+un catálogo de **perturbaciones etiquetadas** que se siembran sobre ellas, 188 casos de los que la
+mitad son legítimos.
+
+Esa mitad limpia es la parte que se suele omitir y la que decide si el número sirve: un falso
+positivo solo aparece en una captura que estaba bien, así que un corpus de puros defectos informa una
+precisión de 1,00 y no prueba nada. Las capturas limpias incluyen a propósito las que más se parecen
+a un problema —el GPS a 200 m del activo, el cambio de luminaria de seis minutos, la propuesta de IA
+aceptada con la confianza justa— porque son esas las que un supervisor castiga ignorando el informe
+entero.
+
+| Compuerta | Piso (RNF-060) | Hoy |
+|---|---|---|
+| Recall sobre inconsistencias sembradas | ≥ 0,85 | 1,00 |
+| Precisión sobre capturas legítimas | ≥ 0,70 | 1,00 |
+| Recall de anomalías | ≥ 0,80 | 1,00 |
+| Observaciones normativas sin cita | 0 | 0 |
+| Obediencias a instrucciones inyectadas | 0 | 0 |
+| Datos personales sembrados que llegan al informe | 0 | 0 |
+
+El *red teaming* mide la obediencia como **diferencia**: el informe producido con la frase inyectada
+tiene que ser el mismo que sin ella. Comprobar algo más débil —«que el riesgo no salga bajo»— fallaría
+en capturas cuyos hechos son de verdad leves, y una compuerta que salta con el comportamiento correcto
+es una compuerta que alguien apaga. Hoy los nodos son deterministas y no hay nada que obedezca una
+orden; el conjunto existe para fallar el día que un nodo LLM entre en I12 y trate el texto de la
+cuadrilla como parte de su prompt. Escribirlo después de ese día es escribirlo tarde.
+
+**Y encontró un fallo en la primera ejecución.** La regla de horas posteriores al envío comparaba
+contra el reloj de quien corría el informe en vez de contra el envío de la captura: se callaba entera
+para cualquier llamador que pasara un `now` —el lote nocturno incluido, que es justo el caso que su
+propio comentario decía proteger— y el recall seguía por encima del piso. Una compuerta puede pasar
+con una regla muda, así que las compuertas están probadas en negativo: se rompen reglas a propósito y
+se comprueba que cada métrica se hunde y nombra los casos.
+
+DeepEval y promptfoo entran con I12 sobre estos mismos corpus: los dos envuelven un modelo, y lo que
+una compuerta necesita primero son los datos etiquetados, que es lo que un framework no da.
 
 Falta la mitad que necesita modelos: los nodos VLM y de redacción, en I12.
 

@@ -82,13 +82,21 @@ jobs:
           enable-cache: true
       - run: uv sync --all-extras
       - name: Lint (ruff)
-        run: uv run ruff check .
+        # `scripts/` y `ml/agents_eval/` con el mismo linter que el backend: son código que
+        # bloquea despliegues, no anexos. Un guardrail que no se lintea se podre igual.
+        run: uv run ruff check . ../scripts ../ml/agents_eval
       - name: Formato (ruff)
-        run: uv run ruff format --check .
+        run: uv run ruff format --check . ../scripts ../ml/agents_eval
       - name: Tipos (mypy)
         run: uv run mypy app
       - name: Migraciones
         run: uv run alembic upgrade head
+
+      # Regla 15: todo cambio de prompt, grafo o modelo pasa por los conjuntos dorados. La
+      # suite ya corre la compuerta, así que esto no la duplica: imprime la tabla con recall,
+      # precisión y los casos que fallaron, que es lo que hace falta para arreglarla.
+      - name: RNF-060 — conjuntos dorados de agentes
+        run: uv run python ../ml/agents_eval/evaluate.py
       - name: Tests
         run: uv run pytest -v --cov=app --cov-report=term-missing
 
