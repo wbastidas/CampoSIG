@@ -18,6 +18,7 @@ import { AiDashboardScreen } from './features/ai-dashboard/AiDashboardScreen';
 import { ApgScreen } from './features/apg/ApgScreen';
 import { AuditScreen } from './features/audit/AuditScreen';
 import { DispatchBoard } from './features/dispatch/DispatchBoard';
+import { FormCatalogueScreen } from './features/form-catalogue/FormCatalogueScreen';
 import { IntegrationsScreen } from './features/integrations/IntegrationsScreen';
 import { MaintenanceScreen } from './features/maintenance/MaintenanceScreen';
 import { ModelProfileScreen } from './features/model-profile/ModelProfileScreen';
@@ -51,6 +52,7 @@ type Screen =
   | 'zonas'
   | 'politica'
   | 'normativa'
+  | 'formularios'
   | 'perfil';
 
 const SCREENS: { key: Screen; label: string; roles: string[] }[] = [
@@ -76,6 +78,10 @@ const SCREENS: { key: Screen; label: string; roles: string[] }[] = [
   // Los límites regulatorios son nacionales, no de una unidad. Quien los carga afirma haber
   // leído el texto oficial, y el auditor necesita ver quién lo afirmó (RF-150, ADR-007).
   { key: 'normativa', label: 'Parámetros regulatorios', roles: ['admin_funcional', 'auditor'] },
+  // Publicar un formulario congela su forma, y desde ahí cada OT conserva la suya. Es un acto
+  // de administración; el supervisor mira, porque es quien pregunta con qué versión se llenó
+  // una OT que le llegó rara (RF-032).
+  { key: 'formularios', label: 'Formularios', roles: ['admin_funcional', 'admin_ti', 'supervisor'] },
   // La bitácora es del auditor, y de TI para poder responder durante un incidente. No del
   // supervisor: un registro de auditoría no es un informe de gestión (RF-161).
   { key: 'bitacora', label: 'Bitácora', roles: ['auditor', 'admin_ti'] },
@@ -168,6 +174,11 @@ export function App() {
         )}
         {screen === 'normativa' && (
           <RegulatoryScreen mayEdit={roles.includes('admin_funcional')} />
+        )}
+        {screen === 'formularios' && (
+          <FormCatalogueScreen
+            mayPublish={roles.includes('admin_funcional') || roles.includes('admin_ti')}
+          />
         )}
         {screen === 'perfil' && <ModelProfileScreen businessUnit={unit} />}
       </main>

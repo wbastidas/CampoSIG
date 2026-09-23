@@ -20,6 +20,7 @@ from sqlalchemy.sql.elements import Case
 
 from app.audit import service as audit
 from app.audit.models import ActorKind, EventKind
+from app.forms import registry as form_registry
 from app.forms.catalog import get_definition
 from app.org.models import BusinessUnit
 from app.workorders.models import (
@@ -289,9 +290,18 @@ def assign(
     order.version += 1
 
     # Pin the form version at assignment time: the order executes with the version current
-    # now, not whatever is current when it closes (SRS 4.1.6).
+    # now, not whatever is current when it closes (SRS 4.1, point 6).
+    #
+    # From what is **published** (RF-032), not from the file: the files are the draft, and pinning a
+    # draft version would pin a number that names no frozen shape — so publishing later would still
+    # change what this order composes with, which is the whole bug. When nothing is published for
+    # this code the file's version stands in, because refusing to assign work would be a worse
+    # answer than a shape that is not yet frozen; `compose_for` says which case it is.
     if order.form_version is None:
-        order.form_version = get_definition(order.form_code).version
+        order.form_version = (
+            form_registry.current_version(session, order.form_code)
+            or get_definition(order.form_code).version
+        )
 
     session.add(
         DeviceCustody(

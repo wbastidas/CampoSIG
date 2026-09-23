@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.audit import service as audit
 from app.audit.models import ActorKind, EventKind
 from app.forms.composer import ComposedForm, FormComposer
+from app.forms.registry import resolve_for_order
 from app.forms.rules import missing_requirements
 from app.org.models import BusinessUnit
 from app.org.service import context_for_unit
@@ -66,9 +67,25 @@ class IntegrityError(Exception):
 
 
 def compose_for(session: Session, unit: BusinessUnit, order: WorkOrder) -> ComposedForm:
-    """The form a work order executes with, for its business unit."""
+    """The form a work order executes with: **its own version**, for its business unit (RF-032).
+
+    The shape comes from the published snapshot the order names, so publishing a new version does
+    not change what an order already assigned composes with. When the version is not published —
+    a platform that has not published yet — the files stand in and the composed form carries a
+    warning saying so, because a reviewer reading answers should know whether the form in front of
+    them is the one the technician filled in.
+
+    The unit's catalogue values are **not** frozen, on purpose: an order executed today has to name
+    a feeder that exists today (RF-304).
+    """
     resolver, metadata = context_for_unit(session, unit)
-    return FormComposer(resolver, metadata).compose(order.form_code, order.asset_type_key)
+    shape, caveat = resolve_for_order(session, order.form_code, order.form_version)
+    composed = FormComposer(resolver, metadata).compose(
+        order.form_code, order.asset_type_key, frozen=shape
+    )
+    if caveat:
+        composed.warnings.append(caveat)
+    return composed
 
 
 # --- validation --------------------------------------------------------------------

@@ -830,6 +830,57 @@ Falta la mitad que necesita modelos: los nodos VLM y de redacción, en I12.
 
 ---
 
+### RF-032: la publicación es lo que congela la forma
+
+Esto no era una funcionalidad faltante: era una **incorrección**. Los formularios viven como
+archivos bajo `forms/` y el catálogo los indexaba solo por código, así que editar `F-AP-01.yaml`
+cambiaba la forma de **todas** las OT, incluida la que un técnico ya llevaba en el teléfono. Un campo
+renombrado un martes habría hecho que las respuestas del lunes no validaran contra un formulario que
+nadie en campo vio nunca. El criterio de RF-032 —«publicar la v2 no altera las OT asignadas con la
+v1»— no se cumplía.
+
+**Los archivos son el borrador.** Editar uno no cambia nada para nadie hasta que se publica.
+Publicar congela en la base la definición **y los bloques que usa**: congelar solo la definición
+dejaría la forma a merced de una edición de bloque, que es el mismo error un nivel más abajo.
+
+**Una OT se compone contra su propia versión**, y la versión se fija **al asignarse** —que es lo que
+dice el punto 6 de la sección 4.1 del SRS, no al crearse—. Tomarla de lo publicado y no del archivo
+es el centro del asunto: fijar el número de un borrador fijaría un número que no nombra ninguna forma
+congelada, así que publicar después seguiría cambiando la OT. Hay un test de exactamente eso: se
+publica v1, se edita el archivo a v2 **sin publicar**, se asigna, y la OT queda en v1 con el bloque
+que el borrador quitó todavía presente.
+
+**Una versión obsoleta sigue componiendo.** Las OT que la llevan existen y hay que cerrarlas;
+obsoletar solo impide que una OT nueva la use.
+
+**Y lo que no se congela son los catálogos de la unidad**, deliberadamente: una OT ejecutada hoy tiene
+que nombrar un alimentador que exista hoy (RF-304). Congelarlos le daría al técnico una lista de
+subestaciones del año pasado. La forma se congela; los valores no.
+
+Cuando nada está publicado, el archivo hace de suplente y el formulario compuesto **lo dice** en sus
+avisos: un revisor que mira respuestas tiene derecho a saber si el formulario que tiene delante es el
+que el técnico llenó.
+
+**El mismo defecto, dos veces el mismo día.** El historial de versiones ordenaba por
+`published_at`, y el `now()` de PostgreSQL es el reloj de la *transacción*: dos publicaciones de una
+misma petición comparten la marca al microsegundo y «la más nueva primero» queda al azar del
+recorrido. Es exactamente el defecto que RF-150 había encontrado unas horas antes en la bitácora de
+parámetros. La conclusión ya no es «arreglar este caso» sino una regla: **ordenar un registro
+append-only por una marca de tiempo es un error con mecha larga**; lleva una secuencia de la base.
+
+**Y un agujero en el arnés de pruebas.** Los tests de RF-032 editan una definición en memoria para
+simular una versión nueva, y once tests del mismo archivo empezaron a fallar por cosas que no tenían
+que ver con lo que afirmaban: `load_definitions` y `load_blocks` son `lru_cache` y el conftest raíz
+solo limpiaba las cachés de perfil y de AMD. Ahora limpia las cuatro. El agujero llevaba ahí desde
+I2 y lo encontró el primer test que mutó un formulario.
+
+Nueve guardas rotas a propósito y detectadas — dos de ellas solo después de corregir los tests: las
+dos que importaban más (que la versión se fije desde lo publicado, y que el manifiesto anuncie lo
+publicado) pasaban con la sabotaje puesta porque en mis casos la versión del archivo y la publicada
+coincidían siempre. Los tests que las fijan ahora son los del borrador sin publicar.
+
+---
+
 ### RF-021: la sugerencia de cuadrilla, y por qué el puntaje se puede discutir
 
 «La sugerencia devuelve el top 3 de cuadrillas con puntaje explicable» es el criterio, y

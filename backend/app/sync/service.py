@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from app.dispatch.service import record_delivery
 from app.forms.catalog import load_definitions
+from app.forms.registry import published_versions
 from app.org.models import BusinessUnit
 from app.policy.service import policy_for_package
 from app.sync.models import (
@@ -190,13 +191,22 @@ def pull_work_orders(
     return orders, encode_cursor(last.updated_at, last.id)
 
 
-def form_versions() -> dict[str, str]:
+def form_versions(session: Session | None = None) -> dict[str, str]:
     """Form code to version that a device should hold.
 
-    Read from the catalogue rather than the database: forms are data on disk, versioned there
-    (SRS 4.1). The device compares versions and downloads only what changed.
+    From what is **published** (RF-032) and not from the files: the files are the draft, and a
+    device that downloaded whatever was on disk would pick up a shape nobody had published. Only the
+    codes with no published version at all fall back to the file, so a platform that has not
+    published yet still hands its phones something to work with.
+
+    The session is optional so the pure-catalogue callers — the tests of the form library — keep
+    working without a database.
     """
-    return {code: definition.version for code, definition in load_definitions().items()}
+    from_files = {code: definition.version for code, definition in load_definitions().items()}
+    if session is None:
+        return from_files
+    published = published_versions(session)
+    return {**from_files, **published}
 
 
 # --- idempotent push (RF-101) ------------------------------------------------------
@@ -298,7 +308,7 @@ def build_offline_package(
     parts = [
         {"name": "tiles", "kind": "pmtiles", "url": tile_url},
         {"name": "assets", "kind": "geojson", "count": asset_count},
-        {"name": "forms", "kind": "json", "versions": form_versions()},
+        {"name": "forms", "kind": "json", "versions": form_versions(session)},
     ]
     manifest: dict[str, Any] = {
         "business_unit": unit.code,

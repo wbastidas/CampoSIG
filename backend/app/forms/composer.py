@@ -11,7 +11,7 @@ functional administrator can change it without a release.
 from __future__ import annotations
 
 import copy
-from typing import Any
+from typing import Any, Protocol
 
 from app.forms.catalog import (
     BlockSource,
@@ -65,6 +65,24 @@ class ComposedForm:
         }
 
 
+class FormShape(Protocol):
+    """What a frozen version supplies: a definition and the blocks it referenced.
+
+    A protocol rather than an import of `forms.registry`, so composition stays a pure function of
+    data and does not drag the database layer into a module the tests exercise without one.
+    """
+
+    @property
+    def definition(self) -> FormDefinition: ...
+
+    @property
+    def blocks(self) -> dict[str, FormBlock]: ...
+
+
+#: Alias kept short because it appears in `compose`'s signature.
+FrozenShape = FormShape
+
+
 class FormComposer:
     """Assembles work-type forms for one business unit's data model.
 
@@ -77,15 +95,26 @@ class FormComposer:
         self.metadata = metadata
         self._generator = FormGenerator(resolver, metadata) if metadata else None
 
-    def compose(self, form_code: str, asset_type_key: str | None = None) -> ComposedForm:
+    def compose(
+        self,
+        form_code: str,
+        asset_type_key: str | None = None,
+        *,
+        frozen: FrozenShape | None = None,
+    ) -> ComposedForm:
         """Compose one form.
 
         :param form_code: e.g. ``F-MT-01``.
         :param asset_type_key: the asset the work targets. Required when the form has an
             asset-derived block; that block is what makes the form specific to the asset.
+        :param frozen: a published version's definition and blocks (RF-032). Given, the **shape**
+            comes from it instead of from the files, so publishing a new version does not change
+            what an existing order composes. The unit's catalogue values still come from the
+            current metadata, deliberately: an order executed today must name a feeder that exists
+            today (RF-304).
         """
-        definition = get_definition(form_code)
-        blocks = load_blocks()
+        definition = frozen.definition if frozen is not None else get_definition(form_code)
+        blocks = frozen.blocks if frozen is not None else load_blocks()
         properties: dict[str, Any] = {}
         required: list[str] = []
         ui_order: list[str] = []

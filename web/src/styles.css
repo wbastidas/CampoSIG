@@ -953,3 +953,51 @@ fieldset {
   color: var(--texto-suave);
   padding-left: 1.2rem;
 }
+
+.frm-screen section {
+  margin-bottom: 1.5rem;
+}
+
+.frm-screen table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.frm-screen th,
+.frm-screen td {
+  text-align: left;
+  padding: 0.2rem 0.3rem;
+  border-bottom: 1px solid var(--borde);
+  vertical-align: top;
+}
+
+.frm-headline {
+  font-weight: 600;
+}
+
+/* Un formulario que nadie publicó no tiene forma congelada: es lo más grave de esta pantalla. */
+.frm-nunca th {
+  color: var(--alarma);
+}
+
+/* Un borrador sin publicar es un cambio que nadie en campo ha visto. */
+.frm-borrador th {
+  font-weight: 700;
+}
+
+.frm-version-list {
+  padding-left: 1.2rem;
+}
+
+.frm-version-list > li + li {
+  margin-top: 0.4rem;
+}
+
+.frm-help {
+  font-size: 0.8rem;
+  color: var(--texto-suave);
+}
+
+.frm-status {
+  color: var(--exito);
+}

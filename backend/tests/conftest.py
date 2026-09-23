@@ -11,6 +11,7 @@ import os
 
 import pytest
 
+from app.forms.catalog import load_blocks, load_definitions
 from app.model_profile.amd import load_asset_model
 from app.model_profile.profile import load_profile
 from app.model_profile.resolver import ModelResolver
@@ -21,19 +22,26 @@ ALL_PROFILE_IDS = ["cnel-gye", "alt-synthetic"]
 
 @pytest.fixture(autouse=True)
 def _isolate_profile_caches():
-    """Clear the profile and AMD caches around every test.
+    """Clear the profile, AMD and form-catalogue caches around every test.
 
-    `load_profile` and `load_asset_model` are lru_cached, so they hand back the same
-    mutable object to every caller. A test that modifies a profile to exercise a failure
-    path would otherwise corrupt every test that ran after it — order-dependent failures
-    that look like flakiness. Clearing here makes that impossible rather than merely
-    discouraged.
+    All four are lru_cached, so they hand back the same mutable object to every caller. A test that
+    modifies a profile — or a form definition, to exercise versioning — would otherwise corrupt
+    every test that ran after it: order-dependent failures that look like flakiness. Clearing here
+    makes that impossible rather than merely discouraged.
+
+    The form catalogue was added after RF-032's tests found the hole: they edit a definition to
+    simulate publishing a new version, and eleven unrelated tests in the same file started failing
+    in ways that had nothing to do with what they were asserting.
     """
     load_profile.cache_clear()
     load_asset_model.cache_clear()
+    load_definitions.cache_clear()
+    load_blocks.cache_clear()
     yield
     load_profile.cache_clear()
     load_asset_model.cache_clear()
+    load_definitions.cache_clear()
+    load_blocks.cache_clear()
 
 
 @pytest.fixture(autouse=True)
