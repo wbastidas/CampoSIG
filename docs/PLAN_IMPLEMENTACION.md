@@ -830,6 +830,57 @@ Falta la mitad que necesita modelos: los nodos VLM y de redacción, en I12.
 
 ---
 
+### RF-151: la política de captura, y por dónde llega al teléfono
+
+El criterio de aceptación no habla de la escritura, habla de la entrega: «cambiar la política se
+refleja en el móvil en el siguiente sync». Así que la política **viaja dentro del manifiesto del
+paquete de la zona**, cuyo hash de contenido es justamente lo que un dispositivo usa para saber que
+tiene algo viejo. Cambiar la política cambia el hash, el teléfono descarga y obedece. No hay un canal
+aparte que mantener en paso, que es el que se desincroniza.
+
+**Todas las columnas son anulables y un nulo significa «sin opinión».** Una zona que solo difiere de
+su unidad en que no sube por datos móviles declara eso y nada más. La alternativa —sobrescribir la
+fila entera— obligaría a la zona a repetir los otros nueve valores, y el día que la unidad cambie uno
+la zona se quedaría callada con el viejo. Hay un test exactamente de eso: se cambia la unidad y se
+comprueba que la zona lo recibe para todo lo que no declaró.
+
+De ahí sale la regla del guardado: **una clave ausente deja el campo quieto y un nulo explícito lo
+borra.** Una pantalla que enviara los diez campos en cada guardado convertiría «esto no lo toqué» en
+«pon esto en nulo», y como el nulo significa heredar, la zona dejaría de sobrescribir cosas que nadie
+quiso cambiar. El navegador manda solo lo que cambió, y el servidor distingue las dos cosas por
+`model_fields_set` y no por un diccionario de valores por omisión.
+
+**Los valores por omisión son la lectura conservadora, no la cómoda.** El audio **no** se guarda —el
+propio RF-058 hace de guardarlo la excepción—, el consentimiento se pide y no se sube nada por datos
+móviles. Un valor por omisión que subiera un día de fotografías por el plan de datos del técnico
+sería un valor por omisión que nadie eligió.
+
+**Y `store_audio` se aplica en el servidor, no solo en el teléfono.** Esto salió de leer el criterio
+de RF-058 («respeta el parámetro `store_audio` por área») contra el código: `register_evidence`
+aceptaba audio de cualquiera. Una versión vieja de la app, una base local corrupta o un envío
+repetido no pueden hacer que la plataforma conserve la voz de una persona contra la decisión del
+área. Se rechaza en vez de aceptar y descartar en silencio: una fila de evidencia apuntando a un
+archivo que nadie va a guardar se lee como audio conservado en una auditoría y como audio perdido
+para quien vaya a buscarlo.
+
+**Una política y un límite regulatorio no son lo mismo**, y la frontera está escrita en el módulo: un
+plazo de retención es una decisión operativa del área; un plazo máximo de reposición es una cifra que
+publicó un regulador y vive en `regulatory_parameter` con su vigencia y su cita (ADR-007). Si alguna
+norma llega a poner un **techo** a una retención, ese techo va allá y una regla determinista rechaza
+la política que lo pase — la fila de política no puede convertirse en el lugar donde se guarda
+calladamente un límite legal.
+
+En la pantalla, lo primero que se ve no es lo que alguien escribió: es **lo que el teléfono va a
+obedecer**, con el origen de cada valor. Sin eso, quien cambia la política de la unidad y no ve
+cambio en el norte concluye que el sync está roto, cuando lo que pasa es que la zona lo sobrescribe.
+Y un valor heredado se muestra distinto de uno decidido, porque leerse igual es cómo se confunden.
+
+Seis guardas rotas a propósito —la precedencia zona sobre unidad, el `is not None` que distingue
+`False` de una ausencia, la validación de enteros, la aplicación de `store_audio`, la política en el
+manifiesto y el envío de solo lo cambiado— y las seis detectadas.
+
+---
+
 ### RF-152: las zonas dejan de ser una cadena de texto
 
 Hasta aquí una zona era un `String(64)`: `work_order.zone` y `crew.zone` guardan texto, y con texto

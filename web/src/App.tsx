@@ -22,6 +22,7 @@ import { IntegrationsScreen } from './features/integrations/IntegrationsScreen';
 import { MaintenanceScreen } from './features/maintenance/MaintenanceScreen';
 import { ModelProfileScreen } from './features/model-profile/ModelProfileScreen';
 import { OperationsBoard } from './features/operations/OperationsBoard';
+import { PolicyScreen } from './features/policy/PolicyScreen';
 import { ReviewScreen } from './features/review/ReviewScreen';
 import { ZonesScreen } from './features/zones/ZonesScreen';
 
@@ -47,6 +48,7 @@ type Screen =
   | 'integraciones'
   | 'bitacora'
   | 'zonas'
+  | 'politica'
   | 'perfil';
 
 const SCREENS: { key: Screen; label: string; roles: string[] }[] = [
@@ -66,6 +68,9 @@ const SCREENS: { key: Screen; label: string; roles: string[] }[] = [
   // Las zonas deciden qué cuadrilla cubre qué calle, así que moverlas es administración
   // funcional. El planificador entra a mirar: el servidor le niega la escritura igual (RF-152).
   { key: 'zonas', label: 'Zonas', roles: ['admin_funcional', 'planificador'] },
+  // La política de captura la fija el área y la obedece el teléfono. El supervisor entra a
+  // mirar, porque es quien pregunta por qué una cuadrilla hizo lo que hizo (RF-151).
+  { key: 'politica', label: 'Política de captura', roles: ['admin_funcional', 'supervisor'] },
   // La bitácora es del auditor, y de TI para poder responder durante un incidente. No del
   // supervisor: un registro de auditoría no es un informe de gestión (RF-161).
   { key: 'bitacora', label: 'Bitácora', roles: ['auditor', 'admin_ti'] },
@@ -152,6 +157,9 @@ export function App() {
         {screen === 'bitacora' && <AuditScreen businessUnit={unit} />}
         {screen === 'zonas' && (
           <ZonesScreen businessUnit={unit} mayEdit={roles.includes('admin_funcional')} />
+        )}
+        {screen === 'politica' && (
+          <PolicyScreen businessUnit={unit} mayEdit={roles.includes('admin_funcional')} />
         )}
         {screen === 'perfil' && <ModelProfileScreen businessUnit={unit} />}
       </main>

@@ -23,8 +23,10 @@ from app.forms.composer import ComposedForm, FormComposer
 from app.forms.rules import missing_requirements
 from app.org.models import BusinessUnit
 from app.org.service import context_for_unit
+from app.policy import service as policy
 from app.responses.models import (
     Evidence,
+    EvidenceKind,
     EvidenceStage,
     FieldProvenance,
     FormResponse,
@@ -32,6 +34,19 @@ from app.responses.models import (
     ValueOrigin,
 )
 from app.workorders.models import WorkOrder
+
+
+class AudioNotAllowedError(Exception):
+    """Raised when a device sends audio into an area whose policy does not keep it (RF-058).
+
+    Refused rather than accepted and quietly dropped. The area decided not to keep recordings, and
+    an evidence row pointing at a file nobody is going to store would be worse than either: it
+    would read as kept audio in an audit, and read as missing audio to whoever went looking for it.
+
+    Checked on the server and not only on the phone for the same reason answers are validated
+    twice: an old build, a corrupted local database or a replayed payload must not be able to make
+    the platform keep a customer's voice against the area's decision.
+    """
 
 
 class AnswerValidationError(Exception):
@@ -333,7 +348,20 @@ def register_evidence(
     framing: str | None = None,
     vision_result: dict[str, Any] | None = None,
 ) -> Evidence:
-    """Register a piece of evidence against a response."""
+    """Register a piece of evidence against a response.
+
+    :raises AudioNotAllowedError: for audio when the area's policy does not keep it (RF-151).
+    """
+    if kind == EvidenceKind.AUDIO:
+        zone = session.execute(
+            select(WorkOrder.zone).where(WorkOrder.id == response.work_order_id)
+        ).scalar_one_or_none()
+        allowed = policy.resolve_field(session, response.business_unit_id, "store_audio", zone)
+        if not allowed.value:
+            raise AudioNotAllowedError(
+                "la política de esta área no guarda el audio original "
+                f"(store_audio, {allowed.source}); solo se conserva la transcripción"
+            )
     evidence = Evidence(
         response_id=response.id,
         kind=kind,

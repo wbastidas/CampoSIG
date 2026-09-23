@@ -18,6 +18,9 @@
   --alarma: #7f1d1d;
   --alarma-fondo: #fef2f2;
   --acento: #1e3a5f;
+  /* Confirmación de un guardado. Verde oscuro para que contraste sobre fondo blanco: un verde
+     claro en un monitor de oficina a plena luz no se lee. */
+  --exito: #14532d;
   --radio: 4px;
 }
 
@@ -31,6 +34,8 @@
     --alarma: #fca5a5;
     --alarma-fondo: #3b1a1a;
     --acento: #93c5fd;
+    /* El verde oscuro del modo claro es ilegible sobre fondo oscuro. */
+    --exito: #86efac;
   }
 }
 
@@ -817,4 +822,46 @@ fieldset {
   width: 100%;
   font-family: monospace;
   font-size: 0.8rem;
+}
+
+.pol-screen section {
+  margin-bottom: 1.5rem;
+}
+
+.pol-screen table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.pol-screen th,
+.pol-screen td {
+  text-align: left;
+  padding: 0.2rem 0.3rem;
+  border-bottom: 1px solid var(--borde);
+}
+
+/* Un valor que nadie decidió no debe leerse igual que uno decidido. */
+.pol-inherited {
+  color: var(--texto-suave);
+  font-style: italic;
+}
+
+.pol-field {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.3rem;
+}
+
+.pol-field label {
+  min-width: 18rem;
+}
+
+.pol-help {
+  font-size: 0.8rem;
+  color: var(--texto-suave);
+}
+
+.pol-status {
+  color: var(--exito);
 }

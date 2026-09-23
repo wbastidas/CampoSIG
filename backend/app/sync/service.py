@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from app.dispatch.service import record_delivery
 from app.forms.catalog import load_definitions
 from app.org.models import BusinessUnit
+from app.policy.service import policy_for_package
 from app.sync.models import (
     SYNCABLE_STATES,
     Device,
@@ -305,6 +306,11 @@ def build_offline_package(
         "spatial_reference": unit.spatial_reference,
         "parts": parts,
         "model_package_version": model_package_version,
+        # The capture policy in force for this zone (RF-151). It travels *inside* the manifest on
+        # purpose: the hash below is what tells a device it is holding something stale, so changing
+        # a policy makes the phone re-download and obey the new one through the ordinary sync. A
+        # policy delivered on a channel of its own would be a second thing to keep in step.
+        "capture_policy": policy_for_package(session, unit, zone),
     }
     # Hash over the canonical manifest: two builds with identical content produce the same
     # hash, so a device can tell whether it already holds this package.
