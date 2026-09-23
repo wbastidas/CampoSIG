@@ -830,6 +830,50 @@ Falta la mitad que necesita modelos: los nodos VLM y de redacción, en I12.
 
 ---
 
+### RF-147: el diccionario vivo, y el camino que no estaba conectado
+
+El criterio es «un término añadido llega al móvil en el siguiente sync de catálogos», y con RF-034 los
+sinónimos ya existían como dato: «cruceta podrida» está al lado de `cruceta_podrida`. **El constructor
+del léxico no los leía.** Construía del vocabulario canónico (`profiles/amd/voice-es-EC.yaml`) y de los
+metadatos sincronizados del SIG, y de nada más. Un campo de defecto no tenía **ningún hotword**, así
+que un técnico que dictaba «cruceta podrida» no tenía nada hacia lo que empujar al decodificador.
+
+**Dos fuentes, y la división es deliberada.** El archivo del perfil es la **línea base canónica**: dice
+cómo un liniero ecuatoriano dice un valor *canónico*, y vive con el descriptor del modelo porque eso es
+parte de lo que significa «canónico»; no es administrable en caliente y no debe serlo, porque cambiarlo
+cambia el significado de todos los perfiles. Los catálogos son **la mitad viva**: los sinónimos de un
+valor viven con el valor, así que añadir un regionalismo es el mismo acto que añadir el valor, se
+versiona con él y viaja en el mismo delta al teléfono. Eso es lo que vuelve el criterio *cierto* en vez
+de *aspiracional*, y hay tests del camino completo: del catálogo al hotword, del hotword al hash del
+léxico, y del hash del catálogo al hash del paquete.
+
+Y un catálogo más, `vocabulary`, para las palabras que no son valor de nada: pistas de campo («dígame
+la altura») y términos sueltos que el decodificador debe favorecer aunque no llenen nada — si el
+técnico dice «el bushing», que no salga «el bus in».
+
+**La distinción que costó encontrar: dos necesidades distintas, no una.** `value_aliases` es el
+contrato del extractor y cubre lo que un solo dictado puede llenar; una tabla repetible se llena
+entrada por entrada, así que un defecto no pertenece ahí — y `extractable_fields` lo excluye con razón.
+Pero el **decodificador** tiene otra necesidad, más simple: haber oído las palabras. Tratar las dos
+como una sola es lo que dejaba el bloque de hallazgos entero sin dictar mientras parecía un problema
+del reconocedor. Ahora los valores anidados entran como hotwords y no como alias, y el comentario del
+código dice por qué.
+
+**Y el catálogo vacío se avisa.** Un formulario que referencia un catálogo sin valores produce un
+aviso en el léxico que nombra el catálogo, porque el síntoma sin él es «el dictado no reconoce nada»,
+que se lee como un decodificador roto y no como una lista vacía. La división política —vacía a
+propósito hasta que llegue la lista del INEC— aparece ahí, que es exactamente donde tiene que aparecer.
+
+La pantalla de administración no hizo falta inventarla: el vocabulario **es** un catálogo, así que
+hereda el versionado, el delta y la pantalla de RF-034. Lo que sí se añadió es la escritura: código,
+etiqueta, sinónimos, y —solo para `vocabulary`— el campo que anuncian. El aviso previo dice dónde va a
+caer el valor, cuántas formas nuevas aprenderá el reconocedor y que llega en el siguiente sync, porque
+un administrador que no lo sabe añade una palabra y se queda mirando un teléfono que no cambió.
+
+Nueve guardas rotas a propósito y detectadas.
+
+---
+
 ### RF-034: los catálogos que los formularios ya referenciaban
 
 Este tampoco era un hueco de funcionalidad: era una **referencia colgando**. `b11-hallazgos.yaml`

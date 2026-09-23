@@ -26,6 +26,8 @@ from app.responses.models import FieldProvenance, FormResponse, ValueOrigin
 from app.responses.service import compose_for, record_provenance
 from app.voice.extractor import ExtractionResult, FormExtractor, RuleBasedExtractor
 from app.voice.lexicon import OrderContext, VoiceLexicon, build_lexicon
+from app.voice.vocabulary import VocabularyTerms
+from app.voice.vocabulary import collect as collect_vocabulary
 from app.workorders.models import WorkOrder
 
 
@@ -56,10 +58,21 @@ def lexicon_for_order(
     *,
     form: ComposedForm | None = None,
 ) -> VoiceLexicon:
-    """The lexicon a device needs to dictate this work order's form."""
+    """The lexicon a device needs to dictate this work order's form.
+
+    The administrable dictionary is collected here (RF-147): this is the one place that has both a
+    session and a business unit, and a synonym an administrator typed has to reach the decoder
+    through the same call that builds everything else.
+    """
     resolver, metadata = context_for_unit(session, unit)
     composed = form or compose_for(session, unit, order)
-    return build_lexicon_for(resolver, metadata, composed, order_context(order))
+    return build_lexicon_for(
+        resolver,
+        metadata,
+        composed,
+        order_context(order),
+        terms=collect_vocabulary(session, unit),
+    )
 
 
 def build_lexicon_for(
@@ -67,11 +80,15 @@ def build_lexicon_for(
     metadata: GisMetadata | None,
     form: ComposedForm,
     context: OrderContext | None = None,
+    *,
+    terms: VocabularyTerms | None = None,
 ) -> VoiceLexicon:
     """Lexicon for a composed form, without touching the database.
 
     Separate from :func:`lexicon_for_order` so the offline package builder and the mobile
-    tests can build a lexicon from a form alone.
+    tests can build a lexicon from a form alone. `terms` is optional for the same reason, and a
+    lexicon built without it warns: a field whose values live in a catalogue would otherwise look
+    like a field nobody can dictate.
     """
     return build_lexicon(
         resolver,
@@ -81,6 +98,7 @@ def build_lexicon_for(
         schema=form.schema,
         asset_type_key=form.schema.get("x-asset-type"),
         context=context,
+        terms=terms,
     )
 
 

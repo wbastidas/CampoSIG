@@ -137,3 +137,75 @@ export function emptyAdvice(catalog: ResolvedCatalog | null): string | null {
     'formulario obliga al técnico a escribir en observaciones, que es donde el dato se pierde.'
   );
 }
+
+
+/** The catalogue that holds vocabulary which is not a value of anything else (RF-147). */
+export const VOCABULARY_CATALOG = 'vocabulary';
+
+export interface DraftEntry {
+  code: string;
+  label: string;
+  /** Comma-separated as typed; split on save. */
+  synonyms: string;
+  /** For the vocabulary catalogue: the form field these words announce. */
+  field: string;
+  /** True to add it only for this business unit. */
+  local: boolean;
+}
+
+export const EMPTY_DRAFT: DraftEntry = {
+  code: '',
+  label: '',
+  synonyms: '',
+  field: '',
+  local: false,
+};
+
+/** The synonyms as a list, trimmed and without repeats or blanks. */
+export function parseSynonyms(text: string): string[] {
+  const seen: string[] = [];
+  for (const part of text.split(',')) {
+    const cleaned = part.trim();
+    if (cleaned && !seen.includes(cleaned)) seen.push(cleaned);
+  }
+  return seen;
+}
+
+/**
+ * What is wrong with a draft, in Spanish, before it is sent.
+ *
+ * Duplicated from the server deliberately and kept narrow: the server is the authority, this only
+ * saves a round trip while somebody types.
+ */
+export function draftProblems(draft: DraftEntry, existing: string[]): string[] {
+  const problems: string[] = [];
+  const code = draft.code.trim();
+  if (!code) problems.push('El código es obligatorio.');
+  if (code && /\s/.test(code)) problems.push('El código no puede llevar espacios.');
+  if (!draft.label.trim()) problems.push('La etiqueta es obligatoria.');
+  if (code && existing.includes(code)) {
+    problems.push(
+      `Ya existe el valor «${code}». Guardar corrige su etiqueta y sus sinónimos; no crea otro.`,
+    );
+  }
+  return problems;
+}
+
+/** Whether the draft is worth sending at all. A duplicate code is a warning, not a blocker. */
+export function canSubmit(draft: DraftEntry): boolean {
+  return draft.code.trim() !== '' && draft.label.trim() !== '' && !/\s/.test(draft.code.trim());
+}
+
+/**
+ * What saving this draft will do, said before it happens.
+ *
+ * The «llega al móvil en el siguiente sync» half is the acceptance criterion of RF-147, and an
+ * administrator who does not know that will add a word and then wonder why the phone in their hand
+ * has not changed.
+ */
+export function submitAdvice(draft: DraftEntry, catalogCode: string, unit: string): string {
+  const scope = draft.local ? `solo en ${unit}` : 'para todas las unidades';
+  const words = parseSynonyms(draft.synonyms).length;
+  const heard = words > 0 ? ` El reconocedor de voz aprenderá ${words} forma(s) más de decirlo.` : '';
+  return `Se guardará en «${catalogCode}» ${scope}.${heard} Llega al teléfono en el siguiente sync de catálogos.`;
+}

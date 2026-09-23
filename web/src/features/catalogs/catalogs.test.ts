@@ -9,7 +9,10 @@ import { describe, expect, it } from 'vitest';
 
 import type { CatalogIndex, CatalogSummary, ResolvedCatalog } from '../../api/catalogs';
 import {
+  canSubmit,
   describeAttributes,
+  draftProblems,
+  EMPTY_DRAFT,
   emptyAdvice,
   entryRows,
   gisNote,
@@ -18,7 +21,9 @@ import {
   indexHeadline,
   indexRows,
   isEditable,
+  parseSynonyms,
   sourceLabel,
+  submitAdvice,
 } from './catalogs';
 
 function summary(overrides: Partial<CatalogSummary> = {}): CatalogSummary {
@@ -207,5 +212,50 @@ describe('emptyAdvice', () => {
     const advice = emptyAdvice(resolved({ empty: true, entries: [], note: null }));
     expect(advice).toContain('no declara por qué');
     expect(advice).toContain('observaciones');
+  });
+});
+
+describe('el borrador de un valor nuevo (RF-147)', () => {
+  it('separa los sinónimos y quita repetidos y vacíos', () => {
+    expect(parseSynonyms(' cruceta podrida , , cruceta podrida, cruceta mala ')).toEqual([
+      'cruceta podrida',
+      'cruceta mala',
+    ]);
+  });
+
+  it('exige código y etiqueta', () => {
+    expect(draftProblems({ ...EMPTY_DRAFT }, [])).toEqual([
+      'El código es obligatorio.',
+      'La etiqueta es obligatoria.',
+    ]);
+  });
+
+  it('un código con espacios se rechaza antes de enviarlo', () => {
+    const problems = draftProblems({ ...EMPTY_DRAFT, code: 'con espacio', label: 'X' }, []);
+    expect(problems[0]).toContain('espacios');
+    expect(canSubmit({ ...EMPTY_DRAFT, code: 'con espacio', label: 'X' })).toBe(false);
+  });
+
+  it('un código repetido avisa que corrige y no duplica, y no bloquea', () => {
+    const draft = { ...EMPTY_DRAFT, code: 'x', label: 'X' };
+    expect(draftProblems(draft, ['x'])[0]).toContain('no crea otro');
+    expect(canSubmit(draft)).toBe(true);
+  });
+
+  it('el aviso dice dónde cae y que llega al móvil en el siguiente sync', () => {
+    const advice = submitAdvice(
+      { ...EMPTY_DRAFT, code: 'x', label: 'X', synonyms: 'a, b', local: true },
+      'defect',
+      'GYE',
+    );
+    expect(advice).toContain('solo en GYE');
+    expect(advice).toContain('2 forma(s) más');
+    expect(advice).toContain('siguiente sync');
+  });
+
+  it('sin sinónimos no promete que el reconocedor aprenda nada', () => {
+    const advice = submitAdvice({ ...EMPTY_DRAFT, code: 'x', label: 'X' }, 'defect', 'GYE');
+    expect(advice).not.toContain('forma(s) más');
+    expect(advice).toContain('para todas las unidades');
   });
 });

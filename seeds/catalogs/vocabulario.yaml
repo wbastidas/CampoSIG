@@ -1,0 +1,83 @@
+# Diccionario vivo de vocabulario técnico (RF-147).
+#
+# Aquí van las palabras que **no** son valor de ningún otro catálogo. Los sinónimos de un valor viven
+# con el valor —«cruceta podrida» está en `defectos.yaml`, junto a `cruceta_podrida`— porque añadir un
+# regionalismo debe ser el mismo acto que añadir el valor, versionarse con él y viajar en el mismo
+# delta al teléfono. Eso es lo que vuelve cierto el criterio de RF-147: «un término añadido llega al
+# móvil en el siguiente sync de catálogos».
+#
+# Dos clases de entrada:
+#
+# * Con `attributes.field`: una **pista de campo**. Le dice al reconocedor que esas palabras anuncian
+#   ese campo del formulario («dígame la altura», «el poste mide»). Extienden —no reemplazan— las
+#   pistas canónicas de `profiles/amd/voice-es-EC.yaml`, que son parte de lo que significa
+#   «canónico» y por eso no son administrables en caliente.
+# * Sin `attributes.field`: un **término suelto**. Jerga que el decodificador debe favorecer aunque
+#   no llene ningún campo: si el técnico dice «el bushing», que no salga «el bus in».
+#
+# Línea base corta a propósito. Este catálogo es de las áreas: cada regionalismo que una cuadrilla
+# usa y el reconocedor confunde se añade aquí desde la web, y llega en el siguiente sync.
+catalog:
+  code: vocabulary
+  title: Vocabulario técnico
+  source: manual
+entries:
+  # --- Pistas de campo que la práctica ecuatoriana añade ---
+  - code: cue.condition
+    label: condicion general
+    synonyms: [como esta, en que estado, estado general, esta bueno, esta malo]
+    sort_order: 10
+    attributes: {field: general_condition}
+  - code: cue.zone
+    label: zona
+    synonyms: [sector, barrio, por donde, la zona]
+    sort_order: 11
+    attributes: {field: zone}
+  - code: cue.address
+    label: direccion
+    synonyms: [por la calle, en la avenida, la direccion, referencia]
+    sort_order: 12
+    attributes: {field: address}
+  - code: cue.observation
+    label: observacion
+    synonyms: [observacion, anoto, para que conste, dejo dicho]
+    sort_order: 13
+    attributes: {field: note}
+  - code: cue.quantity
+    label: cantidad
+    synonyms: [cuantos, cuantas, puse, use, cantidad]
+    sort_order: 14
+    attributes: {field: quantity}
+  # --- Términos sueltos del oficio en Ecuador ---
+  - code: term.bushing
+    label: bushing
+    synonyms: [buching, boshin]
+    sort_order: 40
+  - code: term.tirafusible
+    label: tirafusible
+    synonyms: [tira fusible, tirafusible, tira]
+    sort_order: 41
+  - code: term.retenida
+    label: retenida
+    synonyms: [viento, tensor, retenida]
+    sort_order: 42
+  - code: term.crucero
+    label: crucero
+    synonyms: [crucero, cruce]
+    sort_order: 43
+  - code: term.bajante
+    label: bajante
+    synonyms: [bajante, bajada]
+    sort_order: 44
+  - code: term.canastilla
+    label: canastilla
+    synonyms: [canasto, el canastillo, brazo hidraulico]
+    sort_order: 45
+  - code: term.pértiga
+    label: pertiga
+    synonyms: [pertiga, la pertiga]
+    sort_order: 46
+  - code: term.puesta_tierra
+    label: puesta a tierra
+    synonyms: [la tierra, aterrizado, aterrizamiento]
+    sort_order: 47

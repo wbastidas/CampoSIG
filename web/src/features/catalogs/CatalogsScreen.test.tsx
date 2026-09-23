@@ -48,11 +48,18 @@ function resolved(overrides: Partial<ResolvedCatalog> = {}): ResolvedCatalog {
 }
 
 function mockApi(stub: { index?: CatalogIndex; catalog?: ResolvedCatalog } = {}) {
-  const calls: { url: string; method: string }[] = [];
+  const calls: { url: string; method: string; body: unknown }[] = [];
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const method = init?.method ?? 'GET';
-    calls.push({ url, method });
+    calls.push({
+      url,
+      method,
+      body: typeof init?.body === 'string' ? JSON.parse(init.body) : null,
+    });
+    if (method === 'PUT') {
+      return { ok: true, status: 200, json: async () => ({}) } as unknown as Response;
+    }
     if (method === 'DELETE') {
       return { ok: true, status: 200, json: async () => ({}) } as unknown as Response;
     }
@@ -205,5 +212,93 @@ describe('quien no administra', () => {
     fireEvent.change(await screen.findByLabelText('Catálogo'), { target: { value: 'defect' } });
     await screen.findByText('Cruceta deteriorada');
     expect(screen.queryByText('Retirar')).toBeNull();
+  });
+});
+
+describe('añadir un valor (RF-147)', () => {
+  it('manda los sinónimos partidos y avisa que llega en el siguiente sync', async () => {
+    const { fetcher, calls } = mockApi();
+    vi.stubGlobal('fetch', fetcher);
+    render(<CatalogsScreen businessUnit="GYE" />);
+
+    fireEvent.change(await screen.findByLabelText('Catálogo'), { target: { value: 'defect' } });
+    const panel = await screen.findByRole('region', { name: 'Añadir un valor' });
+    fireEvent.change(within(panel).getByLabelText('Código'), { target: { value: 'nuevo' } });
+    fireEvent.change(within(panel).getByLabelText('Etiqueta'), { target: { value: 'Defecto nuevo' } });
+    fireEvent.change(within(panel).getByLabelText(/Sinónimos/), {
+      target: { value: 'como lo dicen, y de la otra forma' },
+    });
+    expect(within(panel).getByText(/siguiente sync/)).toBeTruthy();
+
+    fireEvent.click(within(panel).getByRole('button', { name: 'Guardar' }));
+    await waitFor(() => {
+      const put = calls.find((call) => call.method === 'PUT');
+      expect(put?.body).toEqual({
+        code: 'nuevo',
+        label: 'Defecto nuevo',
+        synonyms: ['como lo dicen', 'y de la otra forma'],
+        attributes: {},
+      });
+    });
+  });
+
+  it('«solo para esta unidad» va a la ruta de la unidad', async () => {
+    const { fetcher, calls } = mockApi();
+    vi.stubGlobal('fetch', fetcher);
+    render(<CatalogsScreen businessUnit="GYE" />);
+
+    fireEvent.change(await screen.findByLabelText('Catálogo'), { target: { value: 'defect' } });
+    const panel = await screen.findByRole('region', { name: 'Añadir un valor' });
+    fireEvent.change(within(panel).getByLabelText('Código'), { target: { value: 'propio' } });
+    fireEvent.change(within(panel).getByLabelText('Etiqueta'), { target: { value: 'Propio' } });
+    fireEvent.click(within(panel).getByLabelText(/Solo para GYE/));
+    fireEvent.click(within(panel).getByRole('button', { name: 'Guardar' }));
+
+    await waitFor(() => {
+      const put = calls.find((call) => call.method === 'PUT');
+      expect(put?.url).toContain('/units/GYE/catalog/defect/entries/propio');
+    });
+  });
+
+  it('el campo que anuncian solo aparece en el catálogo de vocabulario', async () => {
+    const { fetcher } = mockApi({
+      index: { catalogs: [summary({ code: 'vocabulary', title: 'Vocabulario técnico' })], gis_backed: [] },
+      catalog: resolved({ code: 'vocabulary', title: 'Vocabulario técnico' }),
+    });
+    vi.stubGlobal('fetch', fetcher);
+    render(<CatalogsScreen businessUnit="GYE" />);
+
+    fireEvent.change(await screen.findByLabelText('Catálogo'), { target: { value: 'vocabulary' } });
+    expect(await screen.findByLabelText(/Campo que anuncian/)).toBeTruthy();
+    expect(screen.getByText(/término suelto/)).toBeTruthy();
+  });
+
+  it('un código con espacios no se puede guardar', async () => {
+    const { fetcher, calls } = mockApi();
+    vi.stubGlobal('fetch', fetcher);
+    render(<CatalogsScreen businessUnit="GYE" />);
+
+    fireEvent.change(await screen.findByLabelText('Catálogo'), { target: { value: 'defect' } });
+    const panel = await screen.findByRole('region', { name: 'Añadir un valor' });
+    fireEvent.change(within(panel).getByLabelText('Código'), { target: { value: 'con espacio' } });
+    fireEvent.change(within(panel).getByLabelText('Etiqueta'), { target: { value: 'X' } });
+    expect(within(panel).getByText(/no puede llevar espacios/)).toBeTruthy();
+    expect(
+      within(panel).getByRole('button', { name: 'Guardar' }).getAttribute('disabled'),
+    ).not.toBeNull();
+    expect(calls.some((call) => call.method === 'PUT')).toBe(false);
+  });
+
+  it('el catálogo del ERP no ofrece añadir', async () => {
+    const { fetcher } = mockApi({
+      index: { catalogs: [summary({ code: 'material', source: 'integracion' })], gis_backed: [] },
+      catalog: resolved({ code: 'material', source: 'integracion' }),
+    });
+    vi.stubGlobal('fetch', fetcher);
+    render(<CatalogsScreen businessUnit="GYE" />);
+
+    fireEvent.change(await screen.findByLabelText('Catálogo'), { target: { value: 'material' } });
+    await screen.findByText(/sobreescribiría lo que se teclee/);
+    expect(screen.queryByRole('region', { name: 'Añadir un valor' })).toBeNull();
   });
 });

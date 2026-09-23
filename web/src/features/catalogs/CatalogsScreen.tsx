@@ -19,8 +19,14 @@ import {
   fetchResolved,
   type ResolvedCatalog,
   retireEntry,
+  saveLocalEntry,
+  saveNationalEntry,
 } from '../../api/catalogs';
 import {
+  canSubmit,
+  type DraftEntry,
+  draftProblems,
+  EMPTY_DRAFT,
   emptyAdvice,
   entryRows,
   gisNote,
@@ -28,7 +34,10 @@ import {
   indexHeadline,
   indexRows,
   isEditable,
+  parseSynonyms,
   sourceLabel,
+  submitAdvice,
+  VOCABULARY_CATALOG,
 } from './catalogs';
 
 export interface CatalogsScreenProps {
@@ -45,6 +54,7 @@ export function CatalogsScreen({ businessUnit, mayEdit = true }: CatalogsScreenP
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [draft, setDraft] = useState<DraftEntry>(EMPTY_DRAFT);
 
   const loadIndex = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -72,6 +82,7 @@ export function CatalogsScreen({ businessUnit, mayEdit = true }: CatalogsScreenP
       }
       try {
         setCatalog(await fetchResolved(businessUnit, wanted, signal));
+        setDraft(EMPTY_DRAFT);
         setError(null);
       } catch (cause) {
         if ((cause as Error).name === 'AbortError') return;
@@ -96,6 +107,36 @@ export function CatalogsScreen({ businessUnit, mayEdit = true }: CatalogsScreenP
         `«${entryCode}» queda retirado. Viaja al teléfono como lápida en el siguiente sync, para ` +
           'que deje de ofrecerlo.',
       );
+      await Promise.all([loadIndex(), loadCatalog(code)]);
+    } catch (cause) {
+      setError((cause as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const save = async () => {
+    const payload = {
+      code: draft.code.trim(),
+      label: draft.label.trim(),
+      synonyms: parseSynonyms(draft.synonyms),
+      attributes:
+        code === VOCABULARY_CATALOG && draft.field.trim()
+          ? { field: draft.field.trim() }
+          : {},
+    };
+    setBusy(true);
+    try {
+      if (draft.local) {
+        await saveLocalEntry(businessUnit, code, payload);
+      } else {
+        await saveNationalEntry(code, payload);
+      }
+      setStatus(
+        `«${payload.code}» guardado. Llega al teléfono en el siguiente sync de catálogos, y el ` +
+          'reconocedor de voz lo aprende con él.',
+      );
+      setDraft(EMPTY_DRAFT);
       await Promise.all([loadIndex(), loadCatalog(code)]);
     } catch (cause) {
       setError((cause as Error).message);
@@ -215,6 +256,72 @@ export function CatalogsScreen({ businessUnit, mayEdit = true }: CatalogsScreenP
                 ))}
               </tbody>
             </table>
+
+            {editable && (
+              <section className="cat-add" aria-label="Añadir un valor">
+                <h3>Añadir o corregir un valor</h3>
+                <p className="cat-help">
+                  Los sinónimos son cómo lo dice la gente. El reconocedor de voz los aprende, así que
+                  un regionalismo que confunde al dictado se arregla aquí (RF-147).
+                </p>
+                <label htmlFor="cat-new-code">Código</label>
+                <input
+                  id="cat-new-code"
+                  value={draft.code}
+                  onChange={(event) => setDraft({ ...draft, code: event.target.value })}
+                />
+                <label htmlFor="cat-new-label">Etiqueta</label>
+                <input
+                  id="cat-new-label"
+                  value={draft.label}
+                  onChange={(event) => setDraft({ ...draft, label: event.target.value })}
+                />
+                <label htmlFor="cat-new-syn">Sinónimos (separados por coma)</label>
+                <input
+                  id="cat-new-syn"
+                  value={draft.synonyms}
+                  onChange={(event) => setDraft({ ...draft, synonyms: event.target.value })}
+                />
+                {code === VOCABULARY_CATALOG && (
+                  <>
+                    <label htmlFor="cat-new-field">Campo que anuncian (opcional)</label>
+                    <input
+                      id="cat-new-field"
+                      value={draft.field}
+                      onChange={(event) => setDraft({ ...draft, field: event.target.value })}
+                    />
+                    <span className="cat-help">
+                      Vacío: es un término suelto que el reconocedor favorece sin llenar ningún campo.
+                    </span>
+                  </>
+                )}
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={draft.local}
+                    onChange={(event) => setDraft({ ...draft, local: event.target.checked })}
+                  />
+                  Solo para {businessUnit}
+                </label>
+
+                {draftProblems(draft, entryRows(catalog).map((row) => row.code)).map((line) => (
+                  <p key={line} role="status" className="cat-help">
+                    {line}
+                  </p>
+                ))}
+                {canSubmit(draft) && (
+                  <p className="cat-help">{submitAdvice(draft, code, businessUnit)}</p>
+                )}
+
+                <button
+                  type="button"
+                  disabled={busy || !canSubmit(draft)}
+                  onClick={() => void save()}
+                >
+                  Guardar
+                </button>
+              </section>
+            )}
           </>
         )}
       </section>

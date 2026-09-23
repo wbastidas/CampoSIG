@@ -1047,3 +1047,14 @@ fieldset {
 .cat-status {
   color: var(--exito);
 }
+
+/* Añadir un valor de catálogo (RF-034/RF-147): un formulario corto dentro del detalle. */
+.cat-add {
+  border-top: 1px solid var(--borde);
+  padding-top: 0.6rem;
+  margin-top: 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  max-width: 40rem;
+}

@@ -34,6 +34,7 @@ from app.model_profile.metadata import GisMetadata
 from app.model_profile.resolver import ModelResolver, ResolutionError
 from app.voice.grammar import extractable_fields
 from app.voice.normalizer import strip_accents
+from app.voice.vocabulary import VocabularyTerms
 
 #: Source tags on a hotword, so a boost can be explained and a lexicon diffed.
 SOURCE_WORK_ORDER = "work_order_context"
@@ -165,6 +166,27 @@ def _cue_phrases(title: str | None) -> list[str]:
     return list(dict.fromkeys(phrases + words))
 
 
+def _catalog_refs(node: Any) -> set[str]:
+    """Every `x-catalog-ref` in a composed schema, however deeply nested.
+
+    The whole schema and not only the extractable fields: a defect is dictated inside a repeatable
+    table, so `extractable_fields` rightly leaves it out — the extractor fills a table one entry at
+    a time — but the **decoder** still has to have heard «cruceta podrida». Treating those two needs
+    as one thing is what left an entire block undictatable.
+    """
+    found: set[str] = set()
+    if isinstance(node, dict):
+        ref = node.get("x-catalog-ref")
+        if isinstance(ref, str) and ref:
+            found.add(ref)
+        for value in node.values():
+            found |= _catalog_refs(value)
+    elif isinstance(node, list):
+        for item in node:
+            found |= _catalog_refs(item)
+    return found
+
+
 def build_lexicon(
     resolver: ModelResolver,
     metadata: GisMetadata | None,
@@ -175,14 +197,20 @@ def build_lexicon(
     asset_type_key: str | None = None,
     context: OrderContext | None = None,
     vocabulary: SpokenVocabulary | None = None,
+    terms: VocabularyTerms | None = None,
 ) -> VoiceLexicon:
     """Build the lexicon for one composed form in one business unit.
 
     :param schema: the composed form's JSON Schema. Walking the schema rather than the
         profile is deliberate: the lexicon must cover exactly the fields this form can
         fill, no more — hotwords for fields that are not on screen only add confusions.
+    :param terms: the administrable dictionary (RF-147), already resolved for the unit. Without it
+        a field whose values live in a platform catalogue — a defect, an activity — gets **no
+        hotwords at all**, which is the state this parameter was added to fix. It is passed in
+        rather than queried so this stays a pure function of data.
     """
     spoken = vocabulary or load_spoken_vocabulary()
+    dictionary = terms or VocabularyTerms()
     lexicon = VoiceLexicon(
         profile_id=resolver.profile.id,
         form_code=form_code,
@@ -192,6 +220,9 @@ def build_lexicon(
         negative=list(spoken.negative),
     )
     hotwords: dict[tuple[str, str], Hotword] = {}
+    #: Catalogue references already turned into hotwords by the field loop below, so the pass
+    #: over the nested ones does not repeat them.
+    covered: set[str] = set()
 
     def add_hotword(text: str, source: str) -> None:
         folded = strip_accents(text.lower()).strip()
@@ -208,9 +239,14 @@ def build_lexicon(
     properties = extractable_fields(schema)
 
     for field_key, prop in properties.items():
+        # Three sources, canonical first: the spoken vocabulary of the model descriptor, the
+        # field's own label, and whatever an area added to the `vocabulary` catalogue (RF-147).
+        # The administrable ones go last so they extend rather than displace the baseline.
         cues = list(
             dict.fromkeys(
-                spoken.attribute_cues.get(field_key, []) + _cue_phrases(prop.get("title"))
+                spoken.attribute_cues.get(field_key, [])
+                + _cue_phrases(prop.get("title"))
+                + dictionary.field_cues.get(field_key, [])
             )
         )
         if cues:
@@ -231,6 +267,24 @@ def build_lexicon(
 
         enum_ref = prop.get("x-catalog-ref")
         enum_values = prop.get("enum")
+
+        # A field whose values live in a platform catalogue (RF-034): `defect`, `activity`,
+        # `delay_reason`… Its `enum` is not in the schema — the list is data, not shape — so before
+        # RF-147 this fell through to the code-bearing branch, found no GIS domain and produced
+        # nothing. A technician dictating «cruceta podrida» had no hotword to be pushed towards.
+        administrable = dictionary.aliases_for(str(enum_ref)) if enum_ref else {}
+        if administrable:
+            covered.add(str(enum_ref))
+            lexicon.value_aliases[field_key] = {
+                code: list(forms) for code, forms in administrable.items()
+            }
+            lexicon.code_values[field_key] = sorted(administrable)
+            source = SOURCE_VOLATILE_DOMAIN if volatile else SOURCE_DOMAIN_VALUE
+            for forms in administrable.values():
+                for phrase in forms:
+                    add_hotword(phrase, source)
+            continue
+
         if not enum_ref or not isinstance(enum_values, list):
             # A code-bearing string field: its valid values are the domain's own codes,
             # which is the only thing that can turn dictated characters back into a code.
@@ -259,11 +313,35 @@ def build_lexicon(
         )
         lexicon.warnings.extend(alias_warnings)
         if aliases:
+            covered.add(str(enum_ref))
             lexicon.value_aliases[field_key] = {k: list(v) for k, v in aliases.items()}
             source = SOURCE_VOLATILE_DOMAIN if volatile else SOURCE_DOMAIN_VALUE
             for spoken_forms in aliases.values():
                 for phrase in spoken_forms:
                     add_hotword(phrase, source)
+
+    # Catalogue values that live inside a repeatable table (RF-147). Hotwords only, deliberately:
+    # `value_aliases` is the extractor's contract and covers what one dictation can fill, while a
+    # table is filled entry by entry. The decoder's need is different and simpler — it has to have
+    # heard the words.
+    for ref in sorted(_catalog_refs(schema) - covered):
+        nested = dictionary.aliases_for(ref)
+        if not nested:
+            # Said out loud, because the symptom otherwise is a technician dictating a defect and
+            # nothing being recognised, which reads as a broken decoder rather than an empty list.
+            lexicon.warnings.append(
+                f"el catálogo '{ref}' que este formulario referencia no trajo ningún valor: "
+                "lo que se dicte en ese campo no tiene con qué reconocerse"
+            )
+            continue
+        for spoken_forms in nested.values():
+            for phrase in spoken_forms:
+                add_hotword(phrase, SOURCE_DOMAIN_VALUE)
+
+    # Terms an area added that name no field and no value: jargon a decoder should still be pushed
+    # towards. Boosted like an attribute cue, because that is what they behave like.
+    for term in dictionary.terms:
+        add_hotword(term, SOURCE_ATTRIBUTE_CUE)
 
     if asset_type_key:
         add_hotword(asset_type_key.replace("_", " "), SOURCE_ASSET_LABEL)
