@@ -18,6 +18,8 @@ from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import Case
 
+from app.audit import service as audit
+from app.audit.models import ActorKind, EventKind
 from app.forms.catalog import get_definition
 from app.org.models import BusinessUnit
 from app.workorders.models import (
@@ -146,6 +148,25 @@ def create_work_order(
         order.location = func.ST_SetSRID(func.ST_MakePoint(longitude, latitude), STORAGE_SRID)
     session.add(order)
     session.flush()
+    audit.record(
+        session,
+        unit.id,
+        kind=EventKind.CREATED,
+        subject_type="orden_trabajo",
+        subject_id=str(order.id),
+        work_order_id=order.id,
+        asset_code=order.asset_code,
+        actor=planner_id or "sistema:creacion",
+        actor_kind=ActorKind.PERSON if planner_id else ActorKind.SYSTEM,
+        payload={
+            "work_type": work_type,
+            "form_code": form_code,
+            "priority": priority,
+            "source": source,
+            "external_ref": external_ref,
+            "state": order.state,
+        },
+    )
     return order
 
 
@@ -188,9 +209,26 @@ def transition(
     if target in REASON_REQUIRED and not reason:
         raise ReasonRequiredError(f"el paso a '{target}' exige un motivo")
 
+    was = order.state
     order.state = target
     order.version += 1
     session.flush()
+    # The trail records the transition here, in the funnel, and not at each of the twelve places
+    # that cause one. RF-160 lists transitions among the events that must be logged, and the only
+    # way that stays true a year from now is that the log lives where the state changes.
+    audit.record(
+        session,
+        order.business_unit_id,
+        kind=EventKind.TRANSITION,
+        subject_type="orden_trabajo",
+        subject_id=str(order.id),
+        work_order_id=order.id,
+        asset_code=order.asset_code,
+        actor=actor or "sistema:transicion",
+        actor_kind=ActorKind.PERSON if actor else ActorKind.SYSTEM,
+        payload={"from": was, "to": target, "version": order.version},
+        reason=reason,
+    )
     return order
 
 
@@ -236,6 +274,11 @@ def assign(
         if reason:
             previous.reason = reason
 
+    was = order.state
+    before = {
+        "crew_id": str(order.assigned_crew_id) if order.assigned_crew_id else None,
+        "user_sub": order.assigned_user_sub,
+    }
     order.assigned_crew_id = crew.id if crew else None
     order.assigned_user_sub = user_sub
     order.state = WorkOrderState.ASSIGNED
@@ -258,6 +301,34 @@ def assign(
         )
     )
     session.flush()
+    # Assignment sets the state directly rather than going through `transition`, so it logs its own
+    # event. Both halves travel: the reassignment (who held it, who holds it now) and the state,
+    # because an auditor reconstructing a work order's history needs the two together to explain
+    # why a device stopped being able to sync.
+    audit.record(
+        session,
+        order.business_unit_id,
+        kind=EventKind.FIELD_CHANGED,
+        subject_type="orden_trabajo",
+        subject_id=str(order.id),
+        work_order_id=order.id,
+        asset_code=order.asset_code,
+        actor=granted_by or "sistema:asignacion",
+        actor_kind=ActorKind.PERSON if granted_by else ActorKind.SYSTEM,
+        device_key=device_id,
+        payload={
+            "before": before,
+            "after": {
+                "crew_id": str(order.assigned_crew_id) if order.assigned_crew_id else None,
+                "user_sub": order.assigned_user_sub,
+            },
+            "from": was,
+            "to": order.state,
+            "version": order.version,
+            "origin": "humano" if granted_by else "sistema",
+        },
+        reason=reason,
+    )
     return order
 
 

@@ -13,6 +13,8 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.audit import service as audit
+from app.audit.models import EventKind
 from app.integrations.callcentre_adapter import enqueue_claim_closure
 from app.integrations.workorder_adapter import enqueue_result_push, enqueue_status_push
 from app.org.models import BusinessUnit
@@ -238,6 +240,30 @@ def decide(
     # The agreement is written in the decision's own transaction (RF-111a): a pair with one half
     # missing is a row that would quietly bias the kappa.
     blind.reveal(session, order.id, decision=decision, risk=agent_risk)
+
+    # The trail records the decision itself, beside the transition the decision caused. Both,
+    # because they answer different questions: the transition says the order moved, the decision
+    # says who signed for it and what they saw when they signed (RF-160, RF-161).
+    audit.record(
+        session,
+        unit.id,
+        kind=EventKind.DECIDED,
+        subject_type="orden_trabajo",
+        subject_id=str(order.id),
+        work_order_id=order.id,
+        asset_code=order.asset_code,
+        actor=reviewer_sub,
+        payload={
+            "decision": decision,
+            "response_id": str(response.id) if response else None,
+            "observations": len(observations or []),
+            # Whether the decision was taken without seeing the agent's report (RF-111a). It is part
+            # of the decision's context and an auditor reading the trail should see it.
+            "blind_sample": bool(was_blind),
+            "state": order.state,
+        },
+        reason=note,
+    )
 
     session.flush()
     return row

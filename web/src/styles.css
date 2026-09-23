@@ -644,3 +644,46 @@ fieldset {
   border-radius: var(--radio);
   font-size: 0.85rem;
 }
+
+/* Bitácora (RF-160, RF-161). Tabla densa: un auditor recorre cientos de filas buscando una. */
+.audit-chain {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin: 0.5rem 0;
+}
+
+.audit-ok {
+  color: var(--texto-suave);
+}
+
+/* Una cadena rota no se puede leer como un aviso menor. */
+.audit-broken {
+  color: var(--alarma);
+  background: var(--alarma-fondo);
+  padding: 0.2rem 0.4rem;
+  border-radius: var(--radio);
+  font-weight: 600;
+}
+
+.audit form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+
+.audit-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.audit-table th,
+.audit-table td {
+  text-align: left;
+  padding: 0.25rem 0.4rem;
+  border-bottom: 1px solid var(--borde);
+  vertical-align: top;
+}

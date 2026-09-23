@@ -185,7 +185,7 @@ así que lo verificado es el mecanismo y no un diccionario afinado a un cliente.
 | Planificadores múltiples | RF-310 a RF-313: ámbito, bloqueo optimista, dueño explícito, tablero compartido |
 | Asignación y custodia | RF-320, RF-321, RF-324: asignación a dispositivos, reasignación con motivo, historial de custodia |
 | Importación de trabajo | Adaptador del sistema de OT en modo satélite (RF-120) con idempotencia por `external_ref`; simulador `tools/legacy-ot-mock` |
-| Auditoría | M16 del SRS completo |
+| Auditoría | ✅ M16 completo: bitácora append-only con cadena de hashes (RF-160) y trazabilidad por OT, activo, usuario o dispositivo (RF-161). **Estaba dado por hecho y no existía** — ver más abajo |
 
 **Aceptación:** dos planificadores con ámbitos solapados asignan trabajo en paralelo sin pérdida ni sobrescritura; una OT importada del simulador conserva su número externo y no se duplica al reenviarla; reasignar una OT deja rastro completo de custodia.
 
@@ -827,6 +827,53 @@ DeepEval y promptfoo entran con I12 sobre estos mismos corpus: los dos envuelven
 una compuerta necesita primero son los datos etiquetados, que es lo que un framework no da.
 
 Falta la mitad que necesita modelos: los nodos VLM y de redacción, en I12.
+
+---
+
+### M16: la bitácora que se daba por hecha
+
+Este plan decía «M16 del SRS completo» desde el principio. No lo estaba. La migración de base
+declaraba una tabla `audit_event` —con otra forma: `entity_type`, `action`, `actor_sub`— y **ningún
+código escribió jamás en ella**. No tenía modelo, no aparecía en la metadata, y por eso las pruebas,
+que construyen el esquema desde la metadata, nunca la tuvieron delante. Una tabla declarada alcanzó
+para que la casilla quedara marcada.
+
+Se descubrió buscando por dónde seguir: los tiempos promedio de RF-130 (despacho → llegada → cierre)
+necesitan saber cuándo cambió de estado cada OT, y resultó que las transiciones no se registraban en
+ninguna parte. La máquina de estados movía el campo y se acabó.
+
+**Lo que ahora se registra**, en la misma transacción que el cambio: creación, cambios de campo con
+el valor anterior, el nuevo y de dónde salió el nuevo (persona o modelo, con la versión y la
+confianza), transiciones de estado con el estado de origen, asignaciones con el antes y el después,
+accesos a evidencias, exportaciones y decisiones de revisión. Lo del «mismo transacción» no es
+detalle: una bitácora que se escribiera aparte podría registrar trabajo que la base deshizo después,
+y eso es peor que no tener bitácora — es una con la que alguien defendería una decisión.
+
+**La inmutabilidad se sostiene tres veces, a tres distancias de quien tendría que vencerla:**
+
+| Dónde | Qué impide | Cómo se prueba |
+|---|---|---|
+| En la base | un disparador rechaza UPDATE y DELETE | contra PostgreSQL de verdad, y también contra la base migrada |
+| En el código | nada escribe en la tabla salvo la función de escritura, y el router de auditoría solo tiene GET | recorriendo el árbol de sintaxis de toda la aplicación; la guarda está probada en negativo |
+| En los datos | cada evento lleva el hash del anterior, y su posición es única por unidad | tres manipulaciones distintas, las tres detectadas con el motivo que un auditor puede poner en un informe |
+
+Las tres formas de manipular la cadena dan tres hallazgos distintos, y distinguirlos importa porque
+significan cosas distintas: **una fila alterada** es alguien editando historia, **un eslabón roto** es
+alguien quitando un evento del medio, y **un hueco en la secuencia** es alguien quitando el último
+—que es lo único que los enlaces solos no ven, y la razón de que la posición sea única por unidad.
+
+La cadena es por unidad de negocio y no global. Mitad ADR-009 —la bitácora de una unidad es suya— y
+mitad concurrencia: las escrituras se serializan contra la cola de la cadena, y una sola cadena
+global pondría a cada unidad del país a esperar detrás de todas las demás.
+
+Y la migración **no borra la tabla vieja a ciegas**: si en algún despliegue llegara a tener filas, se
+detiene con un mensaje en vez de destruirlas. Que una tabla esté vacía en el repositorio no prueba
+que lo esté en producción.
+
+En la pantalla, la bitácora es del auditor y de administración de TI —un registro de auditoría no es
+un informe de gestión—, con las cuatro preguntas de RF-161 como filtros que se combinan y la
+verificación de la cadena a un clic. Una cadena rota se ve rota: pintar de verde una verificación que
+falló sería el peor defecto posible de esa pantalla.
 
 ---
 

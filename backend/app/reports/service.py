@@ -20,6 +20,8 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.audit import service as audit
+from app.audit.models import EventKind
 from app.org.models import BusinessUnit
 from app.reports.acta import (
     Acta,
@@ -215,6 +217,27 @@ def issue_acta(
     record.byte_size = len(pdf)
     session.add(record)
     session.flush()
+    # An acta is data leaving the platform on paper, so it is an export and RF-160 lists exports.
+    # The digest of the bytes handed over goes in the trail too: the document register already has
+    # it, and having it in two places that were written in the same transaction is what lets an
+    # auditor tell a reissue from an alteration.
+    audit.record(
+        session,
+        order.business_unit_id,
+        kind=EventKind.EXPORTED,
+        subject_type="documento",
+        subject_id=record.verification_code,
+        work_order_id=order.id,
+        asset_code=order.asset_code,
+        actor=issued_by,
+        payload={
+            "kind": KIND_ACTA,
+            "content_hash": digest,
+            "byte_size": len(pdf),
+            "state_at_issue": record.state_at_issue,
+            "form": {"code": record.form_code, "version": record.form_version},
+        },
+    )
     return record, pdf
 
 

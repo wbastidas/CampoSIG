@@ -17,6 +17,8 @@ import jsonschema
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.audit import service as audit
+from app.audit.models import ActorKind, EventKind
 from app.forms.composer import ComposedForm, FormComposer
 from app.forms.rules import missing_requirements
 from app.org.models import BusinessUnit
@@ -180,6 +182,7 @@ def record_provenance(
     ).first()
 
     if existing is not None:
+        was = _value(existing.final_value)
         existing.origin = origin
         existing.final_value = _wrap(final_value)
         existing.proposed_value = _wrap(proposed_value)
@@ -188,6 +191,19 @@ def record_provenance(
         existing.confirmed_at = datetime.now(UTC) if confirmed_by else existing.confirmed_at
         existing.reviewer_level = reviewer_level
         session.flush()
+        _log_field_change(
+            session,
+            response,
+            field_key=field_key,
+            origin=origin,
+            before=was,
+            after=final_value,
+            proposed=proposed_value,
+            actor=confirmed_by,
+            model_name=model_name,
+            model_version=model_version,
+            confidence=confidence,
+        )
         return existing
 
     entry = FieldProvenance(
@@ -207,7 +223,74 @@ def record_provenance(
     )
     session.add(entry)
     session.flush()
+    _log_field_change(
+        session,
+        response,
+        field_key=field_key,
+        origin=origin,
+        before=None,
+        after=final_value,
+        proposed=proposed_value,
+        actor=confirmed_by,
+        model_name=model_name,
+        model_version=model_version,
+        confidence=confidence,
+    )
     return entry
+
+
+def _log_field_change(
+    session: Session,
+    response: FormResponse,
+    *,
+    field_key: str,
+    origin: str,
+    before: Any,
+    after: Any,
+    proposed: Any,
+    actor: str | None,
+    model_name: str | None,
+    model_version: str | None,
+    confidence: float | None,
+) -> None:
+    """Record a field change in the trail, with the value before and after (RF-160).
+
+    The origin travels because RF-160 asks for it by name — «origen humano o IA» — and because the
+    two are answers to different questions. A value a model proposed and a person confirmed has two
+    actors, and the trail records the person as the actor and the model in the payload: the person
+    is who answered for it (regla 8), and the model is where it came from.
+    """
+    if before == after and proposed is None:
+        # Re-saving the same manual value is not a change. Logging it would bury the changes that
+        # matter under every autosave the device makes.
+        return
+    audit.record(
+        session,
+        response.business_unit_id,
+        kind=EventKind.FIELD_CHANGED,
+        subject_type="respuesta",
+        subject_id=str(response.id),
+        work_order_id=response.work_order_id,
+        actor=actor or response.captured_by or "sistema:captura",
+        actor_kind=ActorKind.PERSON if (actor or response.captured_by) else ActorKind.SYSTEM,
+        device_key=response.device_key,
+        payload={
+            "field_key": field_key,
+            "before": before,
+            "after": after,
+            "proposed": proposed,
+            "origin": origin,
+            "model": (
+                {"name": model_name, "version": model_version, "confidence": confidence}
+                if model_name
+                else None
+            ),
+        },
+    )
+
+
+def _value(payload: dict[str, Any] | None) -> Any:
+    return None if payload is None else payload.get("v")
 
 
 def _wrap(value: Any) -> dict[str, Any] | None:

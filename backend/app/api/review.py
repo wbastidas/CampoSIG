@@ -20,7 +20,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.auth.dependencies import require_roles, unit_scope
+from app.audit import service as audit
+from app.audit.models import EventKind
+from app.auth.dependencies import current_principal, require_roles, unit_scope
 from app.auth.principal import Role
 from app.gis_gateway.models import AsBuiltBatch
 from app.gis_gateway.staging_table import asbuilt_proposal
@@ -115,7 +117,12 @@ def queue(
 
 
 @router.get("/units/{unit_code}/work-orders/{order_id}")
-def detail(session: SessionDep, unit_code: str, order_id: uuid.UUID) -> dict[str, Any]:
+def detail(
+    session: SessionDep,
+    unit_code: str,
+    order_id: uuid.UUID,
+    principal: Annotated[Any, Depends(current_principal)] = None,
+) -> dict[str, Any]:
     """Everything the decision depends on, in one call."""
     unit = _unit(session, unit_code)
     order = _order(session, unit.id, order_id)
@@ -126,6 +133,28 @@ def detail(session: SessionDep, unit_code: str, order_id: uuid.UUID) -> dict[str
         (response.evidence if response else []),
         key=lambda item: (item.stage, item.storage_key),
     )
+
+    if evidence:
+        # RF-160 lists evidence access among the events that must be logged, and this is where the
+        # access happens today: handing somebody the storage keys is handing them the photographs of
+        # a customer's premises (LOPDP). A GET that writes is unusual and deliberate — the
+        # alternative is a trail that cannot answer «who looked at this». When the platform grows an
+        # endpoint that serves the object bytes, the event moves there, which is nearer still.
+        audit.record(
+            session,
+            unit.id,
+            kind=EventKind.EVIDENCE_READ,
+            subject_type="orden_trabajo",
+            subject_id=str(order.id),
+            work_order_id=order.id,
+            asset_code=order.asset_code,
+            actor=getattr(principal, "subject", None) or "sistema:revision",
+            payload={
+                "evidence": [item.storage_key for item in evidence],
+                "count": len(evidence),
+            },
+        )
+        session.commit()
 
     return {
         "work_order": {

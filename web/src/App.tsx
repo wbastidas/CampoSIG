@@ -15,6 +15,7 @@ import { lazy, Suspense, useState } from 'react';
 import { useSession } from './auth/SessionProvider';
 import { defaultBusinessUnit } from './config';
 import { AiDashboardScreen } from './features/ai-dashboard/AiDashboardScreen';
+import { AuditScreen } from './features/audit/AuditScreen';
 import { DispatchBoard } from './features/dispatch/DispatchBoard';
 import { IntegrationsScreen } from './features/integrations/IntegrationsScreen';
 import { ModelProfileScreen } from './features/model-profile/ModelProfileScreen';
@@ -31,7 +32,14 @@ const PlannerMap = lazy(async () => ({
   default: (await import('./features/planning/PlannerMap')).PlannerMap,
 }));
 
-type Screen = 'planificacion' | 'despliegue' | 'revision' | 'ia' | 'integraciones' | 'perfil';
+type Screen =
+  | 'planificacion'
+  | 'despliegue'
+  | 'revision'
+  | 'ia'
+  | 'integraciones'
+  | 'bitacora'
+  | 'perfil';
 
 const SCREENS: { key: Screen; label: string; roles: string[] }[] = [
   { key: 'planificacion', label: 'Planificación', roles: ['planificador', 'supervisor'] },
@@ -41,6 +49,9 @@ const SCREENS: { key: Screen; label: string; roles: string[] }[] = [
   // quien decide con esos números. El servidor exige lo mismo.
   { key: 'ia', label: 'Tablero de IA', roles: ['analista_ml', 'supervisor'] },
   { key: 'integraciones', label: 'Integraciones', roles: ['admin_ti', 'admin_funcional'] },
+  // La bitácora es del auditor, y de TI para poder responder durante un incidente. No del
+  // supervisor: un registro de auditoría no es un informe de gestión (RF-161).
+  { key: 'bitacora', label: 'Bitácora', roles: ['auditor', 'admin_ti'] },
   // El perfil decide en qué clase aterrizan los datos de campo: administración funcional o
   // de TI, y nadie más. El servidor lo exige igual (RF-002).
   { key: 'perfil', label: 'Modelo de datos', roles: ['admin_ti', 'admin_funcional'] },
@@ -118,6 +129,7 @@ export function App() {
         {screen === 'integraciones' && (
           <IntegrationsScreen businessUnit={unit} operator={operator} />
         )}
+        {screen === 'bitacora' && <AuditScreen businessUnit={unit} />}
         {screen === 'perfil' && <ModelProfileScreen businessUnit={unit} />}
       </main>
     </div>
