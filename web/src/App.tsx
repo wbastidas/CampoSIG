@@ -23,6 +23,7 @@ import { MaintenanceScreen } from './features/maintenance/MaintenanceScreen';
 import { ModelProfileScreen } from './features/model-profile/ModelProfileScreen';
 import { OperationsBoard } from './features/operations/OperationsBoard';
 import { ReviewScreen } from './features/review/ReviewScreen';
+import { ZonesScreen } from './features/zones/ZonesScreen';
 
 /**
  * The map is loaded on demand, and only this screen is.
@@ -45,6 +46,7 @@ type Screen =
   | 'ia'
   | 'integraciones'
   | 'bitacora'
+  | 'zonas'
   | 'perfil';
 
 const SCREENS: { key: Screen; label: string; roles: string[] }[] = [
@@ -61,6 +63,9 @@ const SCREENS: { key: Screen; label: string; roles: string[] }[] = [
   // quien decide con esos números. El servidor exige lo mismo.
   { key: 'ia', label: 'Tablero de IA', roles: ['analista_ml', 'supervisor'] },
   { key: 'integraciones', label: 'Integraciones', roles: ['admin_ti', 'admin_funcional'] },
+  // Las zonas deciden qué cuadrilla cubre qué calle, así que moverlas es administración
+  // funcional. El planificador entra a mirar: el servidor le niega la escritura igual (RF-152).
+  { key: 'zonas', label: 'Zonas', roles: ['admin_funcional', 'planificador'] },
   // La bitácora es del auditor, y de TI para poder responder durante un incidente. No del
   // supervisor: un registro de auditoría no es un informe de gestión (RF-161).
   { key: 'bitacora', label: 'Bitácora', roles: ['auditor', 'admin_ti'] },
@@ -145,6 +150,9 @@ export function App() {
           <IntegrationsScreen businessUnit={unit} operator={operator} />
         )}
         {screen === 'bitacora' && <AuditScreen businessUnit={unit} />}
+        {screen === 'zonas' && (
+          <ZonesScreen businessUnit={unit} mayEdit={roles.includes('admin_funcional')} />
+        )}
         {screen === 'perfil' && <ModelProfileScreen businessUnit={unit} />}
       </main>
     </div>

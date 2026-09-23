@@ -830,6 +830,55 @@ Falta la mitad que necesita modelos: los nodos VLM y de redacción, en I12.
 
 ---
 
+### RF-152: las zonas dejan de ser una cadena de texto
+
+Hasta aquí una zona era un `String(64)`: `work_order.zone` y `crew.zone` guardan texto, y con texto
+se puede filtrar una lista y nada más. Las tres cosas para las que una zona sirve de verdad —decidir
+qué cuadrilla cubre un punto, nombrar el paquete que un dispositivo descarga, acotar a un supervisor
+al norte de la ciudad— necesitan geometría.
+
+**El código sigue siendo la identidad.** El polígono se le cuelga; no lo reemplaza. Así una unidad
+que todavía no dibujó sus zonas funciona exactamente igual que ayer, y no hay nada que migrar el día
+que los polígonos llegan. El tipo es MULTIPOLYGON y no POLYGON porque las zonas de operación reales
+no siempre son conexas —una isla, una parroquia separada, un área partida por un río que es de
+otro—, y exigir POLYGON obligaría a partir en dos lo que la operación trata como una.
+
+**Lo que este módulo no hace es su decisión principal: no repara geometrías.** PostGIS arregla un
+anillo que se autointersecta con `ST_MakeValid`, y el resultado es **otro límite** que el del
+archivo. Redibujar en silencio la zona de operación de alguien y reportar éxito es exactamente cómo
+una zona termina cubriendo una calle que no cubre. Así que el rasgo se rechaza con el motivo que dio
+PostGIS, y el arreglo va en el archivo de origen.
+
+**Los rechazos son por rasgo, no por archivo.** Un GeoJSON de cuarenta parroquias con un anillo roto
+importa treinta y nueve y nombra el que falló. Eso obligó a una corrección que vale anotar: la sonda
+de validez corre dentro de un SAVEPOINT. Una geometría que PostGIS no puede ni leer aborta la
+transacción entera, y un `session.rollback()` allí se habría llevado las zonas ya escritas **mientras
+el informe seguía diciendo que se crearon**. La primera versión hacía eso. El test que lo fija no
+mira el informe: mira las filas.
+
+**El número que dice si las zonas sirven no es la lista de zonas.** Doce zonas bien nombradas se ven
+terminadas; lo que hay que leer es cuántas OT abiertas no caen en ninguna. Así que la cobertura
+separa cuatro cosas —en una zona, en varias, en ninguna, y sin punto— porque son cuatro problemas
+distintos: la ambigua no tiene respuesta, la descubierta es una cuadrilla sin mapa, y la que no tiene
+coordenadas no es un problema de las zonas. Si se contara con las demás, una unidad que todavía no
+captura puntos leería como zonas rotas.
+
+**Vecindad no es solapamiento.** Dos zonas que comparten un borde son el caso normal, y reportar cada
+vecina enterraría el único par que está mal. Se excluye el contacto (`ST_Touches`) y no la
+contención: una zona entera dentro de otra sí es un problema, y `ST_Overlaps` a solas la habría
+pasado por alto.
+
+**Y la zona que una OT ya trae no se pisa nunca.** Pudo venir del sistema corporativo, de una
+integración o de un planificador que sabe algo que el polígono no. El relleno llena lo vacío; lo
+ambiguo lo devuelve para que lo vea una persona, porque elegir una de dos zonas en silencio sería una
+decisión que nadie podría revisar.
+
+Cinco guardas se rompieron a propósito para comprobar que la suite las nota: el `ST_Touches`, el
+SAVEPOINT, el filtro de zona vacía del relleno, el denominador de la cobertura y la propia
+validación de anillos. Las cinco se detectaron.
+
+---
+
 ### RF-133: el tablero de mantenimiento, y lo que «abierto» quiere decir
 
 Este tablero responde tres preguntas de planificación —qué alimentadores concentran defectos, qué

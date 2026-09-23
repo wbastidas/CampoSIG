@@ -781,3 +781,40 @@ fieldset {
   font-size: 0.8rem;
   color: var(--texto-suave);
 }
+
+.zon-screen section {
+  margin-bottom: 1.5rem;
+}
+
+.zon-screen table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.zon-screen th,
+.zon-screen td {
+  text-align: left;
+  padding: 0.2rem 0.3rem;
+  border-bottom: 1px solid var(--borde);
+}
+
+.zon-headline {
+  font-weight: 600;
+}
+
+.zon-preview {
+  font-size: 0.85rem;
+  color: var(--texto-suave);
+}
+
+/* Una zona inactiva sigue en la lista porque es parte de la historia de miles de OT cerradas;
+   atenuada para que no se confunda con una que está operando. */
+.zon-inactive {
+  opacity: 0.6;
+}
+
+.zon-import textarea {
+  width: 100%;
+  font-family: monospace;
+  font-size: 0.8rem;
+}
