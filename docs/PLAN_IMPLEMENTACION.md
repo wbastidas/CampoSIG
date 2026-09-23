@@ -830,6 +830,63 @@ Falta la mitad que necesita modelos: los nodos VLM y de redacción, en I12.
 
 ---
 
+### RF-034: los catálogos que los formularios ya referenciaban
+
+Este tampoco era un hueco de funcionalidad: era una **referencia colgando**. `b11-hallazgos.yaml`
+decía `x-catalog-ref: defect` y `b06-actividades.yaml` decía `x-catalog-ref: activity`, y **nada
+servía ninguna de las dos listas**. Un teléfono que renderizaba el bloque de hallazgos tenía un campo
+de código y ningún valor de dónde elegir. La referencia existía; el catálogo no.
+
+**La guarda que cierra el círculo es el test más valioso del incremento.** Recorre los YAML de
+`forms/blocks/`, junta todos los `x-catalog-ref` y exige que cada uno lo pueda servir algo: un
+catálogo de la plataforma, los metadatos sincronizados del SIG (`feeder`, `substation`, que difieren
+por unidad, RF-304) o los enums del perfil (`voltage_level`). Se lee del YAML y no de una lista en el
+test, porque una lista habría que mantenerla en paso y de eso se trata justamente. Y está probada en
+negativo: se le añade una referencia inventada y la nombra.
+
+**La revisión la pone un disparador de la base, no el servicio.** Es lo que hace posible la descarga
+incremental: el dispositivo pide todo lo que esté por encima de la revisión que tiene. Una marca de
+tiempo no serviría —tercera vez en el día que aparece la misma trampa— y el disparador, en vez de una
+función del servicio, porque una entrada escrita por el conector del ERP también necesita revisión, y
+una regla que vive en una sola función es una regla que el siguiente escritor olvida. Se comprobó
+contra la base migrada con un `UPDATE` en SQL crudo: 115 revisiones distintas para 115 filas.
+
+**Desactivar es la forma de borrar.** Un valor retirado viaja al dispositivo como lápida, o el
+teléfono sigue ofreciendo un código que la distribuidora retiró hace dos años, y nadie lo nota porque
+el valor se ve perfectamente normal.
+
+**Y el lote recortado lo dice.** Un tope silencioso deja un teléfono al que le falta la cola de un
+catálogo para siempre, convencido de estar al día.
+
+**Vacío con motivo no es lo mismo que vacío.** La división política del Ecuador queda vacía **a
+propósito**: son ~221 cantones y ~1 500 parroquias y la lista oficial es del INEC. Inventarla
+parcialmente sería peor que no tenerla —un cantón mal escrito en miles de OT no se arregla después, y
+la exportación al regulador se lo lleva—. Así que el cargador **exige** que un catálogo vacío declare
+su `note`, y la pantalla distingue «vacío, a la espera» de «vacío sin motivo declarado»: el primero es
+una decisión, el segundo es una falla.
+
+**Lo que la integración mantiene no se edita a mano.** Los materiales son del ERP (RF-121), y un valor
+tecleado sobre uno que el conector va a sobreescribir esta noche desaparece sin explicación. La
+plataforma lo rechaza con 409 y la pantalla no ofrece el botón.
+
+**Un valor de la unidad sobrescribe al nacional del mismo código**, no lo duplica: dos filas con un
+código en un selector es un error que el técnico ve. La resolución se hizo en **dos pasadas
+explícitas** después de que la comprobación en negativo mostrara que una sola pasada acertaba por el
+orden en que la consulta devolvía las filas — es decir, por suerte.
+
+**Y una colisión de rutas que encontró un test:** `/units/GYE/delta` casaba con
+`/units/{unit_code}/{catalog_code}`, así que el delta del dispositivo resolvía al catálogo inexistente
+«delta». La forma de que no vuelva a pasar no es ordenar las rutas —deja la ambigüedad esperando a
+que alguien cree un catálogo con ese nombre— sino un segmento literal `catalog/` que impide que un
+código de catálogo ocupe la posición de un verbo. Hay un test que crea un catálogo llamado «delta».
+
+Once guardas rotas a propósito y detectadas. Las 115 entradas de línea base —defectos, actividades,
+unidades, motivos, causas de interrupción, protecciones, criticidad, prioridad y las 24 provincias—
+son, como los formularios, una línea base del sector que cada área tiene que validar antes del
+piloto.
+
+---
+
 ### RF-032: la publicación es lo que congela la forma
 
 Esto no era una funcionalidad faltante: era una **incorrección**. Los formularios viven como

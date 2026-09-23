@@ -1,0 +1,13 @@
+# Criticidad de un hallazgo (SRS anexo, «Criticidad = Severidad × Consecuencia»).
+#
+# Está como catálogo y no como `enum` en el bloque porque el anexo del SRS define un cálculo con
+# ajuste por exposición, y el día que se implemente necesitará los umbrales al lado de cada nivel.
+catalog:
+  code: criticality
+  title: Criticidad del hallazgo
+  source: manual
+entries:
+  - {code: critica, label: Crítica, sort_order: 1, attributes: {escalate: true}}
+  - {code: alta, label: Alta, sort_order: 2}
+  - {code: media, label: Media, sort_order: 3}
+  - {code: baja, label: Baja, sort_order: 4}

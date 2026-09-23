@@ -17,6 +17,7 @@ import { defaultBusinessUnit } from './config';
 import { AiDashboardScreen } from './features/ai-dashboard/AiDashboardScreen';
 import { ApgScreen } from './features/apg/ApgScreen';
 import { AuditScreen } from './features/audit/AuditScreen';
+import { CatalogsScreen } from './features/catalogs/CatalogsScreen';
 import { DispatchBoard } from './features/dispatch/DispatchBoard';
 import { FormCatalogueScreen } from './features/form-catalogue/FormCatalogueScreen';
 import { IntegrationsScreen } from './features/integrations/IntegrationsScreen';
@@ -53,6 +54,7 @@ type Screen =
   | 'politica'
   | 'normativa'
   | 'formularios'
+  | 'catalogos'
   | 'perfil';
 
 const SCREENS: { key: Screen; label: string; roles: string[] }[] = [
@@ -82,6 +84,9 @@ const SCREENS: { key: Screen; label: string; roles: string[] }[] = [
   // de administración; el supervisor mira, porque es quien pregunta con qué versión se llenó
   // una OT que le llegó rara (RF-032).
   { key: 'formularios', label: 'Formularios', roles: ['admin_funcional', 'admin_ti', 'supervisor'] },
+  // Un catálogo vacío es un selector sin valores, y el técnico acaba escribiendo en
+  // observaciones. El supervisor mira porque es quien ve el resultado (RF-034).
+  { key: 'catalogos', label: 'Catálogos', roles: ['admin_funcional', 'admin_ti', 'supervisor'] },
   // La bitácora es del auditor, y de TI para poder responder durante un incidente. No del
   // supervisor: un registro de auditoría no es un informe de gestión (RF-161).
   { key: 'bitacora', label: 'Bitácora', roles: ['auditor', 'admin_ti'] },
@@ -174,6 +179,12 @@ export function App() {
         )}
         {screen === 'normativa' && (
           <RegulatoryScreen mayEdit={roles.includes('admin_funcional')} />
+        )}
+        {screen === 'catalogos' && (
+          <CatalogsScreen
+            businessUnit={unit}
+            mayEdit={roles.includes('admin_funcional') || roles.includes('admin_ti')}
+          />
         )}
         {screen === 'formularios' && (
           <FormCatalogueScreen

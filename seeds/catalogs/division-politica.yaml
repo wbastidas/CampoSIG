@@ -1,0 +1,58 @@
+# División política del Ecuador (bloque B02).
+#
+# ============================ LEER ANTES DE USAR ============================
+# Las 24 provincias están completas porque son estables y públicas. Los cantones (~221) y las
+# parroquias (~1 500) quedan **vacíos a propósito**: la lista oficial es del INEC y nadie de este
+# equipo la ha transcrito. Inventarla parcialmente sería peor que no tenerla — un cantón mal escrito
+# en miles de OT no se arregla después, y la exportación al regulador lo lleva.
+#
+# Mientras estén vacíos, el selector correspondiente sale vacío y la pantalla de catálogos lo dice
+# con la nota de abajo, en vez de parecer un formulario roto.
+# ============================================================================
+catalog:
+  code: administrative.province
+  title: Provincia
+  source: manual
+entries:
+  - {code: "01", label: Azuay, sort_order: 1}
+  - {code: "02", label: Bolívar, sort_order: 2}
+  - {code: "03", label: Cañar, sort_order: 3}
+  - {code: "04", label: Carchi, sort_order: 4}
+  - {code: "05", label: Cotopaxi, sort_order: 5}
+  - {code: "06", label: Chimborazo, sort_order: 6}
+  - {code: "07", label: El Oro, sort_order: 7}
+  - {code: "08", label: Esmeraldas, sort_order: 8}
+  - {code: "09", label: Guayas, sort_order: 9}
+  - {code: "10", label: Imbabura, sort_order: 10}
+  - {code: "11", label: Loja, sort_order: 11}
+  - {code: "12", label: Los Ríos, sort_order: 12}
+  - {code: "13", label: Manabí, sort_order: 13}
+  - {code: "14", label: Morona Santiago, sort_order: 14}
+  - {code: "15", label: Napo, sort_order: 15}
+  - {code: "16", label: Pastaza, sort_order: 16}
+  - {code: "17", label: Pichincha, sort_order: 17}
+  - {code: "18", label: Tungurahua, sort_order: 18}
+  - {code: "19", label: Zamora Chinchipe, sort_order: 19}
+  - {code: "20", label: Galápagos, sort_order: 20}
+  - {code: "21", label: Sucumbíos, sort_order: 21}
+  - {code: "22", label: Orellana, sort_order: 22}
+  - {code: "23", label: Santo Domingo de los Tsáchilas, sort_order: 23}
+  - {code: "24", label: Santa Elena, sort_order: 24}
+---
+catalog:
+  code: administrative.canton
+  title: Cantón
+  source: manual
+  note: >-
+    Vacío a propósito: falta la división cantonal oficial del INEC (~221 cantones). Nadie de este
+    equipo la ha transcrito, y un cantón mal escrito en miles de OT no se arregla después.
+entries: []
+---
+catalog:
+  code: administrative.parish
+  title: Parroquia
+  source: manual
+  note: >-
+    Vacío a propósito: falta la división parroquial oficial del INEC (~1 500 parroquias). Cada
+    parroquia debe cargarse con su cantón en `parent_code`.
+entries: []

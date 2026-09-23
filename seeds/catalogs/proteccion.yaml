@@ -1,0 +1,12 @@
+# Dispositivo de protección que operó (bloque OP03).
+catalog:
+  code: protection_device
+  title: Protección que operó
+  source: manual
+entries:
+  - {code: fusible, label: Seccionador fusible, synonyms: [el fusible, seccionador], sort_order: 1}
+  - {code: reconectador, label: Reconectador, synonyms: [el reconectador, recloser], sort_order: 2}
+  - {code: seccionalizador, label: Seccionalizador, sort_order: 3}
+  - {code: interruptor, label: Interruptor de cabecera, synonyms: [el interruptor, breaker], sort_order: 4}
+  - {code: rele, label: Relé de protección, synonyms: [el relé], sort_order: 5}
+  - {code: ninguna, label: Ninguna operó, synonyms: [no operó ninguna, ninguna], sort_order: 6}

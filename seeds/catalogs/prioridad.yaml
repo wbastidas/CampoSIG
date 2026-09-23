@@ -1,0 +1,10 @@
+# Prioridad de una OT (SRS 3.3). Los mismos cuatro valores que `WorkOrder.priority`.
+catalog:
+  code: priority
+  title: Prioridad de la orden de trabajo
+  source: manual
+entries:
+  - {code: critica, label: Crítica, sort_order: 1}
+  - {code: alta, label: Alta, sort_order: 2}
+  - {code: media, label: Media, sort_order: 3}
+  - {code: baja, label: Baja, sort_order: 4}

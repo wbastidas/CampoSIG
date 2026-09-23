@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from app.api import (
     analytics,
     audit,
+    catalogs,
     dispatch,
     forms,
     gis,
@@ -48,6 +49,7 @@ def create_app() -> FastAPI:
     app.include_router(zones.router)
     app.include_router(policy.router)
     app.include_router(forms.router)
+    app.include_router(catalogs.router)
     return app
 
 

@@ -20,6 +20,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.catalogs.service import versions as catalog_versions
 from app.dispatch.service import record_delivery
 from app.forms.catalog import load_definitions
 from app.forms.registry import published_versions
@@ -316,6 +317,10 @@ def build_offline_package(
         "spatial_reference": unit.spatial_reference,
         "parts": parts,
         "model_package_version": model_package_version,
+        # Catalogue code → version (RF-034). One number per catalogue, so a device compares twelve
+        # integers and then asks for the delta of the ones that moved, instead of downloading lists
+        # it already holds.
+        "catalog_versions": catalog_versions(session),
         # The capture policy in force for this zone (RF-151). It travels *inside* the manifest on
         # purpose: the hash below is what tells a device it is holding something stale, so changing
         # a policy makes the phone re-download and obey the new one through the ordinary sync. A

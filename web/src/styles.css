@@ -1001,3 +1001,49 @@ fieldset {
 .frm-status {
   color: var(--exito);
 }
+
+.cat-screen section {
+  margin-bottom: 1.5rem;
+}
+
+.cat-screen table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.cat-screen th,
+.cat-screen td {
+  text-align: left;
+  padding: 0.2rem 0.3rem;
+  border-bottom: 1px solid var(--borde);
+  vertical-align: top;
+}
+
+.cat-headline {
+  font-weight: 600;
+}
+
+/* Un catálogo vacío sin motivo declarado es un selector sin valores que nadie decidió vaciar. */
+.cat-vacio-sin-motivo th {
+  color: var(--alarma);
+}
+
+/* Uno vacío a la espera de su lista oficial es una decisión, no una falla: se atenúa, no se alarma. */
+.cat-esperando th {
+  color: var(--texto-suave);
+}
+
+.cat-warning {
+  background: var(--alarma-fondo);
+  padding: 0.4rem 0.5rem;
+  border-radius: var(--radio);
+}
+
+.cat-help {
+  font-size: 0.8rem;
+  color: var(--texto-suave);
+}
+
+.cat-status {
+  color: var(--exito);
+}
