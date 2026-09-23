@@ -586,3 +586,61 @@ fieldset {
   padding-left: 1.1rem;
   font-size: 0.85rem;
 }
+
+/* Tablero de IA (RF-134). Los paneles son tarjetas independientes: cada uno responde una pregunta
+   distinta y ninguno depende de leer el de al lado. */
+.ai-board-panels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.ai-board-panels > section {
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  padding: 0.75rem;
+}
+
+.ai-board-panels h2 {
+  font-size: 1rem;
+  margin: 0 0 0.5rem;
+}
+
+.ai-board-panels h3 {
+  font-size: 0.9rem;
+  margin: 0.5rem 0 0.2rem;
+}
+
+.ai-board-panels table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.ai-board-panels th,
+.ai-board-panels td {
+  text-align: left;
+  padding: 0.2rem 0.3rem;
+  border-bottom: 1px solid var(--borde);
+  vertical-align: top;
+}
+
+/* Una fila sin tasa reportable va atenuada, no oculta: la cuenta sigue siendo información. */
+.ai-board-panels tr.dim {
+  color: var(--texto-suave);
+}
+
+.ai-board-note {
+  font-size: 0.8rem;
+  color: var(--texto-suave);
+  margin: 0.3rem 0 0;
+}
+
+.ai-board-regression {
+  color: var(--alarma);
+  background: var(--alarma-fondo);
+  padding: 0.3rem 0.4rem;
+  border-radius: var(--radio);
+  font-size: 0.85rem;
+}

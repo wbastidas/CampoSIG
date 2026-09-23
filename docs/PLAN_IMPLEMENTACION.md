@@ -759,9 +759,33 @@ exactamente el número que el requerimiento existe para no creerse. La tabla via
 coeficiente, porque un 0,58 no dice *cómo* discreparon y las dos formas cuestan cosas muy distintas:
 que el agente no viera un problema no es que el agente diera una falsa alarma.
 
-Del tablero RF-134 completo (tasa de aceptación por campo, correcciones por clase visual, WER,
-adopción de la voz, versiones en la flota) solo está esta parte, que es la que RF-111a pide; el resto
-queda en I12.
+**Y el tablero RF-134 ya está completo**, con la concordancia como uno de sus paneles —que es
+literalmente lo que pide el criterio de aceptación de RF-111a— más los cinco que el requerimiento
+enumera: aceptación por campo, correcciones por clase visual, error de palabras estimado, adopción de
+la voz por persona y versiones en la flota. Todo sale de `field_provenance`, que existe justamente
+para que estos números se deriven en vez de contarlos alguien con una hoja de cálculo.
+
+Un tablero es una herramienta de decisión: alguien mira una tasa y decide publicar un modelo, pedir
+un lote de etiquetado o no hacer nada. Así que lo que se construyó con cuidado no es la aritmética
+sino lo que evita la decisión equivocada:
+
+| Decisión | Por qué |
+|---|---|
+| Ninguna tasa se reporta con menos de cinco propuestas | «100 % de aceptación» sobre dos propuestas es ruido con signo de porcentaje, y la decisión que invita —publicar— es la cara. La cuenta sí viaja: ocultarla también dejaría al analista sin saber si el campo se usa |
+| El error de palabras dice qué mide | un WER de verdad compara contra una transcripción de referencia del mismo audio, y nadie transcribe estas grabaciones dos veces. Lo medible es la distancia entre lo que la voz propuso para un campo y lo que la persona envió: reconocimiento **y** extracción. El propio payload lo aclara, porque quien lea el número lo va a citar |
+| Lo que no se pudo medir se cuenta | una tasa calculada sobre veinte campos de cuatrocientos no es la tasa de nada, y la única forma de que el lector lo note es que el tablero lo diga |
+| Los consejos no acusan a nadie | la misma regla de RF-174 para los agentes: un panel que suena a veredicto se discute en vez de accionarse. Y la adopción de la voz dice explícitamente para qué es —saber si la función sirve— porque un número por persona se lee como calificación |
+
+Dos cosas que salieron de escribirlo. La primera, un defecto de denominador: la adopción de la voz
+medida sobre «las capturas que ya tienen un valor de IA» haría que quien nunca dicta no tuviera
+capturas, y la adopción saldría alta justo donde es más baja; el denominador son **todas** sus
+capturas enviadas. La segunda, del lado de la pantalla: el panel de la flota compara versiones del
+mismo modelo y avisa cuando una nueva acepta peor que la anterior —«nunca regresar» es la primera
+compuerta de calidad de la guía (8.4)—, pero solo cuando **las dos** tienen tasa reportable: una
+caída medida contra un número que el servidor se negó a dar sería una caída inventada.
+
+Queda fuera el panel de evidencia visual (300 pares evaluados por supervisores), que necesita el
+piloto.
 
 **Y los conjuntos dorados son ahora una compuerta, no una intención.** La regla 15 dice que todo
 cambio de prompt, grafo o modelo pasa por `ml/agents_eval` en CI; hasta ahora no había nada que

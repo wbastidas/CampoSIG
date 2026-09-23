@@ -14,6 +14,7 @@ import { lazy, Suspense, useState } from 'react';
 
 import { useSession } from './auth/SessionProvider';
 import { defaultBusinessUnit } from './config';
+import { AiDashboardScreen } from './features/ai-dashboard/AiDashboardScreen';
 import { DispatchBoard } from './features/dispatch/DispatchBoard';
 import { IntegrationsScreen } from './features/integrations/IntegrationsScreen';
 import { ModelProfileScreen } from './features/model-profile/ModelProfileScreen';
@@ -30,12 +31,15 @@ const PlannerMap = lazy(async () => ({
   default: (await import('./features/planning/PlannerMap')).PlannerMap,
 }));
 
-type Screen = 'planificacion' | 'despliegue' | 'revision' | 'integraciones' | 'perfil';
+type Screen = 'planificacion' | 'despliegue' | 'revision' | 'ia' | 'integraciones' | 'perfil';
 
 const SCREENS: { key: Screen; label: string; roles: string[] }[] = [
   { key: 'planificacion', label: 'Planificación', roles: ['planificador', 'supervisor'] },
   { key: 'despliegue', label: 'Despliegue', roles: ['planificador', 'supervisor'] },
   { key: 'revision', label: 'Revisión', roles: ['supervisor', 'inspector'] },
+  // RF-134 nombra los dos roles: el analista ML porque es su trabajo, y el supervisor porque es
+  // quien decide con esos números. El servidor exige lo mismo.
+  { key: 'ia', label: 'Tablero de IA', roles: ['analista_ml', 'supervisor'] },
   { key: 'integraciones', label: 'Integraciones', roles: ['admin_ti', 'admin_funcional'] },
   // El perfil decide en qué clase aterrizan los datos de campo: administración funcional o
   // de TI, y nadie más. El servidor lo exige igual (RF-002).
@@ -110,6 +114,7 @@ export function App() {
         )}
         {screen === 'despliegue' && <DispatchBoard businessUnit={unit} />}
         {screen === 'revision' && <ReviewScreen businessUnit={unit} reviewer={operator} />}
+        {screen === 'ia' && <AiDashboardScreen businessUnit={unit} />}
         {screen === 'integraciones' && (
           <IntegrationsScreen businessUnit={unit} operator={operator} />
         )}

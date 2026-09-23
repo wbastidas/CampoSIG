@@ -3,6 +3,7 @@
 from fastapi import FastAPI
 
 from app.api import (
+    analytics,
     dispatch,
     gis,
     health,
@@ -38,6 +39,7 @@ def create_app() -> FastAPI:
     # que es el cliente y no tiene cuenta corporativa.
     app.include_router(reports.public_router)
     app.include_router(review.router)
+    app.include_router(analytics.router)
     return app
 
 
