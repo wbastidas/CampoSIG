@@ -1,0 +1,41 @@
+# Formato de exportación de interrupciones para el cálculo de FMIK y TTIK (RF-132).
+#
+# «Formato configurable» del requerimiento significa esto: un archivo. La regulación cambia el
+# nombre y el orden de las columnas cada pocos años, y cuando eso pasa se añade un archivo como este
+# en vez de tocar el código — que es la misma razón por la que los límites viven en
+# `regulatory_parameter` y no en una constante (ADR-007).
+#
+# Cada columna dice de qué clave canónica sale (ADR-004: ningún nombre real del GIS aparece aquí) y
+# cómo se escribe. `source` puede ser una clave de las respuestas, un campo de la OT (`order.*`) o un
+# valor derivado (`computed.*`) que el exportador calcula y documenta.
+format:
+  code: arcernnr-002-20
+  title: Interrupciones — ARCERNNR 002/20
+  norm_ref: "ARCERNNR 002/20"
+  # Punto y coma, decimales con coma y marca de orden de bytes: es lo que abre bien en el Excel que
+  # tiene esta área. Un archivo separado por comas se lee como una sola columna en un Excel en
+  # español, y «1.5» como quince.
+  delimiter: ";"
+  decimal: ","
+  byte_order_mark: true
+columns:
+  - {header: "Código OT", source: "order.code"}
+  - {header: "Subestación", source: "substation_code"}
+  - {header: "Alimentador", source: "feeder_code"}
+  - {header: "Tipo", source: "interruption_kind"}
+  - {header: "Origen", source: "interruption_origin"}
+  - {header: "Inicio", source: "started_at_interruption", as: datetime}
+  - {header: "Reposición total", source: "restored_at_interruption", as: datetime}
+  - {header: "Duración (s)", source: "interruption_seconds", as: number}
+  - {header: "Duración (h)", source: "computed.duration_hours", as: number}
+  - {header: "Protección que operó", source: "protection_operated"}
+  - {header: "Transformadores afectados", source: "transformers_affected", as: number}
+  - {header: "kVA afectados", source: "kva_affected", as: number}
+  - {header: "kVA·h", source: "computed.kva_hours", as: number}
+  - {header: "Causa", source: "interruption_cause"}
+  - {header: "Reposiciones parciales", source: "computed.partial_restorations", as: number}
+  # La clasificación la decide la regla determinista sobre el umbral en vigor, no esta plantilla.
+  - {header: "Computable", source: "computed.computable", as: boolean}
+  - {header: "Umbral (s)", source: "computed.threshold_seconds", as: number}
+  - {header: "Umbral verificado", source: "computed.threshold_verified", as: boolean}
+  - {header: "Norma del umbral", source: "computed.threshold_norm"}

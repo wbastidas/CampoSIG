@@ -1,0 +1,125 @@
+# Data-model profile: CNEL EP, Unidad de Negocio Guayaquil, ArcGIS 10.8.1 + ArcFM.
+#
+# This file and its siblings are THE ONLY place real class, field and domain names may
+# appear (ADR-004, RF-305, verified by scripts/check_data_model_leak.py). Everything
+# else speaks the canonical vocabulary of profiles/amd/core.yaml.
+#
+# Source of the mappings: docs/modelo-datos-cnel/
+
+profile:
+  id: cnel-gye
+  label: CNEL EP · Unidad de Negocio Guayaquil
+  provider: arcpy-agent          # ADR-008: the agent reads and writes, not the backend
+  arcgis_version: "10.8.1"
+  spatial_reference: 32717       # UTM 17S WGS84
+  geometric_network: Electrico_RedGeom
+  feature_dataset: Electrico
+
+bindings:
+  support_structure:
+    layer: EstructuraSoporte
+    # Not a participant of Electrico_RedGeom, so attribute-only edits could be direct.
+    # Still off by default (RF-345): enabled per class only after GIS sign-off.
+    participates_in_geometric_network: false
+    write_path: staging_only
+    attributes:
+      code:         {field: CODIGO}
+      material:     {field: MATERIAL, domain: "Material Poste", value_map: material.support}
+      height_m:     {field: ALTURA}
+      feeder_code:  {field: ALIMENTADORID, domain: "Codigo Alimentador", volatile_by_business_unit: true}
+      install_date: {field: FECHAINSTALACION}
+    related:
+      - as: pole_structures
+        relationship: EstrucSop_EstrucEnPoste
+        target_layer: ESTRUCTURAENPOSTE
+        cardinality: one_to_many
+
+  distribution_transformer:
+    layer: PuestoTransfDistribucion
+    participates_in_geometric_network: true      # Junction of the geometric network
+    write_path: staging_only
+    attributes:
+      code:        {field: CODIGO}
+      rated_kva:   {field: POTENCIA}
+      phases:      {field: FASES, value_map: phases}
+      mounting:    {field: TIPOMONTAJE, value_map: mounting.transformer}
+      feeder_code: {field: ALIMENTADORID, domain: "Codigo Alimentador", volatile_by_business_unit: true}
+    related:
+      # The Puesto/Unidad pattern: one per phase.
+      - as: units
+        relationship: PuestoTransDist_UnidadTransDist
+        target_layer: UNIDADTRANSFDISTRIBUCION
+        cardinality: one_to_many
+
+  street_light:
+    layer: Luminaria
+    participates_in_geometric_network: true
+    write_path: staging_only
+    attributes:
+      code:        {field: CODIGO}
+      technology:  {field: TECNOLOGIA, value_map: technology.lamp}
+      power_w:     {field: POTENCIA}
+      feeder_code: {field: ALIMENTADORID, domain: "Codigo Alimentador", volatile_by_business_unit: true}
+
+  fuse_switch:
+    layer: PuestoSeccionadorFusible
+    participates_in_geometric_network: true
+    write_path: staging_only
+    attributes:
+      code:        {field: CODIGO}
+      fuse_rating: {field: CAPACIDADFUSIBLE}
+      feeder_code: {field: ALIMENTADORID, domain: "Codigo Alimentador", volatile_by_business_unit: true}
+
+  line_segment:
+    layer: TramoDistribucionAereo
+    participates_in_geometric_network: true
+    write_path: staging_only
+    attributes:
+      code:          {field: CODIGO}
+      voltage_level: {field: VOLTAJE, value_map: voltage_level}
+      feeder_code:   {field: ALIMENTADORID, domain: "Codigo Alimentador", volatile_by_business_unit: true}
+
+  service_point:
+    layer: PuntoCarga
+    participates_in_geometric_network: true
+    write_path: staging_only
+    attributes:
+      code:        {field: CODIGO}
+      feeder_code: {field: ALIMENTADORID, domain: "Codigo Alimentador", volatile_by_business_unit: true}
+
+# Canonical enum value -> real domain code.
+value_maps:
+  material.support:
+    concrete: HORMIGON
+    wood: MADERA
+    steel: METALICO
+    fiberglass: FIBRA
+    other: OTRO
+  phases:
+    single: MONOFASICO
+    two: BIFASICO
+    three: TRIFASICO
+    bank: BANCO
+  mounting.transformer:
+    pole: POSTE
+    vault: CABINA
+    pad: PEDESTAL
+    cabinet: GABINETE
+  technology.lamp:
+    led: LED
+    sodium_hp: SODIO_AP
+    mercury: MERCURIO
+    metal_halide: HALOGENURO
+    other: OTRO
+  voltage_level:
+    low: BT
+    medium: MT
+    sub_transmission: ST
+
+# Fields the platform must never write, in any route (ADR-001, ADR-008).
+never_write_fields:
+  - ANCILLARYROLE
+  - CIRCUITSOURCEGUID
+  - PARENTCIRCUITSOURCEGUID
+  - ENABLED
+  - ELECTRICTRACEWEIGHT

@@ -1,0 +1,65 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Generated: rebuilt by scripts/check_licenses.py in CI
+THIRD_PARTY_LICENSES.md
+
+# Environment
+.env
+*.local
+
+# Node / web
+node_modules/
+dist/
+
+# Caché incremental de `tsc -b`: un artefacto de una compilación concreta.
+*.tsbuildinfo
+
+# Salidas de Playwright: informes y trazas de una ejecución, no fuentes.
+test-results/
+playwright-report/
+.playwright/
+.vite/
+
+# Android
+android/.gradle/
+android/build/
+android/local.properties
+*.apk
+*.keystore
+
+# ML artifacts (versioned with DVC, not git)
+ml/**/data/
+ml/**/*.onnx
+ml/**/*.gguf
+*.pt
+*.pth
+
+# GIS working files
+*.sde
+*.gdb/
+# Los .lock de ArcGIS, no los de gestores de paquetes: un patrón `*.lock` a secas se
+# tragaba `backend/uv.lock`, y sin ese archivo el paso de CI que instala el backend falla
+# antes de ejecutar una sola prueba. Los lockfiles de dependencias SÍ se versionan.
+*.gdb.lock
+*.sde.lock
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Web lockfile is committed; node_modules is not (already covered above)
+
+# Gradle
+android/.gradle/
+android/build/
+android/**/build/

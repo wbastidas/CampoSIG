@@ -1,0 +1,205 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+# Cancel superseded runs on the same ref to keep feedback fast.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The mandatory gates. They need no services and no build, so they run first and fail
+  # fast: an architectural violation should not wait for a test suite.
+  guardrails:
+    name: Guardrails (modelo de datos · Esri · licencias · datasets)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: RF-305 — sin fugas del modelo de datos
+        run: python scripts/check_data_model_leak.py
+
+      - name: ADR-003 — sin artefactos de Esri en el móvil
+        run: python scripts/check_no_esri_in_mobile.py
+
+      - name: Instalar dependencias del backend (para el cierre de licencias)
+        run: |
+          python -m pip install --upgrade pip
+          pip install ./backend
+
+      - name: SRS 0.7 — licencias de terceros
+        run: python scripts/check_licenses.py
+
+      # Un dataset cuya licencia no lo permite no puede entrenar el modelo que se entrega.
+      # Corre en cada push porque el fallo real no es elegir mal hoy, es añadir un dataset
+      # dentro de seis meses y que nadie vuelva a leer la licencia (addendum 6.2).
+      - name: Addendum 6.2 — licencias de datasets de visión
+        run: |
+          pip install pyyaml
+          python scripts/check_dataset_licenses.py
+
+      # Subir el artefacto es una comodidad, no un resultado: si el almacén lo rechaza
+      # —un 403 del intermediario, por ejemplo— eso no dice nada sobre el código.
+      - name: Publicar inventario de licencias
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: third-party-licenses
+          path: THIRD_PARTY_LICENSES.md
+
+  backend:
+    name: Backend (lint · tipos · tests)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: sigec
+          POSTGRES_PASSWORD: sigec
+          POSTGRES_DB: sigec_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SIGEC_DATABASE_URL: postgresql+psycopg://sigec:sigec@localhost:5432/sigec_test
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - run: uv sync --all-extras
+      - name: Lint (ruff)
+        # `scripts/` y `ml/agents_eval/` con el mismo linter que el backend: son código que
+        # bloquea despliegues, no anexos. Un guardrail que no se lintea se podre igual.
+        run: uv run ruff check . ../scripts ../ml/agents_eval
+      - name: Formato (ruff)
+        run: uv run ruff format --check . ../scripts ../ml/agents_eval
+      - name: Tipos (mypy)
+        run: uv run mypy app
+      - name: Migraciones
+        run: uv run alembic upgrade head
+
+      # Regla 15: todo cambio de prompt, grafo o modelo pasa por los conjuntos dorados. La
+      # suite ya corre la compuerta, así que esto no la duplica: imprime la tabla con recall,
+      # precisión y los casos que fallaron, que es lo que hace falta para arreglarla.
+      - name: RNF-060 — conjuntos dorados de agentes
+        run: uv run python ../ml/agents_eval/evaluate.py
+      - name: Tests
+        run: uv run pytest -v --cov=app --cov-report=term-missing
+
+      # Randomised order catches tests that leak state into one another. The lru_cached
+      # profile objects caused exactly that once; this makes a recurrence fail the build
+      # instead of showing up as intermittent CI.
+      - name: Tests en orden aleatorio
+        run: uv run pytest -q
+
+      # ADR-004: la abstracción del modelo de datos no es una declaración de
+      # intenciones, es una prueba. La suite completa debe pasar contra un perfil
+      # de estructura deliberadamente distinta.
+      - name: Tests con perfil alterno (ADR-004)
+        env:
+          SIGEC_PROFILE: alt-synthetic
+        run: uv run pytest -v -m "not integration"
+
+  web:
+    name: Web (tipos · tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - name: Tipos
+        run: npx tsc --noEmit
+      - name: Lint (eslint)
+        run: npx eslint .
+      - name: Tests
+        run: npx vitest run
+      # La build de producción es lo que los e2e van a probar, y un fallo aquí es más claro
+      # que el mismo fallo escondido dentro del arranque del servidor de Playwright.
+      - name: Build de producción
+        run: npm run build
+      # La Definition of Done no admite vulnerabilidades críticas ni altas. Solo dependencias de
+      # producción: una herramienta de desarrollo con un aviso no llega al navegador de nadie.
+      - name: Vulnerabilidades de dependencias de producción
+        run: npm audit --omit=dev --audit-level=high
+      # Contra la build de producción, no contra el servidor de desarrollo: lo que hay que
+      # probar es el artefacto que se despliega. Un `vite dev` transforma módulos al vuelo y
+      # tapa errores que una build real destapa.
+      - name: Navegador para e2e
+        run: npx playwright install --with-deps chromium
+      - name: E2E (Chromium)
+        run: npx playwright test
+      - name: Publicar informe e2e
+        if: failure()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: web/playwright-report
+
+  android-core:
+    name: Móvil — core:sync (Kotlin/JVM, sin SDK de Android)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      # core:sync is deliberately free of Android dependencies (ADR-010), so the highest-risk
+      # logic in the platform is tested here without an SDK, an emulator or a device.
+      - name: Tests del motor de sincronización
+        run: gradle :core:sync:test
+      - name: Publicar informe de tests
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-core-sync-tests
+          path: android/core/sync/build/reports/tests/test
+
+  gis-agent:
+    name: Agente arcpy (Python 2.7, sin ArcMap)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gis-agent
+    steps:
+      - uses: actions/checkout@v4
+      # The agent must run on ArcMap's Python 2.7 (ADR-008, H12). CI cannot install
+      # arcpy, so its tests run against tools/arcpy-double. Python 3.12 runs them here
+      # for tooling convenience; compileall below is what actually enforces that the
+      # source stays valid Python 2.7.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar pytest
+        run: python -m pip install --upgrade pip pytest
+      - name: Tests del agente contra el doble de arcpy
+        run: python -m pytest tests -v
+      - name: Verificar compatibilidad con la sintaxis de Python 2.7
+        run: python ../scripts/check_py27_syntax.py sigec_agent

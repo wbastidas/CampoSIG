@@ -1,0 +1,15 @@
+# F-OP-04 — Inspección de alimentador (SRS 4.4, 4.8).
+# Pensado para dictado continuo: "poste cuatro cinco dos, cruceta podrida lado izquierdo,
+# prioridad alta" crea una fila de hallazgo.
+form:
+  code: F-OP-04
+  version: 1.1.0
+  title: Inspección de alimentador
+  area: operacion
+  blocks: [B01, B02, B04, B03, B11, B09, B10, B12]
+  min_photos: {before: 1, after: 0}
+  requires_ats: true
+  track_route: true
+  # Trabajo sobre la red de media tensión (RF-021).
+  requires_competencies: ['MT']
+  applies_to_asset_types: [support_structure, line_segment]

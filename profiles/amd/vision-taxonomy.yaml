@@ -1,0 +1,143 @@
+# Taxonomía de visión, enlazada al vocabulario canónico (addendum 6.2 punto 3, SRS anexo B).
+#
+# La clase visual apunta al tipo canónico, y de ahí el resolver llega al campo real de cada
+# unidad de negocio. Añadir una unidad de negocio no obliga a reentrenar visión: cambia el
+# perfil, no el modelo. Ese es todo el motivo por el que este archivo vive en la capa
+# canónica y no nombra ni una clase ni un campo real.
+#
+# El dominio importa y está declarado: casi todo lo público es fotografía aérea de dron
+# sobre líneas de transmisión, y lo nuestro es foto desde el suelo, con teléfono, en
+# distribución urbana. Una clase entrenada en el dominio equivocado no es una clase peor:
+# es una clase que reconoce otra cosa.
+
+version: 1
+domain: ground_distribution
+
+# Umbral por defecto. Deliberadamente alto: una detección que no se muestra cuesta una
+# escritura manual, una que se muestra mal cuesta una captura equivocada.
+default_min_confidence: 0.60
+
+# Qué objetos busca el detector. `asset_type` puede ser nulo: hay cosas que importan ver y
+# que no son un activo del AMD (un aislador es parte de la estructura, no un tipo propio).
+detection_classes:
+  - key: pole
+    label: Poste
+    asset_type: support_structure
+    min_confidence: 0.55
+  - key: distribution_transformer
+    label: Transformador de distribución
+    asset_type: distribution_transformer
+    min_confidence: 0.60
+  - key: street_light
+    label: Luminaria
+    asset_type: street_light
+    min_confidence: 0.55
+  - key: fuse_cutout
+    label: Seccionador fusible
+    asset_type: fuse_switch
+    min_confidence: 0.65
+  - key: meter
+    label: Medidor
+    asset_type: service_point
+    min_confidence: 0.60
+  - key: insulator
+    label: Aislador
+    asset_type: null
+    min_confidence: 0.65
+  - key: crossarm
+    label: Cruceta
+    asset_type: null
+    min_confidence: 0.60
+  - key: guy_wire
+    label: Tensor
+    asset_type: null
+    min_confidence: 0.65
+
+# Clasificadores que proponen el valor de un atributo canónico. Cada valor del clasificador
+# tiene que existir en la enumeración canónica del AMD; el cargador lo verifica y falla si no.
+attribute_classifiers:
+  - key: pole_material
+    label: Material del poste
+    asset_type: support_structure
+    attribute: material
+    # etiqueta del clasificador -> valor canónico
+    values:
+      concrete: concrete
+      wood: wood
+      steel: steel
+      fiberglass: fiberglass
+    # Más alto que una detección: proponer el material equivocado cambia el inventario.
+    min_confidence: 0.75
+
+  - key: transformer_mounting
+    label: Tipo de montaje del transformador
+    asset_type: distribution_transformer
+    attribute: mounting
+    values:
+      pole: pole
+      pad: pad
+      vault: vault
+      cabinet: cabinet
+    min_confidence: 0.75
+
+  - key: lamp_technology
+    label: Tecnología de la luminaria
+    asset_type: street_light
+    attribute: technology
+    values:
+      led: led
+      sodium_hp: sodium_hp
+      mercury: mercury
+      metal_halide: metal_halide
+    # La tecnología se distingue mejor de noche, encendida, que de día. De día el modelo
+    # acierta poco y por eso el umbral es el más alto de todos.
+    min_confidence: 0.80
+
+# Hallazgos: estados que no son un atributo del activo sino algo que reportar. No prellenan
+# ningún campo del inventario; alimentan el bloque de hallazgos del formulario y, cuando el
+# supervisor lo aprueba, pueden sugerir una OT nueva.
+finding_classes:
+  - key: leaning_pole
+    label: Poste inclinado
+    severity: alta
+    min_confidence: 0.70
+  - key: broken_insulator
+    label: Aislador roto
+    severity: alta
+    min_confidence: 0.70
+  - key: vegetation_contact
+    label: Vegetación en contacto
+    severity: media
+    min_confidence: 0.65
+  - key: corrosion
+    label: Corrosión
+    severity: media
+    min_confidence: 0.70
+  - key: lamp_out
+    label: Luminaria apagada
+    severity: media
+    min_confidence: 0.65
+  - key: lamp_lit
+    label: Luminaria encendida
+    severity: ninguna
+    min_confidence: 0.65
+  - key: missing_cover
+    label: Tapa o protección faltante
+    severity: alta
+    min_confidence: 0.70
+
+# Pares antes/después que demuestran que el trabajo se hizo. El comparador los usa para
+# decir si lo que la OT afirma haber resuelto se ve resuelto en la foto.
+resolution_pairs:
+  - before: lamp_out
+    after: lamp_lit
+    resolves: "luminaria repuesta o reparada"
+  - before: broken_insulator
+    after: insulator
+    resolves: "aislador reemplazado"
+  - before: missing_cover
+    after: null
+    resolves: "tapa o protección repuesta"
+  - before: vegetation_contact
+    after: null
+    resolves: "poda ejecutada"

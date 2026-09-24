@@ -1,0 +1,53 @@
+# Los tres catálogos de «por qué» que los formularios piden: la demora en llegar (B03), el trabajo
+# que quedó sin resolver (B12) y la causa de una interrupción (OP03).
+#
+# Las causas de interrupción llevan `attributes.computable`: es una **sugerencia** de si la
+# interrupción cuenta para los índices, no el veredicto. El veredicto lo da la regla determinista
+# contra `regulatory_parameter` (ADR-007), y ponerlo aquí como si fuera un hecho sería exactamente
+# lo que ADR-007 prohíbe.
+catalog:
+  code: delay_reason
+  title: Motivo de demora en llegar
+  source: manual
+entries:
+  - {code: trafico, label: Tráfico, synonyms: [había tráfico, congestión], sort_order: 1}
+  - {code: distancia, label: Distancia del sitio, sort_order: 2}
+  - {code: acceso_dificil, label: Acceso difícil al sitio, synonyms: [no se podía entrar, camino malo], sort_order: 3}
+  - {code: clima, label: Condiciones climáticas, synonyms: [estaba lloviendo, lluvia], sort_order: 4}
+  - {code: espera_materiales, label: Espera de materiales, synonyms: [esperando material], sort_order: 5}
+  - {code: espera_consignacion, label: Espera de consignación, synonyms: [esperando el corte, sin consignación], sort_order: 6}
+  - {code: atencion_previa, label: Atendiendo otra emergencia, synonyms: [estábamos en otra], sort_order: 7}
+  - {code: vehiculo, label: Problema con el vehículo, synonyms: [se dañó el carro], sort_order: 8}
+  - {code: orden_errada, label: Dirección o ubicación errada en la OT, synonyms: [la dirección estaba mal], sort_order: 9}
+---
+catalog:
+  code: unresolved_reason
+  title: Motivo por el que no se resolvió
+  source: manual
+entries:
+  - {code: falta_material, label: Falta de material, synonyms: [no había material, faltó material], sort_order: 1}
+  - {code: requiere_consignacion, label: Requiere consignación, synonyms: [hay que pedir corte], sort_order: 2}
+  - {code: requiere_equipo, label: Requiere equipo especial, synonyms: [hace falta el canasto, se necesita grúa], sort_order: 3}
+  - {code: requiere_mayor_alcance, label: Requiere trabajo de mayor alcance, synonyms: [es obra, requiere proyecto], sort_order: 4}
+  - {code: sin_acceso, label: Sin acceso al sitio, synonyms: [no nos dejaron entrar, cerrado], sort_order: 5}
+  - {code: clima_impidio, label: El clima impidió el trabajo, synonyms: [no se pudo por la lluvia], sort_order: 6}
+  - {code: cliente_ausente, label: Cliente ausente, synonyms: [no había nadie], sort_order: 7}
+  - {code: riesgo_no_controlable, label: Riesgo no controlable en sitio, synonyms: [era peligroso, había riesgo], sort_order: 8}
+  - {code: no_corresponde, label: No corresponde a la distribuidora, synonyms: [no es nuestro, es del cliente], sort_order: 9}
+---
+catalog:
+  code: interruption_cause
+  title: Causa de la interrupción
+  source: manual
+entries:
+  - {code: falla_equipo, label: Falla de equipo, sort_order: 1, attributes: {computable: true}}
+  - {code: falla_conductor, label: Falla de conductor, sort_order: 2, attributes: {computable: true}}
+  - {code: vegetacion, label: Vegetación, sort_order: 3, attributes: {computable: true}}
+  - {code: animal, label: Contacto de animal, synonyms: [un animal, pájaro], sort_order: 4, attributes: {computable: true}}
+  - {code: tercero, label: Daño de terceros, synonyms: [chocaron el poste, un tercero], sort_order: 5, attributes: {computable: true}}
+  - {code: clima_severo, label: Clima severo, synonyms: [tormenta, viento fuerte], sort_order: 6, attributes: {computable: true}}
+  - {code: sobrecarga, label: Sobrecarga, sort_order: 7, attributes: {computable: true}}
+  - {code: maniobra_programada, label: Maniobra programada, synonyms: [era programada, trabajo programado], sort_order: 8, attributes: {computable: false}}
+  - {code: fuerza_mayor, label: Fuerza mayor, sort_order: 9, attributes: {computable: false}}
+  - {code: transmision, label: Origen en transmisión, synonyms: [vino de la subestación, era de transmisión], sort_order: 10, attributes: {computable: false}}
+  - {code: no_determinada, label: No determinada, synonyms: [no se pudo determinar], sort_order: 11}

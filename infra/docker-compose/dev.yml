@@ -1,0 +1,131 @@
+# Development environment for SIGEC-Campo (I0).
+#
+# Deliberately absent: Oracle. The corporate Oracle 11g R2 hosts the ArcSDE geodatabase
+# and is reached only by the arcpy agent, which runs on a Windows machine with ArcMap
+# (ADR-006, ADR-008). Nothing here connects to it, and tools/arcgis-mock stands in for
+# the GIS during development.
+#
+# Usage:  docker compose -f infra/docker-compose/dev.yml up -d
+
+name: sigec-dev
+
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: sigec
+      POSTGRES_PASSWORD: sigec
+      POSTGRES_DB: sigec
+    ports: ["5432:5432"]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sigec -d sigec"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Object storage for evidence (photos, audio). SeaweedFS rather than MinIO: MinIO is
+  # AGPL-3.0, which the licence policy forbids (SRS 0.7).
+  seaweedfs:
+    image: chrislusf/seaweedfs:latest
+    command: "server -s3 -dir=/data"
+    ports: ["8333:8333", "9333:9333"]
+    volumes:
+      - seaweed-data:/data
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HEALTH_ENABLED: "true"
+    ports: ["8080:8080"]
+    volumes:
+      - ../keycloak:/opt/keycloak/data/import:ro
+
+  backend:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    environment:
+      SIGEC_DATABASE_URL: postgresql+psycopg://sigec:sigec@postgres:5432/sigec
+      SIGEC_REDIS_URL: redis://redis:6379/0
+      SIGEC_OIDC_ISSUER: http://keycloak:8080/realms/sigec
+      SIGEC_S3_ENDPOINT_URL: http://seaweedfs:8333
+      SIGEC_DEBUG: "true"
+    ports: ["8000:8000"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    volumes:
+      - ../../backend:/app
+      - ../../profiles:/profiles:ro
+
+  # Stands in for the ArcGIS feature services during development, and for the customer's
+  # work-order platform. Both keep I0–I8 independent of corporate system availability.
+  arcgis-mock:
+    build:
+      context: ../../tools/arcgis-mock
+    ports: ["8181:8181"]
+
+  legacy-ot-mock:
+    build:
+      context: ../../tools/legacy-ot-mock
+    ports: ["8182:8182"]
+
+  # El ERP: dueño del catálogo de materiales y de las existencias, y destino de los consumos
+  # (RF-122). El catálogo `material` se envía vacío a propósito y este es quien lo llena.
+  erp-mock:
+    build:
+      context: ../../tools/erp-mock
+    ports: ["8184:8184"]
+
+  # El OMS/ADMS: eventos de falla hacia acá, el registro de interrupción de vuelta (RF-123).
+  oms-mock:
+    build:
+      context: ../../tools/oms-mock
+    ports: ["8185:8185"]
+
+  # Drena el outbox de integraciones (ADR-012). Separado del backend a propósito: si muere,
+  # los eventos siguen en la tabla y el siguiente pase los recoge.
+  integration-worker:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    command: ["celery", "-A", "app.workers.celery_app", "worker", "--beat", "--loglevel=info"]
+    environment:
+      SIGEC_DATABASE_URL: postgresql+psycopg://sigec:sigec@postgres:5432/sigec
+      SIGEC_REDIS_URL: redis://redis:6379/0
+      # Apuntados a los simuladores en desarrollo. Vacíos en un despliegue donde el conector
+      # todavía no exista: el worker lo salta en vez de quemarle los reintentos.
+      SIGEC_WORK_ORDER_SYSTEM_URL: http://legacy-ot-mock:8182
+      SIGEC_CALL_CENTRE_URL: http://call-centre-mock:8183
+      SIGEC_ERP_URL: http://erp-mock:8184
+      SIGEC_OMS_URL: http://oms-mock:8185
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    volumes:
+      - ../../backend:/app
+      - ../../profiles:/profiles:ro
+
+  # Reclamos: una OT nace de un reclamo y el reclamo se cierra al aprobar la OT (RF-124).
+  call-centre-mock:
+    build:
+      context: ../../tools/call-centre-mock
+    ports: ["8183:8183"]
+
+volumes:
+  postgres-data:
+  seaweed-data:

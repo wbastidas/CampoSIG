@@ -1,0 +1,28 @@
+# Actividades que una cuadrilla registra (bloque B06).
+#
+# Deliberadamente **no** son las unidades de propiedad/construcción homologadas (UP/UC): esas las
+# mantiene el área técnica con su propia codificación y RF-034 las nombra aparte. Estas son las
+# actividades de ejecución que el técnico declara en el campo.
+catalog:
+  code: activity
+  title: Actividad realizada
+  source: manual
+entries:
+  - {code: inspeccion_visual, label: Inspección visual, sort_order: 1, attributes: {unit: gl}}
+  - {code: cambio_luminaria, label: Cambio de luminaria, synonyms: [cambié la luminaria, reemplazo de luminaria], sort_order: 10, attributes: {unit: u}}
+  - {code: cambio_lampara, label: Cambio de lámpara, synonyms: [cambio de foco, cambié el foco], sort_order: 11, attributes: {unit: u}}
+  - {code: cambio_fotocelula, label: Cambio de fotocélula, synonyms: [cambio de fotocelda, fotocélula], sort_order: 12, attributes: {unit: u}}
+  - {code: cambio_fusible, label: Cambio de fusible, synonyms: [cambié el fusible, reposición de fusible], sort_order: 20, attributes: {unit: u}}
+  - {code: cambio_aislador, label: Cambio de aislador, sort_order: 21, attributes: {unit: u}}
+  - {code: cambio_cruceta, label: Cambio de cruceta, sort_order: 22, attributes: {unit: u}}
+  - {code: reparacion_empalme, label: Reparación de empalme, synonyms: [rehice el empalme], sort_order: 23, attributes: {unit: u}}
+  - {code: tensado_conductor, label: Tensado de conductor, synonyms: [tensé el cable], sort_order: 24, attributes: {unit: m}}
+  - {code: poda, label: Poda de vegetación, synonyms: [podé, corte de ramas, poda], sort_order: 30, attributes: {unit: m}}
+  - {code: instalacion_tierra, label: Instalación de puesta a tierra, synonyms: [puse tierra, instalé la tierra], sort_order: 31, attributes: {unit: u}}
+  - {code: aplomado_poste, label: Aplomado de poste, synonyms: [enderecé el poste, aplomé], sort_order: 32, attributes: {unit: u}}
+  - {code: cambio_retenida, label: Cambio o tensado de retenida, sort_order: 33, attributes: {unit: u}}
+  - {code: maniobra_apertura, label: Maniobra de apertura, synonyms: [abrí, apertura], sort_order: 40, attributes: {unit: u}}
+  - {code: maniobra_cierre, label: Maniobra de cierre, synonyms: [cerré, cierre], sort_order: 41, attributes: {unit: u}}
+  - {code: medicion_puesta_tierra, label: Medición de puesta a tierra, synonyms: [medí la tierra], sort_order: 50, attributes: {unit: u}}
+  - {code: limpieza, label: Limpieza de estructura o equipo, sort_order: 51, attributes: {unit: u}}
+  - {code: senalizacion, label: Colocación de señalización, sort_order: 52, attributes: {unit: u}}

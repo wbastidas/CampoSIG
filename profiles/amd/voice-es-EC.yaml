@@ -1,0 +1,79 @@
+# Spoken forms of the canonical vocabulary, Ecuadorian Spanish (RF-331, RF-332).
+#
+# This file is part of the canonical layer, not of a profile: it names no real class,
+# field or domain. It says how an Ecuadorian line technician *says* a canonical value —
+# "medio voltaje" for `medium`, "hormigón" for `concrete` — so the lexicon builder can
+# turn dictation into canonical values without a model guessing.
+#
+# The display labels of the real domains are added on top of this at runtime, from the
+# business unit's synced metadata. That is where the utility's own wording comes in, and
+# it is why this file stays short: it only has to cover what the geodatabase does not say.
+#
+# Ecuadorian usage, deliberately: the regulator speaks of "bajo / medio / alto voltaje",
+# while technicians also say "baja / media tensión". Both are listed. No peninsular forms.
+
+version: 1
+locale: es-EC
+
+# Weight given to a lexicon entry when it is fed to the ASR as a hotword. Higher means
+# the decoder is pushed harder towards it. Volatile catalogues and the words of the open
+# work order get the most, because those are the entity errors that ruin a capture.
+boosts:
+  work_order_context: 3.0
+  volatile_domain: 2.5
+  domain_value: 1.5
+  attribute_cue: 1.0
+  asset_label: 1.0
+
+# Yes / no, for boolean fields dictated in passing ("sí, quedó señalizado").
+# Named 'affirmative' / 'negative' rather than true / false because YAML would read
+# those two keys as booleans and the map would stop being addressable by name.
+boolean_words:
+  affirmative: ["si", claro, correcto, afirmativo, hecho, cumple, ya, listo]
+  negative: ["no", negativo, ninguno, nada, incumple, falta]
+
+# Canonical enum value → how it is said. First form is the preferred one.
+enum_synonyms:
+  material.support:
+    concrete:   [hormigon, hormigon armado, concreto, cemento]
+    wood:       [madera, poste de madera]
+    steel:      [acero, metalico, poste metalico, tubular]
+    fiberglass: [fibra de vidrio, fibra]
+    other:      [otro, otro material]
+  phases:
+    single: [monofasico, una fase, monofasica]
+    two:    [bifasico, dos fases, bifasica]
+    three:  [trifasico, tres fases, trifasica]
+    bank:   [banco, banco de transformadores, banco trifasico]
+  mounting.transformer:
+    pole:    [en poste, aereo, montado en poste]
+    vault:   [camara, boveda, subterraneo, camara de transformacion]
+    pad:     [pedestal, en piso, pad mounted]
+    cabinet: [gabinete, armario]
+  technology.lamp:
+    led:          [led, tecnologia led]
+    sodium_hp:    [sodio, sodio de alta presion, vapor de sodio]
+    mercury:      [mercurio, vapor de mercurio]
+    metal_halide: [aditivos metalicos, haluro metalico, halogenuro metalico]
+    other:        [otra, otra tecnologia]
+  voltage_level:
+    low:              [bajo voltaje, baja tension, secundario]
+    medium:           [medio voltaje, media tension, primario]
+    sub_transmission: [subtransmision, alto voltaje, alta tension]
+
+# Canonical attribute key → the words that announce it in dictation. Several attributes
+# may share a cue ("potencia" fits a transformer and a lamp); the extractor resolves that
+# with the unit and with the fields the form actually has.
+attribute_cues:
+  code:          [codigo, numero, identificador, placa, poste numero]
+  material:      [material, es de, hecho de]
+  height_m:      [altura, alto, mide]
+  feeder_code:   [alimentador, primario, circuito]
+  install_date:  [fecha de instalacion, instalado, fecha]
+  rated_kva:     [capacidad, potencia, kva, transformador de]
+  phases:        [fases, fase, fasico]
+  mounting:      [montaje, montado, instalacion]
+  technology:    [tecnologia, tipo de lampara, lampara, luminaria de]
+  power_w:       [potencia, vatios, watts, consumo]
+  fuse_rating:   [fusible, calibre, tira fusible, capacidad del fusible]
+  voltage_level: [voltaje, tension, nivel de voltaje]

@@ -1,0 +1,16 @@
+# B3 Tiempos (SRS 4.2). Dictables: "llegamos a las diez y cuarto".
+block:
+  code: B03
+  title: Tiempos
+  required: true
+fields:
+  dispatched_at: {type: string, format: date-time, title: Hora de despacho, x-voice: true}
+  departed_at:   {type: string, format: date-time, title: Hora de salida, x-voice: true}
+  arrived_at:    {type: string, format: date-time, title: Hora de llegada, x-voice: true}
+  started_at:    {type: string, format: date-time, title: Hora de inicio, x-voice: true}
+  finished_at:   {type: string, format: date-time, title: Hora de fin, x-voice: true}
+  delay_reason:
+    type: string
+    title: Motivo de demora
+    x-catalog-ref: delay_reason
+    x-voice: true

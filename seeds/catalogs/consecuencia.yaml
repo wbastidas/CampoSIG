@@ -1,0 +1,52 @@
+# Consecuencia del anexo C, por tipo de activo (RF-013).
+#
+# ============================ LEER ANTES DE USAR ============================
+# El anexo C define la consecuencia por el **impacto en el servicio**: troncal de media tensión con
+# más de N clientes o cargas críticas (5), ramal de MV (4), transformador o red de baja (3),
+# acometida individual o alumbrado (2), sin impacto (1).
+#
+# La plataforma **no puede calcular eso sola**. No sabe cuántos clientes cuelgan de un alimentador ni
+# cuál es troncal y cuál ramal: eso vive en el SIG y en los sistemas comerciales. Lo que sí sabe es el
+# tipo de activo, y de ahí sale esta tabla, que es una **aproximación declarada**.
+#
+# Consecuencia de eso, y está en la propuesta con estas palabras: una OT propuesta sobre un tramo de
+# media tensión puede ser un ramal (4) o una troncal con un hospital detrás (5), y la plataforma la
+# trata como 4. **Subirla es del área**, y la propuesta dice que no pudo distinguirlo en vez de
+# presentar un 4 como si fuera un hecho.
+# ============================================================================
+catalog:
+  code: consequence_by_asset
+  title: Consecuencia por tipo de activo (anexo C)
+  source: manual
+entries:
+  - code: line_segment
+    label: Tramo de red
+    sort_order: 1
+    attributes:
+      consequence: 4
+      caveat: >-
+        Se asume ramal de media tensión. Si es troncal o alimenta cargas críticas, la consecuencia
+        es 5 y el área debe subirla.
+  - code: distribution_transformer
+    label: Transformador de distribución
+    sort_order: 2
+    attributes: {consequence: 3}
+  - code: support_structure
+    label: Estructura de soporte
+    sort_order: 3
+    attributes:
+      consequence: 3
+      caveat: >-
+        Depende de lo que sostenga la estructura, que la plataforma no conoce sin consultar el SIG.
+  - code: fuse_switch
+    label: Seccionador fusible
+    sort_order: 4
+    attributes: {consequence: 3}
+  - code: street_light
+    label: Luminaria
+    sort_order: 5
+    attributes: {consequence: 2}
+  - code: service_point
+    label: Punto de carga
+    sort_order: 6
+    attributes: {consequence: 2}

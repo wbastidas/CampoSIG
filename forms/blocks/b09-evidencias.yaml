@@ -1,0 +1,22 @@
+# B9 Evidencias (SRS 4.2). Los mínimos por tipo los fija la definición del formulario.
+block:
+  code: B09
+  title: Evidencias
+  required: true
+fields:
+  photos_before:
+    type: array
+    title: Fotos ANTES
+    x-photo-stage: before
+    x-guided-framing: true
+    items: {type: string, format: uri}
+    x-voice: false
+  photos_after:
+    type: array
+    title: Fotos DESPUÉS
+    x-photo-stage: after
+    x-guided-framing: true
+    items: {type: string, format: uri}
+    x-voice: false
+  sketch: {type: string, format: uri, title: Croquis, x-voice: false}
+  audio_note: {type: string, format: uri, title: Nota de audio, x-voice: false}

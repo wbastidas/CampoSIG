@@ -1,0 +1,1150 @@
+/* Estilos de la aplicación.
+ *
+ * Deliberadamente austeros y sin framework. Las pantallas son tablas densas que un supervisor
+ * lee de un vistazo y un mapa que ocupa lo que puede: lo que hace falta es jerarquía tipográfica
+ * y estados de color legibles, no un sistema de diseño.
+ *
+ * El color sigue la misma rampa segura para daltonismo que usan los mapas y los tableros, y
+ * nunca va solo: cada estado lleva texto además de color. Modo claro y oscuro, porque parte del
+ * uso es de noche en una sala de control.
+ */
+
+:root {
+  --fondo: #ffffff;
+  --fondo-alterno: #f6f6f4;
+  --texto: #1c1917;
+  --texto-suave: #57534e;
+  --borde: #d6d3d1;
+  --alarma: #7f1d1d;
+  --alarma-fondo: #fef2f2;
+  --acento: #1e3a5f;
+  /* Confirmación de un guardado. Verde oscuro para que contraste sobre fondo blanco: un verde
+     claro en un monitor de oficina a plena luz no se lee. */
+  --exito: #14532d;
+  --radio: 4px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fondo: #1c1917;
+    --fondo-alterno: #262220;
+    --texto: #f5f5f4;
+    --texto-suave: #a8a29e;
+    --borde: #44403c;
+    --alarma: #fca5a5;
+    --alarma-fondo: #3b1a1a;
+    --acento: #93c5fd;
+    /* El verde oscuro del modo claro es ilegible sobre fondo oscuro. */
+    --exito: #86efac;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--fondo);
+  color: var(--texto);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.app-bar {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--borde);
+  background: var(--fondo-alterno);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.app-bar nav {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.app-user {
+  margin-left: auto;
+  color: var(--texto-suave);
+}
+
+button {
+  font: inherit;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  background: var(--fondo);
+  color: var(--texto);
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--acento);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button[aria-current='true'] {
+  border-color: var(--acento);
+  font-weight: 600;
+}
+
+/* El foco visible se conserva a propósito: parte del uso es con teclado y guantes fuera. */
+:focus-visible {
+  outline: 2px solid var(--acento);
+  outline-offset: 2px;
+}
+
+main {
+  padding: 1rem;
+}
+
+h1 {
+  font-size: 1.4rem;
+  margin: 0 0 0.5rem;
+}
+
+h2 {
+  font-size: 1.1rem;
+  margin: 1.5rem 0 0.5rem;
+}
+
+h3 {
+  font-size: 1rem;
+  margin: 1rem 0 0.4rem;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--borde);
+  vertical-align: top;
+}
+
+th {
+  color: var(--texto-suave);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+code {
+  font-size: 0.85em;
+  color: var(--texto-suave);
+  word-break: break-all;
+}
+
+pre {
+  background: var(--fondo-alterno);
+  padding: 0.5rem;
+  border-radius: var(--radio);
+  overflow-x: auto;
+  font-size: 0.85em;
+}
+
+/* Resumen en tarjetas: una fila de cifras que se lee sin mover los ojos. */
+.dispatch-summary,
+.integrations-summary,
+.review-detail dl {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  margin: 0.5rem 0 1rem;
+  padding: 0;
+}
+
+.dispatch-summary div,
+.integrations-summary div,
+.review-detail dl div {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  min-width: 8rem;
+}
+
+dt {
+  color: var(--texto-suave);
+  font-size: 0.8rem;
+}
+
+dd {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 600;
+}
+
+/* El color nunca va solo: el texto del estado siempre acompaña. */
+.severity-chip {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  color: #ffffff;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.alarming,
+.alarming-row td {
+  color: var(--alarma);
+}
+
+.alarming-row {
+  background: var(--alarma-fondo);
+}
+
+[role='alert'],
+.board-error,
+.blockers {
+  border-left: 3px solid var(--alarma);
+  background: var(--alarma-fondo);
+  color: var(--alarma);
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radio);
+  margin: 0.5rem 0;
+}
+
+.blockers ul {
+  margin: 0.25rem 0 0;
+  padding-left: 1.2rem;
+}
+
+.board-age {
+  color: var(--texto-suave);
+  font-size: 0.85rem;
+  max-width: 60ch;
+}
+
+/* Revisión: cola a la izquierda, detalle a la derecha, en una pantalla ancha. */
+.review-layout {
+  display: grid;
+  grid-template-columns: minmax(14rem, 18rem) 1fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 60rem) {
+  .review-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.review-queue {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.review-queue button {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  text-align: left;
+}
+
+.review-queue .sla {
+  color: var(--alarma);
+  font-size: 0.8rem;
+}
+
+/* Aprobación en lote (RF-176). La fila lleva la casilla al lado del botón de la OT, así que se
+   vuelve horizontal; las que no entran en el lote dicen por qué en su lugar. */
+.review-queue li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+}
+
+.review-nobatch {
+  flex: 0 0 8.5rem;
+  font-size: 0.75rem;
+  color: var(--texto-suave);
+}
+
+.review-batch {
+  border: 1px solid var(--borde);
+  border-radius: 4px;
+  padding: 0.6rem;
+  margin-bottom: 0.75rem;
+}
+
+.review-batch h2 {
+  font-size: 1rem;
+  margin: 0 0 0.3rem;
+}
+
+.review-batch-confirm {
+  border-left: 3px solid var(--alarma);
+  padding-left: 0.5rem;
+}
+
+.review-batch-outcome ul {
+  margin: 0.4rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.85rem;
+}
+
+.evidence-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.evidence-pair figure {
+  margin: 0;
+}
+
+.evidence-pair ul {
+  padding-left: 1.2rem;
+}
+
+.review-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  flex-wrap: wrap;
+}
+
+textarea {
+  width: 100%;
+  min-height: 4rem;
+  font: inherit;
+  padding: 0.4rem;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  background: var(--fondo);
+  color: var(--texto);
+}
+
+fieldset {
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  margin: 1rem 0;
+}
+
+.link-button {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--acento);
+  text-align: left;
+  text-decoration: underline;
+}
+
+.login-gate {
+  max-width: 28rem;
+  margin: 15vh auto;
+  padding: 2rem;
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  text-align: center;
+}
+
+/* El mapa del planificador ocupa lo que le dejen. */
+.planner-map {
+  height: calc(100vh - 8rem);
+  min-height: 24rem;
+}
+
+/* Importador de perfiles (RF-301). La lista es larga y se lee de arriba a abajo: una
+   tarjeta por tipo de activo canónico, plegada hasta que alguien la abra. */
+.importer__hint,
+.importer__geometry {
+  color: var(--texto-suave);
+}
+
+.importer__progress {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 0.2rem 1rem;
+  width: fit-content;
+  margin: 0.5rem 0;
+}
+
+.importer__progress dt {
+  color: var(--texto-suave);
+}
+
+.importer__start {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 0.5rem 0;
+}
+
+.importer__assets {
+  list-style: none;
+  padding: 0;
+}
+
+.importer__asset {
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  margin-bottom: 0.5rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.importer__asset > header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.importer__detail {
+  border-top: 1px solid var(--borde);
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+}
+
+.importer__evidence {
+  color: var(--texto-suave);
+  font-size: 0.9em;
+  margin: 0.2rem 0 0.6rem 1.5rem;
+  padding: 0;
+}
+
+/* La confianza se dice en palabras; el color solo la acompaña, nunca la sustituye —
+   quien no distingue estos dos verdes sigue leyendo «confianza baja». */
+.importer__confidence {
+  font-size: 0.9em;
+  padding: 0 0.35rem;
+  border-radius: var(--radio);
+  background: var(--fondo-alterno);
+}
+
+.importer__confidence--baja {
+  background: var(--alarma-fondo);
+  color: var(--alarma);
+}
+
+.importer__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin: 1rem 0;
+}
+
+/* Acta emitida (RF-115): el código se lee en voz alta cuando el QR no enfoca, así que va en
+   monoespaciado y con espacio suficiente para dictarlo sin equivocarse. */
+.review-acta code {
+  font-family: ui-monospace, monospace;
+  background: var(--fondo-alterno);
+  padding: 0 0.25rem;
+  border-radius: var(--radio);
+}
+
+.review-hint {
+  color: var(--texto-suave);
+  margin: 0.25rem 0 0.5rem;
+}
+
+/* Vista del formulario capturado (I6). Dos columnas de definición: etiqueta y respuesta, que es
+   como se lee un formulario en papel y como el supervisor espera encontrarlo. */
+.form-view__fields {
+  display: grid;
+  grid-template-columns: minmax(10rem, 18rem) 1fr;
+  gap: 0.25rem 1rem;
+  margin: 0.25rem 0 0.75rem;
+}
+
+.form-view__fields dt {
+  color: var(--texto-suave);
+}
+
+.form-view__fields dd {
+  margin: 0;
+}
+
+.form-view__block {
+  color: var(--texto-suave);
+  font-weight: normal;
+  font-size: 0.85em;
+}
+
+/* La procedencia va pegada al valor, no en un anexo: la regla 8 pide que se pueda auditar, y un
+   anexo se lee después de haber creído el número. */
+.form-view__origin {
+  font-size: 0.85em;
+  color: var(--texto-suave);
+  font-style: italic;
+}
+
+.form-view__empty {
+  color: var(--texto-suave);
+}
+
+.form-view__owed {
+  font-weight: bold;
+}
+
+.form-view__owed-reason {
+  font-size: 0.9em;
+  color: var(--alarma);
+}
+
+.form-view__warnings {
+  border: 1px solid var(--borde);
+  background: var(--fondo-alterno);
+  border-radius: var(--radio);
+  padding: 0.25rem 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+@media (max-width: 40rem) {
+  /* En un teléfono o una ventana estrecha, dos columnas parten las etiquetas en tres líneas. */
+  .form-view__fields {
+    grid-template-columns: 1fr;
+    gap: 0 0;
+  }
+
+  .form-view__fields dd {
+    margin-bottom: 0.5rem;
+  }
+}
+
+/* Informe de pre-revisión (RF-111). El riesgo va en palabras en el encabezado; el color solo
+   acompaña. Estas pantallas se leen en monitores de oficina de cualquier antigüedad, y una señal
+   solo por color es una que un supervisor con daltonismo no recibe. */
+.prereview__meta {
+  font-weight: normal;
+  font-size: 0.8em;
+  color: var(--texto-suave);
+}
+
+.prereview__observations {
+  list-style: none;
+  padding: 0;
+}
+
+.prereview__observations > li {
+  border-left: 3px solid var(--borde);
+  padding: 0.25rem 0 0.25rem 0.6rem;
+  margin-bottom: 0.6rem;
+}
+
+.prereview__action {
+  color: var(--texto-suave);
+}
+
+.prereview__citation {
+  font-size: 0.9em;
+  color: var(--texto-suave);
+  font-style: italic;
+}
+
+/* La evidencia que la observación señala: pequeña, monoespaciada y siempre presente. Sin ella el
+   supervisor tendría que ir a buscarla, que es el trabajo que el informe existe para ahorrar. */
+.prereview__evidence {
+  font-family: ui-monospace, monospace;
+  font-size: 0.8em;
+  color: var(--texto-suave);
+  margin: 0.2rem 0 0 1rem;
+  padding: 0;
+}
+
+/* Muestra ciega y concordancia (RF-111a). El informe retenido se marca como retenido, no como
+   ausente: una sección vacía sin explicación se lee como una pantalla rota. */
+.prereview--blind {
+  border-left: 3px solid var(--acento);
+  padding-left: 0.5rem;
+}
+
+.prereview__revealed {
+  font-weight: 600;
+}
+
+.review-accord {
+  border: 1px solid var(--borde);
+  border-radius: 4px;
+  padding: 0.6rem;
+  margin-top: 1rem;
+}
+
+.review-accord h2 {
+  font-size: 1rem;
+  margin: 0 0 0.3rem;
+}
+
+.review-accord ul {
+  margin: 0.3rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.85rem;
+}
+
+/* Tablero de IA (RF-134). Los paneles son tarjetas independientes: cada uno responde una pregunta
+   distinta y ninguno depende de leer el de al lado. */
+.ai-board-panels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.ai-board-panels > section {
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  padding: 0.75rem;
+}
+
+.ai-board-panels h2 {
+  font-size: 1rem;
+  margin: 0 0 0.5rem;
+}
+
+.ai-board-panels h3 {
+  font-size: 0.9rem;
+  margin: 0.5rem 0 0.2rem;
+}
+
+.ai-board-panels table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.ai-board-panels th,
+.ai-board-panels td {
+  text-align: left;
+  padding: 0.2rem 0.3rem;
+  border-bottom: 1px solid var(--borde);
+  vertical-align: top;
+}
+
+/* Una fila sin tasa reportable va atenuada, no oculta: la cuenta sigue siendo información. */
+.ai-board-panels tr.dim {
+  color: var(--texto-suave);
+}
+
+.ai-board-note {
+  font-size: 0.8rem;
+  color: var(--texto-suave);
+  margin: 0.3rem 0 0;
+}
+
+.ai-board-regression {
+  color: var(--alarma);
+  background: var(--alarma-fondo);
+  padding: 0.3rem 0.4rem;
+  border-radius: var(--radio);
+  font-size: 0.85rem;
+}
+
+/* Bitácora (RF-160, RF-161). Tabla densa: un auditor recorre cientos de filas buscando una. */
+.audit-chain {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin: 0.5rem 0;
+}
+
+.audit-ok {
+  color: var(--texto-suave);
+}
+
+/* Una cadena rota no se puede leer como un aviso menor. */
+.audit-broken {
+  color: var(--alarma);
+  background: var(--alarma-fondo);
+  padding: 0.2rem 0.4rem;
+  border-radius: var(--radio);
+  font-weight: 600;
+}
+
+.audit form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+
+.audit-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.audit-table th,
+.audit-table td {
+  text-align: left;
+  padding: 0.25rem 0.4rem;
+  border-bottom: 1px solid var(--borde);
+  vertical-align: top;
+}
+
+/* Tablero operativo (RF-130). Reutiliza la rejilla de paneles del tablero de IA: son la misma
+   clase de pantalla y aprender dos layouts para lo mismo es trabajo del supervisor, no del CSS. */
+.ops-board table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.ops-board th,
+.ops-board td {
+  text-align: left;
+  padding: 0.2rem 0.3rem;
+  border-bottom: 1px solid var(--borde);
+}
+
+.ops-leg + .ops-leg {
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--borde);
+}
+
+/* Un SLA vencido no puede leerse como un dato más de la tabla. */
+.ops-late {
+  color: var(--alarma);
+  background: var(--alarma-fondo);
+  padding: 0.2rem 0.4rem;
+  border-radius: var(--radio);
+  font-weight: 600;
+}
+
+/* Alumbrado público (RF-131). Reutiliza la rejilla de paneles: es la misma clase de pantalla. */
+.apg-board table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.apg-board th,
+.apg-board td {
+  text-align: left;
+  padding: 0.2rem 0.3rem;
+  border-bottom: 1px solid var(--borde);
+}
+
+.apg-board h3 {
+  font-size: 0.9rem;
+  margin: 0.6rem 0 0.2rem;
+}
+
+/* Un plazo sin verificar contra el texto oficial no puede parecer una cita de la norma (ADR-007). */
+.apg-provisional {
+  color: var(--alarma);
+  font-style: italic;
+}
+
+/* Mantenimiento (RF-133). La intensidad por alimentador va como barra proporcional: la plataforma no
+   tiene la geometría de los alimentadores —vive en el SIG—, así que lo honesto es mostrar el reparto
+   y no dibujar un mapa con datos que no están. */
+.mnt-board table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.mnt-board th,
+.mnt-board td {
+  text-align: left;
+  padding: 0.2rem 0.3rem;
+  border-bottom: 1px solid var(--borde);
+}
+
+.mnt-heat {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.mnt-heat > li + li {
+  margin-top: 0.5rem;
+}
+
+.mnt-bar {
+  display: block;
+  height: 0.5rem;
+  background: var(--acento);
+  border-radius: 2px;
+  margin: 0.15rem 0;
+}
+
+.mnt-share {
+  font-size: 0.8rem;
+  color: var(--texto-suave);
+}
+
+.zon-screen section {
+  margin-bottom: 1.5rem;
+}
+
+.zon-screen table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.zon-screen th,
+.zon-screen td {
+  text-align: left;
+  padding: 0.2rem 0.3rem;
+  border-bottom: 1px solid var(--borde);
+}
+
+.zon-headline {
+  font-weight: 600;
+}
+
+.zon-preview {
+  font-size: 0.85rem;
+  color: var(--texto-suave);
+}
+
+/* Una zona inactiva sigue en la lista porque es parte de la historia de miles de OT cerradas;
+   atenuada para que no se confunda con una que está operando. */
+.zon-inactive {
+  opacity: 0.6;
+}
+
+.zon-import textarea {
+  width: 100%;
+  font-family: monospace;
+  font-size: 0.8rem;
+}
+
+.pol-screen section {
+  margin-bottom: 1.5rem;
+}
+
+.pol-screen table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.pol-screen th,
+.pol-screen td {
+  text-align: left;
+  padding: 0.2rem 0.3rem;
+  border-bottom: 1px solid var(--borde);
+}
+
+/* Un valor que nadie decidió no debe leerse igual que uno decidido. */
+.pol-inherited {
+  color: var(--texto-suave);
+  font-style: italic;
+}
+
+.pol-field {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.3rem;
+}
+
+.pol-field label {
+  min-width: 18rem;
+}
+
+.pol-help {
+  font-size: 0.8rem;
+  color: var(--texto-suave);
+}
+
+.pol-status {
+  color: var(--exito);
+}
+
+.reg-screen section {
+  margin-bottom: 1.5rem;
+}
+
+.reg-screen table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.reg-screen th,
+.reg-screen td {
+  text-align: left;
+  padding: 0.2rem 0.3rem;
+  border-bottom: 1px solid var(--borde);
+}
+
+.reg-headline {
+  font-weight: 600;
+}
+
+/* Un código que falta hace que la regla calle, y callar se parece a cumplir: se marca más fuerte
+   que uno que está cargado pero sin verificar. */
+.reg-missing {
+  color: var(--alarma);
+  font-weight: 600;
+}
+
+.reg-unverified {
+  color: var(--alarma);
+}
+
+.reg-in-force th {
+  font-weight: 700;
+}
+
+.reg-revisions {
+  padding-left: 1.2rem;
+}
+
+.reg-when {
+  color: var(--texto-suave);
+  font-variant-numeric: tabular-nums;
+}
+
+.reg-help {
+  font-size: 0.8rem;
+  color: var(--texto-suave);
+}
+
+.reg-status {
+  color: var(--exito);
+}
+
+/* --- RF-021: la sugerencia de cuadrilla en el panel del planificador --- */
+.planner__suggestion {
+  border-top: 1px solid var(--borde);
+  padding-top: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.planner__candidates {
+  padding-left: 1.2rem;
+  margin: 0;
+}
+
+.planner__candidates > li + li {
+  margin-top: 0.6rem;
+}
+
+.planner__candidates ul {
+  list-style: none;
+  padding-left: 0;
+  margin: 0.2rem 0;
+  font-size: 0.85rem;
+}
+
+/* Un factor que no aportó nada se atenúa pero no se esconde: ocultarlo haría que una cuadrilla
+   con 40 puntos de cuatro factores se leyera como una con 40 de uno. */
+.planner__reason-empty {
+  color: var(--texto-suave);
+}
+
+.planner__excluded {
+  font-size: 0.85rem;
+  color: var(--texto-suave);
+  padding-left: 1.2rem;
+}
+
+/* --- RF-024: el tablero de consignaciones --- */
+.out-list {
+  list-style: none;
+  padding-left: 0;
+}
+
+.out-list > li {
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  padding: 0.6rem 0.8rem;
+  margin-bottom: 0.6rem;
+}
+
+/* Lo que espera una decisión del Centro de Control se destaca: es la única fila sobre la que hay
+   algo que hacer, y una lista donde todo pesa igual esconde justamente esa. */
+.out-list > li.out-awaiting {
+  border-left: 4px solid var(--acento);
+  background: var(--fondo-alterno);
+}
+
+.out-list h3 {
+  margin: 0 0 0.2rem;
+  font-size: 1rem;
+}
+
+.out-meta {
+  color: var(--texto-suave);
+  font-size: 0.85rem;
+  margin: 0.2rem 0;
+}
+
+.out-warning {
+  color: var(--alarma);
+  background: var(--alarma-fondo);
+  padding: 0.3rem 0.5rem;
+  border-radius: var(--radio);
+}
+
+.out-error {
+  color: var(--alarma);
+  font-weight: 600;
+}
+
+.out-status {
+  color: var(--exito);
+}
+
+.out-form,
+.out-decision {
+  display: grid;
+  gap: 0.3rem;
+  max-width: 34rem;
+  margin: 0.5rem 0;
+  padding-left: 0.6rem;
+  border-left: 2px solid var(--borde);
+}
+
+/* --- RF-017: los adjuntos de oficina en el panel del planificador --- */
+.planner__attachments {
+  border-top: 1px solid var(--borde);
+  padding-top: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.planner__attachment-list {
+  list-style: none;
+  padding-left: 0;
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.planner__attachment-list > li + li {
+  margin-top: 0.6rem;
+  border-top: 1px dotted var(--borde);
+  padding-top: 0.6rem;
+}
+
+/* Cada dato del adjunto en su línea: el peso y el «no baja al teléfono» son lo que decide si la
+   cuadrilla tiene el archivo, y en una sola línea se leen como parte del título. */
+.planner__attachment-list span {
+  display: block;
+  color: var(--texto-suave);
+}
+
+.planner__withdraw {
+  margin-top: 0.4rem;
+  padding-left: 0.6rem;
+  border-left: 2px solid var(--borde);
+}
+
+.frm-screen section {
+  margin-bottom: 1.5rem;
+}
+
+.frm-screen table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.frm-screen th,
+.frm-screen td {
+  text-align: left;
+  padding: 0.2rem 0.3rem;
+  border-bottom: 1px solid var(--borde);
+  vertical-align: top;
+}
+
+.frm-headline {
+  font-weight: 600;
+}
+
+/* Un formulario que nadie publicó no tiene forma congelada: es lo más grave de esta pantalla. */
+.frm-nunca th {
+  color: var(--alarma);
+}
+
+/* Un borrador sin publicar es un cambio que nadie en campo ha visto. */
+.frm-borrador th {
+  font-weight: 700;
+}
+
+.frm-version-list {
+  padding-left: 1.2rem;
+}
+
+.frm-version-list > li + li {
+  margin-top: 0.4rem;
+}
+
+.frm-help {
+  font-size: 0.8rem;
+  color: var(--texto-suave);
+}
+
+.frm-status {
+  color: var(--exito);
+}
+
+.cat-screen section {
+  margin-bottom: 1.5rem;
+}
+
+.cat-screen table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.cat-screen th,
+.cat-screen td {
+  text-align: left;
+  padding: 0.2rem 0.3rem;
+  border-bottom: 1px solid var(--borde);
+  vertical-align: top;
+}
+
+.cat-headline {
+  font-weight: 600;
+}
+
+/* Un catálogo vacío sin motivo declarado es un selector sin valores que nadie decidió vaciar. */
+.cat-vacio-sin-motivo th {
+  color: var(--alarma);
+}
+
+/* Uno vacío a la espera de su lista oficial es una decisión, no una falla: se atenúa, no se alarma. */
+.cat-esperando th {
+  color: var(--texto-suave);
+}
+
+.cat-warning {
+  background: var(--alarma-fondo);
+  padding: 0.4rem 0.5rem;
+  border-radius: var(--radio);
+}
+
+.cat-help {
+  font-size: 0.8rem;
+  color: var(--texto-suave);
+}
+
+.cat-status {
+  color: var(--exito);
+}
+
+/* Añadir un valor de catálogo (RF-034/RF-147): un formulario corto dentro del detalle. */
+.cat-add {
+  border-top: 1px solid var(--borde);
+  padding-top: 0.6rem;
+  margin-top: 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  max-width: 40rem;
+}

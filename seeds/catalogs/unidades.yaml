@@ -1,0 +1,13 @@
+# Unidades de medida de las actividades (bloque B06).
+catalog:
+  code: measurement_unit
+  title: Unidad de medida
+  source: manual
+entries:
+  - {code: u, label: Unidad, synonyms: [unidades, unidad], sort_order: 1}
+  - {code: m, label: Metro, synonyms: [metros, metro], sort_order: 2}
+  - {code: km, label: Kilómetro, synonyms: [kilómetros, kilometro], sort_order: 3}
+  - {code: kg, label: Kilogramo, synonyms: [kilos, kilo], sort_order: 4}
+  - {code: h, label: Hora, synonyms: [horas, hora], sort_order: 5}
+  - {code: m3, label: Metro cúbico, synonyms: [metros cúbicos], sort_order: 6}
+  - {code: gl, label: Global, synonyms: [global], sort_order: 7}

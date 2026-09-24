@@ -1,0 +1,32 @@
+# B11 Hallazgos adicionales (SRS 4.2). Alimenta las OT sugeridas por IA (RF-013).
+block:
+  code: B11
+  title: Hallazgos adicionales
+  required: false
+fields:
+  findings:
+    type: array
+    title: Hallazgos
+    x-repeatable-table: true
+    x-voice: true
+    x-vision-source: findings
+    items:
+      type: object
+      properties:
+        asset_code: {type: string, title: Activo, x-voice: true}
+        defect_code:
+          type: string
+          title: Defecto
+          x-catalog-ref: defect
+          x-voice: true
+        criticality:
+          type: string
+          title: Criticidad
+          enum: [baja, media, alta, critica]
+          x-voice: true
+        photo: {type: string, format: uri, title: Foto}
+        generate_work_order:
+          type: boolean
+          title: ¿Generar trabajo?
+          x-voice: true
+      required: [defect_code, criticality]

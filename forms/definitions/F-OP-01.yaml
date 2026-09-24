@@ -1,0 +1,17 @@
+# F-OP-01 — Atención de falla o reclamo técnico (SRS 4.4, 4.8).
+form:
+  code: F-OP-01
+  version: 1.1.0
+  title: Atención de falla o reclamo técnico
+  area: operacion
+  blocks: [B01, B02, B04, B03, B05, B06, B07, B13, B09, B10, B11, B12]
+  min_photos: {before: 2, after: 2}
+  requires_ats: true
+  # Trabajo sobre la red de media tensión (RF-021).
+  requires_competencies: ['MT']
+  applies_to_asset_types:
+    - support_structure
+    - distribution_transformer
+    - fuse_switch
+    - line_segment
+    - service_point
