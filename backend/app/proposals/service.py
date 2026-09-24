@@ -41,8 +41,8 @@ from app.forms.catalog import definitions_for_asset_type
 from app.org.models import BusinessUnit
 from app.proposals.criticality import Criticality, compute, suggested_deadline_hours
 from app.proposals.models import ProposalOrigin, ProposalState, WorkOrderProposal
-from app.workorders.models import STORAGE_SRID, Priority, WorkOrder, WorkOrderSource, WorkOrderState
-from app.workorders.service import create_work_order
+from app.workorders.models import STORAGE_SRID, Priority, WorkOrder, WorkOrderSource
+from app.workorders.service import create_work_order, pending_field_work
 from app.zones.models import Zone
 
 #: The catalogues this module reads. Named so a caller can see what has to be loaded for the
@@ -55,28 +55,6 @@ REJECT_REASON_CATALOG = "proposal_reject_reason"
 #: The work type a proposal carries. A correction: the form the crew will fill is chosen from the
 #: asset type, and this is what the boards group by.
 PROPOSED_WORK_TYPE = "correctivo"
-
-#: States in which an order is still **work to be carried out in the field**, so proposing new work
-#: on that asset would be proposing what is already scheduled (RF-014).
-#:
-#: Written out rather than derived by subtracting the attended states, because that subtraction is
-#: what produced the first version's bug: it left `sincronizada` and `en_revision` in the list, and
-#: those are the states of the very order whose capture produced the finding — so **no proposal
-#: could ever be raised**. The field work of an order in review is done; what is pending is a
-#: supervisor, and a supervisor being busy is not a reason to stop proposing work.
-#:
-#: `devuelta` is here: a returned order sends the crew back, which is pending field work.
-PENDING_FIELD_STATES = (
-    WorkOrderState.DRAFT,
-    WorkOrderState.PLANNED,
-    WorkOrderState.ASSIGNED,
-    WorkOrderState.DOWNLOADED,
-    WorkOrderState.EN_ROUTE,
-    WorkOrderState.ON_SITE,
-    WorkOrderState.IN_EXECUTION,
-    WorkOrderState.SUSPENDED,
-    WorkOrderState.RETURNED,
-)
 
 
 class ProposalError(Exception):
@@ -175,31 +153,6 @@ def _form_for(asset_type_key: str | None) -> str | None:
     return definitions[0].code if definitions else None
 
 
-def _pending_work(
-    session: Session, unit: BusinessUnit, assets: set[str]
-) -> dict[str, set[uuid.UUID]]:
-    """Which orders are still pending in the field, per asset.
-
-    The order ids and not just the asset codes, because the order whose capture produced the finding
-    must not be able to block the follow-up of what it found. It is the one order that is guaranteed
-    to exist on that asset, and counting it would silence the generator completely.
-    """
-    if not assets:
-        return {}
-    rows = session.execute(
-        select(WorkOrder.asset_code, WorkOrder.id).where(
-            WorkOrder.business_unit_id == unit.id,
-            WorkOrder.asset_code.in_(list(assets)),
-            WorkOrder.state.in_([state.value for state in PENDING_FIELD_STATES]),
-        )
-    ).all()
-    pending: dict[str, set[uuid.UUID]] = {}
-    for asset, order_id in rows:
-        if asset:
-            pending.setdefault(asset, set()).add(order_id)
-    return pending
-
-
 def _open_pairs(session: Session, unit: BusinessUnit) -> set[tuple[str, str]]:
     rows = session.execute(
         select(WorkOrderProposal.asset_code, WorkOrderProposal.defect_code).where(
@@ -239,7 +192,7 @@ def generate_from_findings(
         return report
 
     assets = {item.asset_code for item in findings if item.asset_code}
-    pending = _pending_work(session, unit, assets)
+    pending = pending_field_work(session, unit, assets)
     existing = _open_pairs(session, unit)
     seen: set[tuple[str, str]] = set()
 

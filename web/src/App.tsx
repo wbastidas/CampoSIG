@@ -24,6 +24,7 @@ import { IntegrationsScreen } from './features/integrations/IntegrationsScreen';
 import { MaintenanceScreen } from './features/maintenance/MaintenanceScreen';
 import { ModelProfileScreen } from './features/model-profile/ModelProfileScreen';
 import { OperationsBoard } from './features/operations/OperationsBoard';
+import { PlansScreen } from './features/plans/PlansScreen';
 import { PolicyScreen } from './features/policy/PolicyScreen';
 import { ProposalsScreen } from './features/proposals/ProposalsScreen';
 import { RegulatoryScreen } from './features/regulatory/RegulatoryScreen';
@@ -48,6 +49,7 @@ type Screen =
   | 'operacion'
   | 'alumbrado'
   | 'mantenimiento'
+  | 'preventivo'
   | 'propuestas'
   | 'ia'
   | 'integraciones'
@@ -69,6 +71,9 @@ const SCREENS: { key: Screen; label: string; roles: string[] }[] = [
   { key: 'alumbrado', label: 'Alumbrado', roles: ['supervisor', 'planificador'] },
   // El área de mantenimiento planifica con los hallazgos de las inspecciones (RF-133).
   { key: 'mantenimiento', label: 'Mantenimiento', roles: ['supervisor', 'planificador'] },
+  // El plan preventivo lo escribe quien planifica; el supervisor mira, porque es quien responde
+  // por qué se mandó una cuadrilla a ese poste (RF-012).
+  { key: 'preventivo', label: 'Plan preventivo', roles: ['planificador', 'admin_funcional'] },
   // La bandeja de propuestas es del supervisor, que es quien decide, y del planificador porque
   // alimenta su tablero. Levantar propuestas no es decidir y no se hace desde aquí (RF-013).
   { key: 'propuestas', label: 'OT propuestas', roles: ['supervisor', 'planificador'] },
@@ -171,6 +176,12 @@ export function App() {
         {screen === 'operacion' && <OperationsBoard businessUnit={unit} />}
         {screen === 'alumbrado' && <ApgScreen businessUnit={unit} />}
         {screen === 'mantenimiento' && <MaintenanceScreen businessUnit={unit} />}
+        {screen === 'preventivo' && (
+          <PlansScreen
+            businessUnit={unit}
+            mayEdit={roles.includes('planificador') || roles.includes('admin_funcional')}
+          />
+        )}
         {screen === 'propuestas' && (
           <ProposalsScreen
             businessUnit={unit}

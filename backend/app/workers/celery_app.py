@@ -21,6 +21,7 @@ from celery.schedules import crontab
 from app.infra.database import get_session_factory
 from app.settings import get_settings
 from app.workers.integration_delivery import run_once
+from app.workers.plan_generation import run_once as run_plan_generation
 from app.workers.pre_review import run_once as run_pre_review_pass
 
 settings = get_settings()
@@ -48,6 +49,16 @@ celery_app.conf.update(
         "pre-revisar-ot": {
             "task": "sigec.prereview.run",
             "schedule": crontab(minute="*/5"),
+        },
+        # Una vez al día, de madrugada: un plan preventivo se mide en meses, y las OT que emite
+        # tienen que estar en el tablero antes de que el planificador abra la bandeja. A las 04:30
+        # de Guayaquil, que es antes del primer turno y después de cualquier corte nocturno.
+        #
+        # Que el job corra dos veces —un reintento, dos beats, un operador impaciente— es inocuo:
+        # la etiqueta de periodo en `plan_issue` es la guarda, y es un índice de la base.
+        "emitir-planes-preventivos": {
+            "task": "sigec.plans.generate",
+            "schedule": crontab(hour=4, minute=30),
         },
     },
 )
@@ -79,3 +90,15 @@ def run_pre_reviews() -> dict[str, Any]:
     """
     with get_session_factory()() as session:
         return run_pre_review_pass(session).as_dict()
+
+
+@celery_app.task(name="sigec.plans.generate")  # type: ignore[untyped-decorator]
+def generate_preventive_plans() -> dict[str, Any]:
+    """One pass over every business unit's due preventive plans (RF-012).
+
+    No `autoretry_for`: a retry would re-run every unit, and the ones that succeeded would find
+    their period already issued and do nothing — harmless but noisy. The failures are named in the
+    report, and the next night's pass picks up a period that is still unissued.
+    """
+    with get_session_factory()() as session:
+        return run_plan_generation(session).as_dict()

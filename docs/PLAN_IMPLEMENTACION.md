@@ -830,6 +830,62 @@ Falta la mitad que necesita modelos: los nodos VLM y de redacción, en I12.
 
 ---
 
+### RF-012: el plan preventivo, y por qué el periodo es una etiqueta
+
+El criterio es un conteo: «un plan mensual genera N OT en la fecha programada». Un conteo es toda la
+dificultad. Una OT de más manda una cuadrilla a un poste que está bien; una de menos deja una
+inspección sin hacer y el área se entera en la auditoría. Así que todo el módulo está construido para
+poder defender ese número después.
+
+**La guarda de idempotencia es una etiqueta de periodo, no un reloj.** `plan_issue` guarda una fila
+por plan, activo y **periodo** —`2026-09`, `2026-T3`— y la unicidad es un índice de la base. Dos
+corridas el 3 y el 27 de septiembre son el mismo periodo y la segunda no emite nada. La alternativa
+que parece natural —comparar contra la fecha de la última corrida más la frecuencia— habría hecho
+legal la segunda, y el error solo se ve contando OT. Son **dos** índices parciales y no uno, porque
+PostgreSQL trata los NULL como distintos: un plan que emite una sola OT para todo el alcance tiene
+`asset_code` nulo, y con un índice único corriente podría emitir el mismo periodo dos veces.
+
+**El día 28 es una decisión, no un límite técnico.** «El 31 de cada mes» no existe en febrero, y las
+dos formas de arreglarlo sobre la marcha dan conteos anuales distintos del que el área reporta:
+disparar el 28 acorta el periodo, saltarse febrero emite once veces al año. La plataforma rechaza el
+29, el 30 y el 31 y dice por qué, que es una conversación con el planificador en vez de una
+discrepancia en una auditoría.
+
+**El disparo es «el día programado o después».** Una máquina caída el día 5 no puede costarle al área
+un mes de preventivo, y ser generoso aquí es seguro *precisamente* porque la etiqueta impide el doble.
+Ser estricto, en cambio, perdería el periodo entero en silencio.
+
+**Un alcance por alimentador o por zona es una aproximación declarada.** «Todos los postes del
+alimentador 04BH07T11» es una pregunta que contesta el SIG, no esta plataforma (ADR-006). Lo que esta
+plataforma puede contestar es «los activos de ese alimentador en los que ya registramos trabajo», que
+es un subconjunto — y justamente el activo que nunca se ha intervenido es el que más falta hace
+inspeccionar. El caveat viaja con cada emisión y aparece en la pantalla con las palabras del
+servidor. Una lista explícita, que el área escribe o importa y que además es cómo se expresa una
+**ruta** (la lista en orden de visita), no lleva caveat porque es exacta.
+
+**Cada negativa es una fila con su motivo.** Un plan que emitió 4 de 11 puede estar funcionando bien
+—siete activos ya tienen cuadrilla en camino— o mal —una guarda que nadie quiso poner— y la única
+forma de distinguirlo es un registro por activo. De ahí `plan_issue` con `outcome` y `reason`, y no
+líneas de log.
+
+**Y una consecuencia del diseño que vale escribir, porque la encontraron los tests:** un plan cuyas OT
+nadie ejecuta **deja de emitir**. La guarda de «trabajo pendiente» —la misma de RF-013, ahora
+compartida en `workorders/service.py` para que no haya dos definiciones— salta el activo cuyo periodo
+anterior sigue abierto. El resultado es que no se apilan doce OT sobre el mismo poste, y que cada
+periodo saltado queda registrado como «atrasado» en vez de como «al día»: la pantalla lo nombra así,
+porque el conteo de un plan atrasado —cero— se ve igual que el de un plan sin nada que hacer.
+
+En la web, la emisión y el cumplimiento se muestran juntos y nunca uno en vez del otro: «emitió 11 de
+11» y «se ejecutaron 2 de 11» son ambos ciertos a la vez, y solo el segundo contesta «¿cumplimos el
+plan?». Generar es un botón, nunca un efecto de abrir la página — un GET que emitiera OT las emitiría
+otra vez en cada refresco.
+
+Dieciocho guardas rotas a propósito y detectadas. El job corre a las 04:30 de Guayaquil, y hay una
+CLI (`python -m app.plans.cli --dry-run`) para la primera carga y para ver qué emitiría un plan antes
+de dejarlo suelto.
+
+---
+
 ### RF-013: la OT que se propone sola, y la aritmética que se puede discutir
 
 El criterio es «la propuesta aparece en la bandeja del supervisor; al aprobarla pasa a Planificada; al
@@ -1585,7 +1641,7 @@ está y se prueba.
 ## Nota sobre el estado de verificación
 
 Los tests de integración **se ejecutaron contra PostgreSQL 16 + PostGIS 3.4 real**, no solo en CI:
-1 580 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las veintiuna
+1 652 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las veintidós
 migraciones aplicadas y revertidas sobre una base limpia.
 
 Eso destapó cuatro defectos que ni el lint, ni `mypy --strict`, ni el renderizado de SQL offline
@@ -1624,8 +1680,8 @@ niveles:
 
 | Nivel | Qué prueba | Cuántos |
 |---|---|---|
-| Lógica pura | Orden, severidad, PKCE, sesión, importador, validación, disposición, informe | 491 |
-| Render (jsdom) | Que las pantallas muestren lo que hay que ver | 201 |
+| Lógica pura | Orden, severidad, PKCE, sesión, importador, validación, disposición, informe | 526 |
+| Render (jsdom) | Que las pantallas muestren lo que hay que ver | 214 |
 | Navegador real (Chromium) | Que **el artefacto que se despliega** cargue y la puerta de login aguante | 3 |
 
 `pnpm lint` también era un comando documentado que no existía: no había `eslint.config.js`, así

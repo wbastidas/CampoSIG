@@ -61,6 +61,33 @@ TRANSITIONS: dict[str, set[str]] = {
     WorkOrderState.CANCELLED: set(),
 }
 
+#: States in which an order is still **work to be carried out in the field**.
+#:
+#: What "there is already work on this asset" means, for everything that has to decide whether to
+#: raise more: the proposals of RF-013 and the preventive plans of RF-012. One definition, here,
+#: because two readers of this would drift and the one that drifted would be the one that quietly
+#: proposed work twice.
+#:
+#: Written out rather than derived by subtracting the attended states. That subtraction was the
+#: first version and it was wrong: it left `sincronizada` and `en_revision` in the list, and those
+#: are the states of the very order whose capture produced a finding — so no proposal could ever be
+#: raised. The field work of an order in review is done; what is pending is a supervisor, and a
+#: supervisor being busy is not a reason to stop raising work.
+#:
+#: `devuelta` is here: a returned order sends the crew back, which is pending field work.
+PENDING_FIELD_STATES = (
+    WorkOrderState.DRAFT,
+    WorkOrderState.PLANNED,
+    WorkOrderState.ASSIGNED,
+    WorkOrderState.DOWNLOADED,
+    WorkOrderState.EN_ROUTE,
+    WorkOrderState.ON_SITE,
+    WorkOrderState.IN_EXECUTION,
+    WorkOrderState.SUSPENDED,
+    WorkOrderState.RETURNED,
+)
+
+
 #: Transitions that cannot happen without a stated reason (SRS 3.3).
 REASON_REQUIRED = {WorkOrderState.SUSPENDED, WorkOrderState.RETURNED, WorkOrderState.CANCELLED}
 
@@ -344,6 +371,31 @@ def assign(
         reason=reason,
     )
     return order
+
+
+def pending_field_work(
+    session: Session, unit: BusinessUnit, assets: set[str]
+) -> dict[str, set[uuid.UUID]]:
+    """Which orders are still pending in the field, per asset.
+
+    The order ids and not just the asset codes, because a caller often has to exclude one order:
+    the proposal generator must not let the order whose capture produced a finding block the
+    follow-up of what it found, and that is the one order guaranteed to exist on that asset.
+    """
+    if not assets:
+        return {}
+    rows = session.execute(
+        select(WorkOrder.asset_code, WorkOrder.id).where(
+            WorkOrder.business_unit_id == unit.id,
+            WorkOrder.asset_code.in_(list(assets)),
+            WorkOrder.state.in_([state.value for state in PENDING_FIELD_STATES]),
+        )
+    ).all()
+    pending: dict[str, set[uuid.UUID]] = {}
+    for asset, order_id in rows:
+        if asset:
+            pending.setdefault(asset, set()).add(order_id)
+    return pending
 
 
 def current_custody(session: Session, order: WorkOrder) -> DeviceCustody | None:
