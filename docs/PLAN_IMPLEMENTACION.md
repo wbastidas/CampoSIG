@@ -253,7 +253,7 @@ dispositivo.
 | Renderizador web | RJSF con widgets propios, misma semántica |
 | Validación compartida | ✅ un corpus (`forms/contract/validation-cases.json`) que ejecutan las tres plataformas |
 | Diseñador de formularios | M04: ajuste sobre lo generado, versionado, publicación que genera GBNF y prompts (RF-033) |
-| Seis formularios del piloto | F-TR-01, F-TR-02, F-OP-01, F-MT-01, F-AP-01, F-IC-03 — **generados desde el perfil** y ajustados, no escritos a mano |
+| Los formularios del piloto | F-TR-01, F-TR-02, F-OP-01, F-OP-03, F-OP-04, F-MT-01, F-AP-01 y F-IC-03 — **generados desde el perfil** y ajustados, no escritos a mano. Eran seis en la lista original; el F-TR-02 figuraba en ella y **no existía en el catálogo** hasta RF-024, y el F-OP-03 y el F-OP-04 se añadieron con los tableros regulatorios |
 | Evidencias | CameraX con encuadres guiados, EXIF, GPS, hash, marca de agua, control de calidad de imagen (M07) |
 | ATS bloqueante | Sin ATS aprobado no se habilita el registro de ejecución (etapa 6 del macroproceso) |
 
@@ -827,6 +827,47 @@ DeepEval y promptfoo entran con I12 sobre estos mismos corpus: los dos envuelven
 una compuerta necesita primero son los datos etiquetados, que es lo que un framework no da.
 
 Falta la mitad que necesita modelos: los nodos VLM y de redacción, en I12.
+
+---
+
+### RF-024: la consignación, su ventana y el permiso que no se habilita sin número
+
+El criterio es una negativa: «no se habilita el formulario F-TR-02 sin un N.º de consignación». Y el
+F-TR-02 **no existía** — el catálogo tenía seis formularios y este, que es el que se revisa cuando algo
+sale mal, no era uno de ellos. Así que este incremento son las dos cosas: la consignación como dato, y
+el permiso de trabajo con sus cinco reglas de oro.
+
+**El número es la autoridad, no el estado.** Una fila marcada como aprobada sin número no habilita
+nada: el número es lo que la cuadrilla repite por radio antes de tocar la línea y lo que se pide
+después si algo sale mal. Por eso `permit_blocker` comprueba las dos cosas, y por eso el número **no se
+teclea en el formulario**: lo llena el servidor desde la solicitud otorgada. Un número escrito a mano
+en el permiso sería un número que nadie otorgó, que es justamente el papel que ese campo no puede
+jugar.
+
+**Dos personas.** Quien solicitó una consignación no la otorga, y el servicio lo rechaza por autor
+además de por rol. Un descargo que alguien se dio a sí mismo es lo que el procedimiento existe para
+evitar, y la plataforma no va a ser el lugar que lo hizo posible.
+
+**Trabajar fuera de la ventana se registra, no se rechaza.** Es la decisión más importante del módulo y
+va en contra del instinto: rechazar la captura perdería el registro de lo que realmente pasó, que es lo
+único que una investigación necesita. La plataforma rechaza lo que no debe ocurrir —llenar el permiso
+sin descargo— y registra lo que ocurrió, con cuántos minutos antes o después y bajo qué número.
+
+**Una consignación sirve a varias OT.** «Consignación del alimentador sur, sábado de 06:00 a 12:00»
+cubre todos los frentes que trabajan bajo ella, y una solicitud por OT tendría al Centro de Control
+otorgando seis descargos para un solo corte. La pantalla marca además las otorgadas **sin ninguna OT**:
+una línea desenergizada para nada es clientes sin servicio y un índice que la unidad reporta.
+
+**Y las cinco reglas de oro son condiciones entre sí, no un orden implícito en la pantalla.** No se
+verifica ausencia de tensión sin corte y bloqueo; no se pone a tierra sin haber verificado y sin decir
+con qué detector. Escritas como reglas JSON Logic —con el operador «está contestado» que B04 añadió— las
+evalúan los tres: servidor, web y móvil. Una pantalla se puede saltar; una regla del contrato, no.
+
+Veintiséis guardas rotas a propósito y detectadas, dos tras el primer pase, y las dos por la misma
+razón de siempre: un test que pasaba por la guarda equivocada. El de la consignación **negada** se
+detenía en la comprobación del número (una negada nunca tiene uno) y no en la del estado; el caso que
+sí prueba el estado es la **vencida**, que tuvo número y se le cerró la ventana — y que además es la
+situación real: la cuadrilla sigue con el papel en la mano y el equipo ya puede estar energizado.
 
 ---
 
@@ -1833,7 +1874,7 @@ está y se prueba.
 ## Nota sobre el estado de verificación
 
 Los tests de integración **se ejecutaron contra PostgreSQL 16 + PostGIS 3.4 real**, no solo en CI:
-1 801 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las veinticuatro
+1 855 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las veinticinco
 migraciones aplicadas y revertidas sobre una base limpia.
 
 Eso destapó cuatro defectos que ni el lint, ni `mypy --strict`, ni el renderizado de SQL offline
@@ -1914,4 +1955,4 @@ El orden inmediato, para empezar de a poco:
 3. **Mientras tanto, I2**, que no depende de arcpy: importador de metadatos, generador de formularios y el diagnóstico de completitud del perfil.
 4. Con acceso, **lanzar I1** y tratar su informe como puerta: si invalida una hipótesis, se corrige el addendum antes de continuar.
 
-Los seis tipos de activo del piloto (estructura de soporte, transformador de distribución, luminaria, seccionador fusible, tramo y punto de carga) y los seis formularios (F-TR-01, F-TR-02, F-OP-01, F-MT-01, F-AP-01, F-IC-03) son el alcance vertical de I2 a I7. Conviene no ampliarlo antes del piloto.
+Los seis tipos de activo del piloto (estructura de soporte, transformador de distribución, luminaria, seccionador fusible, tramo y punto de carga) y los ocho formularios (F-TR-01, F-TR-02, F-OP-01, F-OP-03, F-OP-04, F-MT-01, F-AP-01, F-IC-03) son el alcance vertical de I2 a I7. Conviene no ampliarlo antes del piloto.

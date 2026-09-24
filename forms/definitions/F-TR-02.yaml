@@ -1,0 +1,23 @@
+# F-TR-02 — Permiso de trabajo y 5 reglas de oro (SRS 4.3, 4.8).
+#
+# Transversal como el ATS, y con una condición que ningún otro formulario tiene: **no se habilita sin
+# el número de la consignación** que otorgó el Centro de Control (RF-024). Esa comprobación no puede
+# vivir en el formulario —un número tecleado aquí sería un número que nadie otorgó— así que la hace
+# el servidor contra la solicitud vinculada a la OT.
+form:
+  code: F-TR-02
+  version: 1.0.0
+  title: Permiso de trabajo y 5 reglas de oro
+  area: sso
+  # B04 entra porque el permiso de trabajo y el ATS se referencian entre sí: la regla de B04 exige
+  # la referencia del ATS cuando hay permiso, que es justamente este caso.
+  blocks: [B01, B02, B04, TR02, B09]
+  # Cinco reglas de oro, cinco fotos como mínimo: bloqueo, ausencia de tensión, puesta a tierra,
+  # delimitación y el equipo consignado. Es el formulario con más evidencia obligatoria del catálogo,
+  # y con razón — es el que se revisa cuando algo sale mal.
+  min_photos: {before: 5, after: 0}
+  requires_ats: true
+  # Como el ATS: sin el permiso no se habilita el registro de ejecución del trabajo con corte.
+  gates_execution: true
+  requires_competencies: ['maniobras_MV']
+  applies_to_asset_types: []

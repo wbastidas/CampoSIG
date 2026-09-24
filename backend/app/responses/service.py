@@ -62,6 +62,10 @@ class NotEditableError(Exception):
     """Raised when a response is edited after it stopped being the device's to change."""
 
 
+class OutagePermitError(Exception):
+    """Raised when the permit form is filled without a granted consignación (RF-024)."""
+
+
 class IntegrityError(Exception):
     """Raised when an uploaded file does not match the hash the device recorded."""
 
@@ -85,6 +89,23 @@ def compose_for(session: Session, unit: BusinessUnit, order: WorkOrder) -> Compo
     )
     if caveat:
         composed.warnings.append(caveat)
+    # RF-024: the permit form says, on the form itself, why it cannot be filled yet. A refusal that
+    # only arrives on submission is a refusal the crew meets after climbing the pole.
+    #
+    # Deferred import for the same cycle reason as in `save_answers`.
+    from app.outages.service import outage_of, permit_blocker
+
+    blocker = permit_blocker(session, order, order.form_code)
+    if blocker is not None:
+        composed.warnings.append(blocker)
+    else:
+        granted = outage_of(session, order)
+        if granted is not None and granted.number:
+            # The number the crew reads back over the radio, filled by the server from the granted
+            # request. In the form so they can see it, never so they can invent it.
+            composed.schema.setdefault("properties", {}).setdefault("outage_number", {})[
+                "default"
+            ] = granted.number
     return composed
 
 
@@ -153,6 +174,19 @@ def save_answers(
 
     form = compose_for(session, unit, order)
     if submit:
+        # RF-024: «no se habilita el formulario F-TR-02 sin un N.º de consignación». Checked before
+        # the field validation, because it is not a field problem: no amount of correcting the
+        # answers fixes a permit filled without a descargo, and saying so first is what tells the
+        # crew to call the Centro de Control instead of re-reading the form.
+        #
+        # Deferred import: `app.outages.service` reads the work-order model and the audit trail, and
+        # a module-level import here would close a cycle through the response model.
+        from app.outages.service import permit_blocker
+
+        blocker = permit_blocker(session, order, order.form_code)
+        if blocker is not None:
+            raise OutagePermitError(blocker)
+
         # Drafts are saved as they are: a technician halfway through a form must not be
         # blocked by a field they have not reached yet. Submission is where it must hold.
         problems = validate_answers(form, answers)

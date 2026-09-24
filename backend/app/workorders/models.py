@@ -163,6 +163,14 @@ class WorkOrder(Base):
         UUID(as_uuid=True), ForeignKey("work_order.id", ondelete="RESTRICT")
     )
 
+    #: The consignación this order works under (RF-024). Null for work that needs no outage, which
+    #: is most of it. Several orders share one request by design: «consignación del alimentador sur,
+    #: sábado de 06:00 a 12:00» covers every front under it, and one request per order would have
+    #: the Centro de Control granting six descargos for one outage.
+    outage_request_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("outage_request.id", ondelete="SET NULL")
+    )
+
     #: Optimistic lock: two planners editing the same order do not overwrite each other
     #: (RF-311). Incremented by the service on every administrative change.
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
@@ -188,6 +196,7 @@ class WorkOrder(Base):
         Index("ix_work_order_unit_crew", "business_unit_id", "assigned_crew_id"),
         # The parent's board reads its fronts on every view.
         Index("ix_work_order_parent", "parent_id"),
+        Index("ix_work_order_outage", "outage_request_id"),
         Index("ix_work_order_sla", "sla_due_at"),
         # GiST index for the map's bbox and polygon selection, which is the hot query of
         # the graphical assignment screen.

@@ -12,6 +12,7 @@ from app.api import (
     health,
     integrations,
     model_profile,
+    outages,
     planning,
     plans,
     policy,
@@ -52,6 +53,7 @@ def create_app() -> FastAPI:
     app.include_router(policy.router)
     app.include_router(forms.router)
     app.include_router(catalogs.router)
+    app.include_router(outages.router)
     app.include_router(plans.router)
     app.include_router(proposals.router)
     return app
