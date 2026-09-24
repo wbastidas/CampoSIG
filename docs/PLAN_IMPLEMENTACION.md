@@ -914,6 +914,15 @@ verifica ausencia de tensión sin corte y bloqueo; no se pone a tierra sin haber
 con qué detector. Escritas como reglas JSON Logic —con el operador «está contestado» que B04 añadió— las
 evalúan los tres: servidor, web y móvil. Una pantalla se puede saltar; una regla del contrato, no.
 
+**La pantalla llegó después, y el plan la daba por hecha.** Este texto decía «la pantalla marca las
+otorgadas sin ninguna OT» cuando no existía ninguna pantalla de consignaciones: el módulo era API y
+servicio. Ya está, en la misma vista para los dos roles porque los dos miran la misma cola, y con las
+dos cosas que los estados solos no dicen —la otorgada que nadie usó y la ventana que ya cerró con el
+descargo vigente— dichas como avisos y no como una fecha que hay que restar a ojo. Dice además, antes
+del clic, la única negativa que se lee como un error de la plataforma: quien pidió el descargo no lo
+otorga, y el servidor lo rechaza por autor. Dieciséis juicios de esa pantalla roto a propósito y
+detectados.
+
 Veintiséis guardas rotas a propósito y detectadas, dos tras el primer pase, y las dos por la misma
 razón de siempre: un test que pasaba por la guarda equivocada. El de la consignación **negada** se
 detenía en la comprobación del número (una negada nunca tiene uno) y no en la del estado; el caso que

@@ -954,6 +954,63 @@ fieldset {
   padding-left: 1.2rem;
 }
 
+/* --- RF-024: el tablero de consignaciones --- */
+.out-list {
+  list-style: none;
+  padding-left: 0;
+}
+
+.out-list > li {
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  padding: 0.6rem 0.8rem;
+  margin-bottom: 0.6rem;
+}
+
+/* Lo que espera una decisión del Centro de Control se destaca: es la única fila sobre la que hay
+   algo que hacer, y una lista donde todo pesa igual esconde justamente esa. */
+.out-list > li.out-awaiting {
+  border-left: 4px solid var(--acento);
+  background: var(--fondo-alterno);
+}
+
+.out-list h3 {
+  margin: 0 0 0.2rem;
+  font-size: 1rem;
+}
+
+.out-meta {
+  color: var(--texto-suave);
+  font-size: 0.85rem;
+  margin: 0.2rem 0;
+}
+
+.out-warning {
+  color: var(--alarma);
+  background: var(--alarma-fondo);
+  padding: 0.3rem 0.5rem;
+  border-radius: var(--radio);
+}
+
+.out-error {
+  color: var(--alarma);
+  font-weight: 600;
+}
+
+.out-status {
+  color: var(--exito);
+}
+
+.out-form,
+.out-decision {
+  display: grid;
+  gap: 0.3rem;
+  max-width: 34rem;
+  margin: 0.5rem 0;
+  padding-left: 0.6rem;
+  border-left: 2px solid var(--borde);
+}
+
 /* --- RF-017: los adjuntos de oficina en el panel del planificador --- */
 .planner__attachments {
   border-top: 1px solid var(--borde);

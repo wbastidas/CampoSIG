@@ -24,6 +24,7 @@ import { IntegrationsScreen } from './features/integrations/IntegrationsScreen';
 import { MaintenanceScreen } from './features/maintenance/MaintenanceScreen';
 import { ModelProfileScreen } from './features/model-profile/ModelProfileScreen';
 import { OperationsBoard } from './features/operations/OperationsBoard';
+import { OutagesScreen } from './features/outages/OutagesScreen';
 import { PlansScreen } from './features/plans/PlansScreen';
 import { PolicyScreen } from './features/policy/PolicyScreen';
 import { ProposalsScreen } from './features/proposals/ProposalsScreen';
@@ -51,6 +52,7 @@ type Screen =
   | 'mantenimiento'
   | 'preventivo'
   | 'propuestas'
+  | 'consignaciones'
   | 'ia'
   | 'integraciones'
   | 'bitacora'
@@ -77,6 +79,9 @@ const SCREENS: { key: Screen; label: string; roles: string[] }[] = [
   // La bandeja de propuestas es del supervisor, que es quien decide, y del planificador porque
   // alimenta su tablero. Levantar propuestas no es decidir y no se hace desde aquí (RF-013).
   { key: 'propuestas', label: 'OT propuestas', roles: ['supervisor', 'planificador'] },
+  // El descargo lo pide planificación y lo otorga el Centro de Control, que aquí es operación. Una
+  // sola pantalla porque los dos miran la misma cola; el servidor niega por rol y por autor (RF-024).
+  { key: 'consignaciones', label: 'Consignaciones', roles: ['planificador', 'supervisor'] },
   // RF-134 nombra los dos roles: el analista ML porque es su trabajo, y el supervisor porque es
   // quien decide con esos números. El servidor exige lo mismo.
   { key: 'ia', label: 'Tablero de IA', roles: ['analista_ml', 'supervisor'] },
@@ -186,6 +191,14 @@ export function App() {
           <ProposalsScreen
             businessUnit={unit}
             mayDecide={roles.includes('supervisor') || roles.includes('planificador')}
+          />
+        )}
+        {screen === 'consignaciones' && (
+          <OutagesScreen
+            businessUnit={unit}
+            subject={session.user?.subject ?? null}
+            mayDecide={roles.includes('supervisor') || roles.includes('admin_ti')}
+            mayRequest={roles.includes('planificador') || roles.includes('admin_funcional')}
           />
         )}
         {screen === 'ia' && <AiDashboardScreen businessUnit={unit} />}
