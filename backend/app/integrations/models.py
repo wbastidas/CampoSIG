@@ -47,6 +47,9 @@ class Connector(StrEnum):
     WORK_ORDER_SYSTEM = "sistema_ot"
     CALL_CENTRE = "call_center"
     GIS = "arcgis"
+    #: Materials, stock and movements (RF-122). The ERP owns the material catalogue, so the
+    #: platform refuses to edit those values by hand (RF-034).
+    ERP = "erp"
 
 
 class EventStatus(StrEnum):
@@ -64,6 +67,15 @@ class EventKind(StrEnum):
     WORK_ORDER_RESULT = "resultado_ot"
     CLAIM_RECEIVED = "reclamo_recibido"
     CLAIM_CLOSED = "reclamo_cerrado"
+    #: The ERP handed over its material list (RF-122).
+    MATERIAL_CATALOGUE = "catalogo_materiales"
+    #: The ERP handed over stock for one warehouse or vehicle.
+    MATERIAL_STOCK = "existencias"
+    #: Material installed on approved work: a consumption the ERP has to book.
+    MATERIAL_CONSUMED = "consumo_material"
+    #: Material removed and returned: to the warehouse if reusable, to scrap otherwise. A second
+    #: movement and not a negative consumption, because the two land in different places.
+    MATERIAL_RETURNED = "devolucion_material"
 
 
 class IntegrationEvent(Base):

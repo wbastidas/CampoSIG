@@ -830,6 +830,59 @@ Falta la mitad que necesita modelos: los nodos VLM y de redacción, en I12.
 
 ---
 
+### RF-122: el ERP, y el catálogo que nadie podía llenar
+
+El catálogo `material` se enviaba con `source: integracion` y la nota «vacío hasta el primer envío del
+ERP», y **no existía forma de hacer ese primer envío**. Un teléfono que dibujaba la tabla de
+materiales de B07 tenía un campo de código y ningún valor para elegir. Es el mismo patrón de RF-034 y
+de los bloques B04/B07: un dato que apuntaba a nada.
+
+**El ERP es el dueño, así que la plataforma escribe ese catálogo solo como el ERP.** `upsert_entry`
+rechaza una edición a mano en un catálogo de integración y el adaptador pasa `from_integration=True`.
+Para eso existe la bandera: un valor tecleado sobre uno que el lote de esta noche va a sobreescribir
+es un valor que desaparece sin explicación.
+
+**Un lote que no se declara completo no puede retirar nada.** Una descarga paginada que falló a medias
+vaciaría el selector en el campo — silencioso en el servidor y muy ruidoso en una subestación — así
+que el ERP tiene que decir `"complete": true` para que la plataforma retire los códigos que dejó de
+enviar, y el informe dice en qué modo corrió. El simulador `tools/erp-mock` sirve las dos formas
+(`/materials?partial=1`), así que la negativa se ejercita en vez de suponerse.
+
+**Las existencias son una instantánea, reemplazada por ubicación.** Fusionar dejaría una línea
+fantasma del material que se acabó, y alguien planifica contra las líneas fantasma. `as_of` viene del
+ERP y se muestra junto al número: una existencia de un lote nocturno tiene horas, y un número
+presentado como actual es como una cuadrilla maneja hasta una bodega por algo que ya no está.
+
+**El consumo y la devolución son dos movimientos, no una cantidad con signo.** Instalar tres
+aisladores y sacar dos rotos es un consumo *y* una recepción, y caen en lugares distintos del ERP: lo
+reutilizable a bodega, la chatarra a disposición. Una sola cifra «usada» perdería la mitad del
+inventario — que es exactamente la forma que B07 se diseñó para evitar. Lo retirado sin estado
+anotado va «por clasificar» y no se asume reutilizable: meter chatarra a bodega es la dirección cara
+de ese error.
+
+Los dos movimientos se publican **dentro de la transacción de la aprobación**, como el cierre del
+reclamo de RF-124: una OT aprobada no puede dejar al ERP sin saber qué salió de bodega. La clave de
+idempotencia es la OT y el tipo, así que una corrección actualiza el asiento en vez de doblarlo.
+
+**Y una escritura cruzada que encontró el sabotaje.** El reemplazo por ubicación es un `DELETE`, y su
+filtro de unidad de negocio no estaba probado: `stock_of` filtra al leer, así que ningún test veía
+que quitarle el filtro al borrado dejaría que importar las existencias de una unidad **vaciara las de
+otra** con el mismo código de bodega. «BOD-01» es un nombre que se repite. Es la clase de defecto que
+ya costó caro una vez aquí —la tabla de staging as-built sin columna de unidad— y ahora tiene su
+test.
+
+Dieciocho guardas rotas a propósito y detectadas, dos de ellas después de corregir lo que el primer
+pase dejó ver: un sabotaje que no aplicaba por una diferencia de formato, y el hueco de la escritura
+cruzada.
+
+Y una guarda vieja que atrapó la primera versión de este adaptador: RF-160 prohíbe que cualquier
+módulo reasigne el payload de un asiento de la bitácora de integraciones, y el importador lo hacía
+para dejar el recuento del lote. El recuento va ahora en la **respuesta** del asiento, que es donde
+vive el resultado; el payload es lo que se pidió. Es exactamente lo que esas guardas existen para
+impedir, y esta vez impidió algo mío.
+
+---
+
 ### B04 y B07: los dos bloques comunes que estaban declarados y no existían
 
 El SRS 4.2 dice que los bloques B1 a B12 están «en todos los formularios». Faltaban dos, y cada uno
@@ -877,10 +930,12 @@ asignó. De paso, los tests de RF-032 dejaron de escribir «1.0.0» a mano y lee
 un test que fija la versión de hoy falla en el siguiente cambio legítimo, y entonces alguien edita el
 test en vez de pensar en el cambio.
 
-Doce guardas rotas a propósito y detectadas. Lo que **no** está verificado ejecutándose: el cambio en
-Kotlin. El módulo Android no tiene wrapper de Gradle en este entorno y el SDK no se puede descargar
-(la política de red lo bloquea), así que `FormRules.kt` está revisado y alineado con el corpus, pero
-sus tests no corrieron aquí.
+Doce guardas rotas a propósito y detectadas. El cambio en Kotlin **sí** se ejecuta: no en este
+entorno —el módulo Android no tiene wrapper de Gradle y el SDK no se puede descargar— pero el job
+`core:sync` de CI corre `gradle :core:sync:test` con el Gradle del runner y sin SDK de Android
+(ADR-010), y pasó con el operador nuevo. Es la razón por la que ese módulo está deliberadamente libre
+de dependencias de Android: la lógica de más riesgo de la plataforma se prueba sin emulador ni
+dispositivo.
 
 ---
 
@@ -1695,7 +1750,7 @@ está y se prueba.
 ## Nota sobre el estado de verificación
 
 Los tests de integración **se ejecutaron contra PostgreSQL 16 + PostGIS 3.4 real**, no solo en CI:
-1 709 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las veintidós
+1 744 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las veintitrés
 migraciones aplicadas y revertidas sobre una base limpia.
 
 Eso destapó cuatro defectos que ni el lint, ni `mypy --strict`, ni el renderizado de SQL offline

@@ -84,6 +84,13 @@ services:
       context: ../../tools/legacy-ot-mock
     ports: ["8182:8182"]
 
+  # El ERP: dueño del catálogo de materiales y de las existencias, y destino de los consumos
+  # (RF-122). El catálogo `material` se envía vacío a propósito y este es quien lo llena.
+  erp-mock:
+    build:
+      context: ../../tools/erp-mock
+    ports: ["8184:8184"]
+
   # Drena el outbox de integraciones (ADR-012). Separado del backend a propósito: si muere,
   # los eventos siguen en la tabla y el siguiente pase los recoge.
   integration-worker:
@@ -98,6 +105,7 @@ services:
       # todavía no exista: el worker lo salta en vez de quemarle los reintentos.
       SIGEC_WORK_ORDER_SYSTEM_URL: http://legacy-ot-mock:8182
       SIGEC_CALL_CENTRE_URL: http://call-centre-mock:8183
+      SIGEC_ERP_URL: http://erp-mock:8184
     depends_on:
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}

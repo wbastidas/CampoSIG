@@ -17,9 +17,13 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import require_roles, unit_scope
 from app.auth.principal import Role
 from app.infra.database import get_session
+from app.integrations import erp_adapter
+from app.integrations.erp_models import StockLocationKind
 from app.integrations.models import Connector, EventStatus, IntegrationEvent
 from app.integrations.service import abandon, connector_health, ledger, retry_now
+from app.integrations.transport import HttpTransport, TransportError
 from app.org.service import UnknownBusinessUnitError, get_business_unit_by_code
+from app.settings import get_settings
 
 router = APIRouter(
     prefix="/api/v1/integrations", tags=["integrations"], dependencies=[Depends(unit_scope)]
@@ -128,3 +132,95 @@ def abandon_event(
     )
     session.commit()
     return _as_dict(event)
+
+
+#: Who may pull from the ERP by hand. The same roles that run any other import: it is an
+#: administrative act, and a supervisor pressing it would be pulling somebody else's inventory.
+IMPORTERS = (Role.IT_ADMIN, Role.FUNCTIONAL_ADMIN)
+
+
+@router.get("/units/{unit_code}/stock", summary="Existencias por bodega o vehículo (RF-122)")
+def stock(
+    session: SessionDep,
+    unit_code: str,
+    location_kind: Annotated[StockLocationKind | None, Query()] = None,
+    location_code: Annotated[str | None, Query()] = None,
+    material_code: Annotated[str | None, Query()] = None,
+    _: Annotated[Any, Depends(require_roles(*IMPORTERS, Role.PLANNER, Role.SUPERVISOR))] = None,
+) -> dict[str, Any]:
+    """Lo que el ERP dijo la última vez, con la hora en que lo dijo.
+
+    `as_of` viaja en cada línea a propósito: una existencia de un lote nocturno tiene horas, y un
+    número presentado como actual es como una cuadrilla maneja hasta una bodega por algo que ya no
+    está.
+    """
+    unit = _unit(session, unit_code)
+    rows = erp_adapter.stock_of(
+        session,
+        unit,
+        location_kind=location_kind.value if location_kind else None,
+        location_code=location_code,
+        material_code=material_code,
+    )
+    return {
+        "lines": [
+            {
+                "material_code": row.material_code,
+                "location_kind": row.location_kind,
+                "location_code": row.location_code,
+                "location_name": row.location_name,
+                "quantity": float(row.quantity),
+                "unit": row.unit,
+                "as_of": row.as_of.isoformat(),
+            }
+            for row in rows
+        ],
+        # Los códigos con existencia que el catálogo no conoce. No es un error —los dos lotes
+        # llegan por separado— pero es la señal de que se están desviando.
+        "unknown_in_catalogue": erp_adapter.unknown_codes(session, unit),
+    }
+
+
+@router.post(
+    "/units/{unit_code}/erp/import-materials",
+    dependencies=[Depends(require_roles(*IMPORTERS))],
+    summary="Traer el catálogo de materiales del ERP (RF-122)",
+)
+def import_materials(session: SessionDep, unit_code: str) -> dict[str, Any]:
+    """El ERP es el dueño de estos valores: la plataforma los escribe solo como el ERP."""
+    unit = _unit(session, unit_code)
+    base_url = get_settings().erp_url
+    if not base_url:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "el conector del ERP no está configurado; sin su URL no hay de dónde traer nada",
+        )
+    try:
+        report = erp_adapter.import_materials(session, unit, HttpTransport(), base_url=base_url)
+    except TransportError as exc:
+        # 502 y no 500: el fallo es del sistema del otro lado, y la diferencia importa para quien
+        # tiene que decidir a quién llamar.
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+    session.commit()
+    return report
+
+
+@router.post(
+    "/units/{unit_code}/erp/import-stock",
+    dependencies=[Depends(require_roles(*IMPORTERS))],
+    summary="Traer las existencias del ERP (RF-122)",
+)
+def import_stock(session: SessionDep, unit_code: str) -> dict[str, Any]:
+    unit = _unit(session, unit_code)
+    base_url = get_settings().erp_url
+    if not base_url:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "el conector del ERP no está configurado; sin su URL no hay de dónde traer nada",
+        )
+    try:
+        report = erp_adapter.import_stock(session, unit, HttpTransport(), base_url=base_url)
+    except TransportError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+    session.commit()
+    return report

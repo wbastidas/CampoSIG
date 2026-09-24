@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.audit import service as audit
 from app.audit.models import EventKind
 from app.integrations.callcentre_adapter import enqueue_claim_closure
+from app.integrations.erp_adapter import enqueue_material_movements
 from app.integrations.workorder_adapter import enqueue_result_push, enqueue_status_push
 from app.org.models import BusinessUnit
 from app.regulatory import rules as compliance
@@ -224,6 +225,10 @@ def decide(
             evidence_keys=[item.storage_key for item in response.evidence] if response else [],
         )
         enqueue_claim_closure(session, unit, order)
+        # Y lo que se consumió (RF-122). Mismo razonamiento que el cierre del reclamo: el
+        # movimiento existe antes de que la aprobación termine, o el ERP nunca sabe qué salió
+        # de bodega en un trabajo que todos dan por cerrado.
+        enqueue_material_movements(session, unit, order)
     elif decision == Decision.RETURNED:
         transition(
             session,
