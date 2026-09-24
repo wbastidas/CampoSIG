@@ -168,6 +168,8 @@ def an_inspection(
         "code": asset,
         "feeder_code": feeder,
         "final_state": "resuelto",
+        # B04: el formulario exige ATS, así que la referencia es obligatoria.
+        "ats_reference": "ATS-2026-0001",
         **REQUIRED_BY_TYPE.get(asset_type, {}),
     }
     if findings is not None:

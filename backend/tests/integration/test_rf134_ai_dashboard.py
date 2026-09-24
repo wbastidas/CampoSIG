@@ -105,6 +105,8 @@ def capture(
             "material": "concrete",
             "feeder_code": "04BH070T11",
             "final_state": "resuelto",
+            # B04: el formulario exige ATS, así que la referencia es obligatoria.
+            "ats_reference": "ATS-2026-0001",
         },
         captured_by=who,
         submit=True,

@@ -105,6 +105,16 @@ public fun evaluateCondition(condition: Any?, answers: Map<String, Any?>): Boole
         }
     }
 
+    // «Está contestado» y su complemento, con la misma `isAnswered` que decide el otro lado de la
+    // regla: si un 0 cuenta como respuesta para `require`, cuenta igual en la condición.
+    if (map.containsKey("!!")) {
+        return isAnswered(resolveOperand(map["!!"], answers))
+    }
+
+    if (map.containsKey("!")) {
+        return !isAnswered(resolveOperand(map["!"], answers))
+    }
+
     if (map.containsKey("and")) {
         val parts = map["and"] as? List<*> ?: return false
         return parts.isNotEmpty() && parts.all { evaluateCondition(it, answers) }

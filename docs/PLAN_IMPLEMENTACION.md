@@ -830,6 +830,60 @@ Falta la mitad que necesita modelos: los nodos VLM y de redacción, en I12.
 
 ---
 
+### B04 y B07: los dos bloques comunes que estaban declarados y no existían
+
+El SRS 4.2 dice que los bloques B1 a B12 están «en todos los formularios». Faltaban dos, y cada uno
+dejaba una declaración sin efecto — el mismo patrón de RF-034 y RF-147: no un requisito sin
+implementar, sino un dato que apuntaba a nada.
+
+**B04 Seguridad.** Seis formularios declaraban `requires_ats: true`. La bandera llegaba al teléfono
+como `x-requires-ats` y **nada la miraba**, porque no había ningún campo donde anotar qué ATS se
+firmó: una OT «que exige ATS» se podía cerrar sin nombrar ninguno. Ahora la referencia es un campo y
+el compositor la hace obligatoria cuando el formulario lo declara. Y hay una guarda que habría
+encontrado el hueco: un formulario que exige ATS y no incluye B04 **avisa**, porque esa mala
+configuración es invisible y era el estado de los seis.
+
+La referencia es un texto y no una relación a la respuesta del F-TR-01, por una razón de campo: el
+ATS se firma en papel o en otro dispositivo cuando el propio se quedó sin batería, y exigir un
+identificador de la plataforma habría dejado a la cuadrilla sin poder cerrar un trabajo que sí hizo
+con su análisis firmado. Lo que la plataforma puede exigir —y exige— es que alguien escriba cuál.
+
+**B07 Materiales.** El catálogo `material` existía, declarado `source: integracion` y vacío «hasta el
+primer envío del ERP», y **ningún formulario** donde anotar el consumo salvo una tabla propia dentro
+del bloque de luminarias. Dos decisiones:
+
+* **Un solo lugar.** La tabla de AP01 se retiró en favor de B07: dos tablas habrían obligado al
+  conector del ERP a leer en dos sitios, y uno se habría desviado. El SRS nombra la tabla dos veces
+  —como bloque común y dentro de F-AP-01— y es la misma información.
+* **Instalado y retirado son dos cantidades.** Un cambio de luminaria instala una y retira otra, y el
+  ERP necesita los dos movimientos: el consumo, y el ingreso a bodega o a chatarra. Una sola cantidad
+  «usada» habría perdido la mitad del inventario. `removed_state` decide a dónde va lo retirado, y por
+  eso es un enum: «reutilizable» va a bodega y «chatarra» a disposición.
+
+**Y un operador nuevo en el lenguaje de reglas, que es lo que casi se convirtió en el siguiente
+defecto del mismo tipo.** La regla de B04 —«si hay permiso de trabajo, exige la referencia del ATS»—
+se escribió con `!!`, el «está contestado» de JSON Logic, y **ninguna de las tres implementaciones lo
+soportaba**: el evaluador es un subconjunto deliberado y un operador desconocido vale `false`, así que
+la regla habría sido otra declaración que no hace nada. Se detectó antes de escribir el código porque
+el corpus compartido es lo primero que se toca: ocho casos nuevos en
+`forms/contract/validation-cases.json`, que fallaron en las tres implementaciones, y después `!!` y su
+complemento `!` en el backend, la web y Kotlin — escritos con la misma función `is_answered` que decide
+el otro lado de la regla, para que un 0 medido cuente como respuesta en la condición igual que cuenta
+en la exigencia.
+
+Los cinco formularios que cambiaron de forma subieron a **1.1.0**. Es un cambio de forma real —hay un
+campo obligatorio nuevo— y RF-032 hace el resto: cada OT en vuelo conserva la versión con la que se
+asignó. De paso, los tests de RF-032 dejaron de escribir «1.0.0» a mano y leen la versión del archivo:
+un test que fija la versión de hoy falla en el siguiente cambio legítimo, y entonces alguien edita el
+test en vez de pensar en el cambio.
+
+Doce guardas rotas a propósito y detectadas. Lo que **no** está verificado ejecutándose: el cambio en
+Kotlin. El módulo Android no tiene wrapper de Gradle en este entorno y el SDK no se puede descargar
+(la política de red lo bloquea), así que `FormRules.kt` está revisado y alineado con el corpus, pero
+sus tests no corrieron aquí.
+
+---
+
 ### RF-012: el plan preventivo, y por qué el periodo es una etiqueta
 
 El criterio es un conteo: «un plan mensual genera N OT en la fecha programada». Un conteo es toda la
@@ -1641,7 +1695,7 @@ está y se prueba.
 ## Nota sobre el estado de verificación
 
 Los tests de integración **se ejecutaron contra PostgreSQL 16 + PostGIS 3.4 real**, no solo en CI:
-1 652 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las veintidós
+1 709 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las veintidós
 migraciones aplicadas y revertidas sobre una base limpia.
 
 Eso destapó cuatro defectos que ni el lint, ni `mypy --strict`, ni el renderizado de SQL offline
@@ -1680,7 +1734,7 @@ niveles:
 
 | Nivel | Qué prueba | Cuántos |
 |---|---|---|
-| Lógica pura | Orden, severidad, PKCE, sesión, importador, validación, disposición, informe | 526 |
+| Lógica pura | Orden, severidad, PKCE, sesión, importador, validación, disposición, informe | 534 |
 | Render (jsdom) | Que las pantallas muestren lo que hay que ver | 214 |
 | Navegador real (Chromium) | Que **el artefacto que se despliega** cargue y la puerta de login aguante | 3 |
 

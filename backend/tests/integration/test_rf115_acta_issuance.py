@@ -102,6 +102,8 @@ def filled(session: Session, unit: BusinessUnit, order):
             "feeder_code": "04BH070T11",
             "height_m": 11.0,
             "final_state": "resuelto",
+            # B04: el formulario exige ATS, así que la referencia es obligatoria.
+            "ats_reference": "ATS-2026-0001",
             "customer_id": "0912345678",
         },
         submit=True,

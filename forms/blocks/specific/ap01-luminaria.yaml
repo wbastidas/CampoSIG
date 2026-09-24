@@ -1,4 +1,10 @@
 # Bloque específico de atención de luminaria en falla (F-AP-01, SRS 4.6).
+#
+# Los «elementos reemplazados» estaban aquí como tabla propia y ahora los lleva **B07 Materiales**,
+# que es el bloque común. El SRS nombra la tabla dos veces —como bloque común y dentro de este
+# formulario— y es la misma información: dos tablas obligarían al conector del ERP a leer en dos
+# sitios, y uno de los dos se desviaría. B07 además distingue instalado de retirado, que es lo que el
+# ERP necesita para mover el inventario en los dos sentidos.
 block:
   code: AP01
   title: Luminaria en falla
@@ -16,17 +22,6 @@ fields:
     title: Causa encontrada
     enum: [lampara_o_modulo, driver_o_balasto, fotocontrol, fusible, conexion, brazo, vandalismo, alimentacion]
     x-voice: true
-  replaced_items:
-    type: array
-    title: Elementos reemplazados
-    x-repeatable-table: true
-    x-voice: true
-    items:
-      type: object
-      properties:
-        material_code: {type: string, title: Material, x-catalog-ref: material, x-voice: true}
-        quantity: {type: number, title: Cantidad, minimum: 0, x-voice: true}
-      required: [material_code, quantity]
   operative_at_close:
     type: boolean
     title: Luminaria operativa al finalizar

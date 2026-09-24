@@ -480,6 +480,8 @@ class TestApprovalClosesTheClaim:
                 "feeder_code": "04BH070T11",
                 "technology": "led",
                 "final_state": "resuelto",
+                # B04: el formulario exige ATS, así que la referencia es obligatoria.
+                "ats_reference": "ATS-2026-0001",
                 "photos_before": ["s3://a.jpg"],
                 "photos_after": ["s3://b.jpg"],
                 "summary": "se reemplazó el módulo LED",

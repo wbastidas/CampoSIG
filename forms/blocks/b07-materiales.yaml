@@ -1,0 +1,71 @@
+# B7 Materiales (SRS 4.2). Tabla repetible, condicional: no toda OT consume material.
+#
+# Este bloque **no existía** y el catálogo `material` sí, declarado `source: integracion` y vacío
+# «hasta el primer envío del ERP». Es decir: la plataforma tenía el catálogo que el ERP va a llenar,
+# y **ningún formulario donde anotar lo que se consumió** salvo una tabla propia dentro del bloque
+# de luminarias (AP01). De ahí salen dos decisiones:
+#
+# 1. **Este es el único lugar donde se registran materiales.** La tabla de AP01 se retiró en favor
+#    de esta: dos tablas habrían obligado al conector del ERP a leer en dos sitios, y uno de los dos
+#    se habría desviado. El SRS nombra la tabla dos veces —como bloque común y dentro de F-AP-01— y
+#    es la misma información.
+# 2. **Instalado y retirado son dos cantidades, no una.** Un cambio de luminaria instala una y
+#    retira otra, y el ERP necesita los dos movimientos: el consumo y el ingreso a bodega o a
+#    chatarra. Una sola cantidad «usada» habría perdido la mitad del inventario.
+#
+# `removed_state` decide a dónde va lo retirado, y por eso es un enum y no texto: «reutilizable» va
+# a bodega y «chatarra» a disposición, y son dos movimientos distintos en el ERP.
+#
+# Lo que este bloque **no** puede exigir todavía: que una fila con cantidad retirada declare su
+# estado. Las reglas son JSON Logic sobre las respuestas de primer nivel, y no se evalúan por fila
+# de una tabla repetible (la misma limitación que tiene el bloque de hallazgos). Está anotado aquí
+# en vez de resuelto a medias en el código, y cuando las reglas por fila existan, esta es la primera.
+block:
+  code: B07
+  title: Materiales
+  required: false
+fields:
+  materials:
+    type: array
+    title: Materiales instalados y retirados
+    x-repeatable-table: true
+    x-voice: true
+    items:
+      type: object
+      properties:
+        material_code:
+          type: string
+          title: Código de material o unidad constructiva
+          x-catalog-ref: material
+          x-voice: true
+        description:
+          type: string
+          title: Descripción
+          maxLength: 255
+          x-voice: true
+        installed_quantity:
+          type: number
+          title: Cantidad instalada
+          minimum: 0
+          x-voice: true
+        removed_quantity:
+          type: number
+          title: Cantidad retirada
+          minimum: 0
+          x-voice: true
+        removed_state:
+          type: string
+          title: Estado de lo retirado
+          enum: [reutilizable, chatarra, no_aplica]
+          x-voice: true
+        serial_number:
+          type: string
+          title: N.º de serie
+          maxLength: 64
+          x-voice: false
+        unit:
+          type: string
+          title: Unidad
+          x-catalog-ref: measurement_unit
+          x-voice: true
+      required: [material_code]

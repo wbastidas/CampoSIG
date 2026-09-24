@@ -103,6 +103,16 @@ export function evaluateCondition(condition: unknown, answers: Answers): boolean
     return false;
   }
 
+  // «Está contestado» y su complemento, con la misma `isAnswered` que decide el otro lado de la
+  // regla: si un 0 cuenta como respuesta para `require`, cuenta igual en la condición.
+  if ('!!' in condition) {
+    return isAnswered(resolve(condition['!!'], answers));
+  }
+
+  if ('!' in condition) {
+    return !isAnswered(resolve(condition['!'], answers));
+  }
+
   if ('and' in condition) {
     const parts = condition.and;
     if (!Array.isArray(parts) || parts.length === 0) return false;

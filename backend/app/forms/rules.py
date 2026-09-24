@@ -109,6 +109,15 @@ def evaluate_condition(condition: Any, answers: Mapping[str, Any]) -> bool:
         # Neither a list nor a string: False, not an exception.
         return False
 
+    # «Está contestado» y su complemento. Escritos con `is_answered`, la misma función que decide
+    # el otro lado de la regla: si un 0 cuenta como respuesta para `require`, tiene que contar
+    # igual para la condición, o una regla diría una cosa y su exigencia otra.
+    if "!!" in condition:
+        return is_answered(resolve(condition["!!"], answers))
+
+    if "!" in condition:
+        return not is_answered(resolve(condition["!"], answers))
+
     if "and" in condition:
         parts = condition["and"]
         if not isinstance(parts, Sequence) or not parts:

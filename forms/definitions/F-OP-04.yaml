@@ -3,10 +3,10 @@
 # prioridad alta" crea una fila de hallazgo.
 form:
   code: F-OP-04
-  version: 1.0.0
+  version: 1.1.0
   title: Inspección de alimentador
   area: operacion
-  blocks: [B01, B02, B03, B11, B09, B10, B12]
+  blocks: [B01, B02, B04, B03, B11, B09, B10, B12]
   min_photos: {before: 1, after: 0}
   requires_ats: true
   track_route: true

@@ -1,14 +1,14 @@
 # F-AP-01 — Atención de luminaria en falla (SRS 4.6, 4.8).
 form:
   code: F-AP-01
-  version: 1.0.0
+  version: 1.1.0
   title: Atención de luminaria en falla
   area: apg
   # B05 entra aquí para que el generador inyecte los atributos del activo —tecnología y potencia
   # de la luminaria— desde el perfil de la unidad (RF-303, regla 3). Sin él, la plataforma atiende
   # miles de luminarias en falla y no sabe de qué tecnología es ninguna, que es justo lo que RF-131
   # necesita para medir la modernización a LED.
-  blocks: [B01, B02, B03, AP01, B05, B06, B09, B10, B12]
+  blocks: [B01, B02, B04, B03, AP01, B05, B06, B07, B09, B10, B12]
   min_photos: {before: 1, after: 1}
   requires_ats: true
   # La cuadrilla tiene que ser de APG (RF-021). El resto —altura, por ejemplo— lo decide

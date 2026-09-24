@@ -233,6 +233,8 @@ class TestTheWholeDictatedCapture:
                 "general_condition": "regular",
                 "code": "P-000452",
                 "final_state": "resuelto",
+                # B04: el formulario exige ATS, así que la referencia es obligatoria.
+                "ats_reference": "ATS-2026-0001",
                 "photos_before": ["s3://a.jpg", "s3://b.jpg"],
                 "photos_after": [],
             }

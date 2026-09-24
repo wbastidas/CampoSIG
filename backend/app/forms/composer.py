@@ -24,6 +24,11 @@ from app.forms.generator import JSON_SCHEMA_DIALECT, FormGenerator
 from app.model_profile.metadata import GisMetadata
 from app.model_profile.resolver import ModelResolver
 
+#: The field B04 carries the ATS reference in. Named here because the composer has to make
+#: it mandatory when a form declares `requires_ats`, and the same literal in two places would
+#: be two places to keep in step.
+SAFETY_REFERENCE = "ats_reference"
+
 
 class ComposedForm:
     """A complete, renderable form for one work type."""
@@ -177,6 +182,7 @@ class FormComposer:
         required.extend(key for key in asset_required if key in properties)
 
         properties = self._apply_photo_minimums(definition, properties, warnings)
+        required.extend(self._safety_required(definition, properties, warnings))
 
         schema: dict[str, Any] = {
             "$schema": JSON_SCHEMA_DIALECT,
@@ -276,6 +282,30 @@ class FormComposer:
             if schema.get("required") is True or schema.get("minItems"):
                 required.append(key)
         return required
+
+    @staticmethod
+    def _safety_required(
+        definition: FormDefinition, properties: dict[str, Any], warnings: list[str]
+    ) -> list[str]:
+        """What `requires_ats` makes mandatory (SRS 4.2, block B04).
+
+        The flag used to travel to the phone as `x-requires-ats` and **nothing looked at it**: no
+        block carried a field for the ATS reference, so a work order whose form «requires an ATS»
+        could be closed without naming one. A declaration that nothing enforces is worse than no
+        declaration, because the area believes it is covered.
+
+        The warning is the other half: a form that requires an ATS and does not include B04 is a
+        misconfiguration nobody would notice, and it is exactly the state every form was in.
+        """
+        if not definition.form.requires_ats:
+            return []
+        if SAFETY_REFERENCE not in properties:
+            warnings.append(
+                f"'{definition.code}' exige ATS pero no incluye el bloque B04, así que no hay "
+                f"dónde anotar cuál: el campo '{SAFETY_REFERENCE}' no está en el formulario"
+            )
+            return []
+        return [SAFETY_REFERENCE]
 
     @staticmethod
     def _apply_photo_minimums(

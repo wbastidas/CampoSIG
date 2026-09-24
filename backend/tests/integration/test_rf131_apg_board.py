@@ -124,6 +124,8 @@ def an_attention(
         "cause_found": cause,
         "operative_at_close": True,
         "final_state": "resuelto",
+        # B04: el formulario exige ATS, así que la referencia es obligatoria.
+        "ats_reference": "ATS-2026-0001",
         "activities": [{"activity_code": "REEMPLAZO_LUMINARIA", "quantity": 1}],
     }
     if technology is not None:

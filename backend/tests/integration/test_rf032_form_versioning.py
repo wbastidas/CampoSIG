@@ -27,7 +27,7 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import current_principal
 from app.auth.principal import Principal, Role
 from app.forms import registry
-from app.forms.catalog import CatalogError, load_blocks, load_definitions
+from app.forms.catalog import CatalogError, get_definition, load_blocks, load_definitions
 from app.forms.models import PublishedForm
 from app.forms.registry import FormState
 from app.gis_gateway.ingest import ingest_metadata
@@ -44,6 +44,17 @@ pytestmark = pytest.mark.integration
 
 CODE = "F-MT-01"
 ACTOR = "admin.funcional"
+
+
+#: The version the definition file declares, read once at import.
+#:
+#: Read instead of written, because a test that hard-codes today's version fails on the next
+#: legitimate bump of the form and then somebody edits the test instead of thinking about the bump.
+#: What these tests are about is that publishing freezes a shape, not which number it carries.
+#:
+#: At import and not per call: several of these tests rewrite the file to simulate a v2, so a
+#: function would return the *new* version in exactly the assertions that are about the old one.
+FILE_VERSION = get_definition(CODE).version
 
 
 @pytest.fixture
@@ -163,7 +174,7 @@ class TestPublishing:
 
     def test_asking_for_a_version_nobody_published_raises(self, session: Session):
         with pytest.raises(registry.FormNotPublishedError):
-            registry.frozen(session, CODE, "1.0.0")
+            registry.frozen(session, CODE, FILE_VERSION)
 
 
 class TestTheFreezeHolds:
@@ -175,7 +186,7 @@ class TestTheFreezeHolds:
         order = make_order(session, unit)
         assign(session, order, crew=crew)
         pinned = order.form_version
-        assert pinned == "1.0.0"
+        assert pinned == FILE_VERSION
 
         # Somebody edits the file and publishes v2, dropping a whole block.
         bump_the_file(version="2.0.0", drop_block="B13")
@@ -212,7 +223,7 @@ class TestTheFreezeHolds:
         bump_the_file(version="2.0.0", drop_block="B13")
         order = make_order(session, unit)
         assign(session, order, crew=crew)
-        assert order.form_version == "1.0.0"
+        assert order.form_version == FILE_VERSION
         composed = compose_for(session, unit, order)
         # The block the draft dropped is still there, because v1 is what was frozen.
         assert any(field in composed.schema["properties"] for field in load_blocks()["B13"].fields)
@@ -236,10 +247,10 @@ class TestTheFreezeHolds:
         registry.publish(session, CODE, actor=ACTOR)
         order = make_order(session, unit)
         assign(session, order, crew=crew)
-        registry.obsolete(session, CODE, "1.0.0", actor=ACTOR)
+        registry.obsolete(session, CODE, FILE_VERSION, actor=ACTOR)
         composed = compose_for(session, unit, order)
-        assert composed.version == "1.0.0"
-        assert registry.frozen(session, CODE, "1.0.0").is_obsolete
+        assert composed.version == FILE_VERSION
+        assert registry.frozen(session, CODE, FILE_VERSION).is_obsolete
 
     def test_without_any_publication_the_file_stands_in_and_says_so(
         self, session: Session, unit: BusinessUnit, crew: Crew
@@ -279,7 +290,7 @@ class TestTheFreezeHolds:
         composed = compose_for(session, unit, order)
         # The composed schema has enumerations; the snapshot of the blocks does not carry the
         # unit's values, which is what «no se congelan» means.
-        snapshot = registry.frozen(session, CODE, "1.0.0")
+        snapshot = registry.frozen(session, CODE, FILE_VERSION)
         assert snapshot.blocks
         assert composed.schema["properties"]
 
@@ -287,13 +298,13 @@ class TestTheFreezeHolds:
 class TestWhatTheDeviceIsTold:
     def test_the_manifest_announces_the_published_version(self, session: Session):
         registry.publish(session, CODE, actor=ACTOR)
-        assert form_versions(session)[CODE] == "1.0.0"
+        assert form_versions(session)[CODE] == FILE_VERSION
 
     def test_an_unpublished_draft_is_not_announced(self, session: Session, bump_the_file):
         """A device that downloaded whatever was on disk would pick up a shape nobody published."""
         registry.publish(session, CODE, actor=ACTOR)
         bump_the_file(version="2.0.0")
-        assert form_versions(session)[CODE] == "1.0.0"
+        assert form_versions(session)[CODE] == FILE_VERSION
 
     def test_a_code_with_no_publication_falls_back_to_the_file(self, session: Session):
         """Otherwise a platform that has not published would hand its phones nothing."""
@@ -347,7 +358,7 @@ class TestApi:
         body = client.get("/api/v1/forms/catalogue").json()
         row = next(item for item in body["forms"] if item["code"] == CODE)
         assert row["has_unpublished_draft"] is True
-        assert row["published_version"] == "1.0.0"
+        assert row["published_version"] == FILE_VERSION
         assert row["file_version"] == "2.0.0"
 
     def test_publishing_is_201_and_records_the_author_from_the_token(self, client):
@@ -365,7 +376,7 @@ class TestApi:
         bump_the_file(version="2.0.0")
         client.post(f"/api/v1/forms/{CODE}/publish", json={})
         rows = client.get(f"/api/v1/forms/{CODE}/versions").json()
-        assert [row["version"] for row in rows] == ["2.0.0", "1.0.0"]
+        assert [row["version"] for row in rows] == ["2.0.0", FILE_VERSION]
         assert rows[0]["state"] == "publicado"
         assert rows[1]["state"] == "obsoleto"
 
@@ -385,7 +396,7 @@ class TestApi:
         second.published_at = datetime(2001, 1, 1, tzinfo=UTC)
         session.flush()
         rows = registry.history(session, CODE)
-        assert [row.version for row in rows] == ["2.0.0", "1.0.0"]
+        assert [row.version for row in rows] == ["2.0.0", FILE_VERSION]
         assert [row.sequence for row in rows] == sorted(
             (row.sequence for row in rows), reverse=True
         )

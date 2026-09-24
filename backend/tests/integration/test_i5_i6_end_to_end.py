@@ -109,6 +109,8 @@ def full_answers() -> dict:
         "feeder_code": "04BH070T11",
         "height_m": 11.0,
         "final_state": "resuelto",
+        # B04: el formulario exige ATS, así que la referencia es obligatoria.
+        "ats_reference": "ATS-2026-0001",
         "photos_before": ["s3://a.jpg", "s3://b.jpg"],
         "photos_after": [],
     }
@@ -151,6 +153,34 @@ class TestCaptureAndValidation:
         answers["unresolved_reason"] = "falta_material"
         response = save_answers(session, unit, order, answers=answers, submit=True)
         assert response.state == ResponseState.SUBMITTED
+
+    def test_an_ats_form_is_refused_without_the_ats_reference(self, session, unit, order):
+        """B04, y la razón de que el bloque exista.
+
+        `requires_ats: true` viajaba al teléfono como `x-requires-ats` y nada lo miraba: no había
+        campo donde anotar cuál, así que una OT «que exige ATS» se cerraba sin nombrar ninguno.
+        """
+        answers = {key: value for key, value in full_answers().items() if key != "ats_reference"}
+        with pytest.raises(AnswerValidationError, match="ats_reference"):
+            save_answers(session, unit, order, answers=answers, submit=True)
+
+    def test_a_work_permit_without_its_ats_is_refused(self, session, unit, order):
+        """La regla de B04, que además es el primer uso del operador «está contestado»."""
+        answers = {key: value for key, value in full_answers().items() if key != "ats_reference"}
+        answers["work_permit_reference"] = "PT-2026-77"
+        with pytest.raises(AnswerValidationError, match="ATS"):
+            save_answers(session, unit, order, answers=answers, submit=True)
+
+    def test_a_form_without_b07_does_not_validate_materials(self, session, unit, order):
+        """Una inspección preventiva no lleva B07, y por eso este test está escrito así.
+
+        La primera versión mandaba `materials` a F-MT-01 y pasaba: el esquema no prohíbe
+        propiedades extra, así que la tabla viajaba como dato desconocido y el test no probaba nada
+        del bloque. Lo que sí se puede afirmar aquí es que el formulario **no** la declara; que la
+        tabla funciona se prueba contra un formulario que la incluye, en los tests del compositor.
+        """
+        composed = compose_for(session, unit, order)
+        assert "materials" not in composed.schema["properties"]
 
     def test_the_form_version_is_the_one_assigned(self, session, unit, order):
         response = save_answers(session, unit, order, answers=full_answers(), submit=True)

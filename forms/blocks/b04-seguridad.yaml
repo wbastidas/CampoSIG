@@ -1,0 +1,41 @@
+# B4 Seguridad (SRS 4.2): referencia al ATS y al permiso de trabajo, y confirmación de EPP.
+#
+# Este bloque **no existía**, y seis formularios declaraban `requires_ats: true`. Esa bandera
+# llegaba al esquema compuesto como `x-requires-ats` y nada la miraba: no había ningún campo donde
+# anotar qué ATS se firmó, así que una OT «que exige ATS» se podía cerrar sin ninguna referencia a
+# uno. La declaración existía y no significaba nada.
+#
+# La referencia es un texto y no una relación a la tabla de respuestas del F-TR-01, por una razón de
+# campo: el ATS lo firma la cuadrilla en papel o en otro dispositivo cuando el suyo se quedó sin
+# batería, y exigir un identificador de la plataforma habría dejado a la cuadrilla sin poder cerrar
+# un trabajo que sí hizo con su análisis firmado. Lo que la plataforma puede exigir —y exige— es que
+# alguien escriba **cuál**, y eso es auditable.
+#
+# `ppe_confirmed` es una afirmación de una persona, no una medición. Se registra como tal: quién y
+# cuándo salen de la respuesta, y la foto del EPP es material de RF-084 (visión), no de este bloque.
+block:
+  code: B04
+  title: Seguridad
+  required: true
+fields:
+  ats_reference:
+    type: string
+    title: Referencia del ATS
+    maxLength: 64
+    # Sin voz: es un código, y dictar códigos es la peor tarea que se le puede dar a un ASR.
+    x-voice: false
+  work_permit_reference:
+    type: string
+    title: Referencia del permiso de trabajo
+    maxLength: 64
+    x-voice: false
+  ppe_confirmed:
+    type: boolean
+    title: Confirmo que la cuadrilla usa el EPP requerido
+    x-voice: true
+rules:
+  # Un permiso de trabajo sin su ATS es la combinación que el área no acepta: el permiso autoriza
+  # la maniobra, el ATS es el análisis de cómo hacerla sin lastimarse.
+  - when: {"!!": {"var": "work_permit_reference"}}
+    require: [ats_reference]
+    message: Un permiso de trabajo sin referencia del ATS no se puede cerrar

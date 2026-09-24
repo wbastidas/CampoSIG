@@ -3,10 +3,10 @@
 # del activo, derivados de los dominios reales de la Unidad de Negocio.
 form:
   code: F-MT-01
-  version: 1.0.0
+  version: 1.1.0
   title: Inspección preventiva de estructura
   area: mantenimiento
-  blocks: [B01, B02, B03, B05, B13, B09, B10, B11, B12]
+  blocks: [B01, B02, B04, B03, B05, B13, B09, B10, B11, B12]
   min_photos: {before: 2, after: 0}
   requires_ats: true
   applies_to_asset_types: [support_structure]

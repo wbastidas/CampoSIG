@@ -105,6 +105,8 @@ def an_inspection(
         "material": "concrete",
         "feeder_code": feeder,
         "final_state": "resuelto",
+        # B04: el formulario exige ATS, así que la referencia es obligatoria.
+        "ats_reference": "ATS-2026-0001",
     }
     if findings is not None:
         answers["findings"] = findings

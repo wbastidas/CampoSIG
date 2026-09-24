@@ -83,6 +83,8 @@ def full_answers() -> dict:
         "feeder_code": "04BH070T11",
         "height_m": 11.0,
         "final_state": "resuelto",
+        # B04: el formulario exige ATS, así que la referencia es obligatoria.
+        "ats_reference": "ATS-2026-0001",
         "photos_before": ["s3://a.jpg", "s3://b.jpg"],
         "photos_after": [],
     }
