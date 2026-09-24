@@ -830,6 +830,95 @@ Falta la mitad que necesita modelos: los nodos VLM y de redacción, en I12.
 
 ---
 
+### RF-013: la OT que se propone sola, y la aritmética que se puede discutir
+
+El criterio es «la propuesta aparece en la bandeja del supervisor; al aprobarla pasa a Planificada; al
+rechazarla guarda el motivo», con la matriz de criticidad del anexo C detrás. Los hallazgos ya
+existían —RF-133 los lee del JSONB de las capturas— y nadie hacía nada con ellos: un técnico marcaba
+«generar OT» en la tabla de hallazgos y esa casilla no llegaba a ninguna parte.
+
+**Una propuesta no es una OT, y son tablas distintas.** Crearla en `borrador` y anularla al rechazarla
+dejaría a los tableros de RF-130, a la bitácora y a los indicadores contando trabajo que nunca existió,
+y esos números son los que una unidad reporta hacia arriba. Además una propuesta lleva cosas que una OT
+no lleva y no debería llevar: los hallazgos que la originaron, el modelo que los vio, y la aritmética
+del anexo C con lo que esa aritmética no pudo saber.
+
+**Toda la matriz es dato, y nada de ella está en el código.** La severidad es un atributo del catálogo
+de defectos; la consecuencia, de un catálogo nuevo por tipo de activo; el plazo sugerido, del catálogo
+de prioridad. Un área ajusta la severidad de «cruceta podrida» sin un despliegue, que es la única forma
+de que la matriz sobreviva a la primera reunión con mantenimiento.
+
+**La consecuencia es una aproximación declarada, no un cálculo.** El anexo la define por impacto en el
+servicio: troncal de media tensión con cargas críticas es 5, ramal es 4. La plataforma **no puede
+distinguirlos** —cuántos clientes cuelgan de un alimentador y qué es troncal vive en el SIG y en los
+sistemas comerciales— así que el catálogo dice 4 para un tramo y lleva el caveat escrito, y el caveat
+viaja con cada propuesta que lo usó. Sin eso, un 4 se lee como una medición. Lo mismo con las omisiones:
+un defecto sin severidad produce una propuesta que **dice** que usó 3 por omisión, junto al número. Una
+prioridad presentada como cálculo cuando la mitad de sus entradas fueron omisiones es como un supervisor
+aprende a ignorar la bandeja entera, y para eso hay una bandera —`estimated`— por la que la pantalla
+puede ordenar: «estas sí las sabía».
+
+**Un ajuste por exposición que alguien tiene que marcar.** «Zona urbana o escolar, vía principal: +1
+nivel» es una columna de la zona (RF-152), en falso por omisión: subir un nivel a todas las propuestas
+porque nadie marcó la casilla sería peor que no aplicar el ajuste. El +1 va a la consecuencia y no al
+puntaje, porque el anexo dice «nivel» — sumarlo al puntaje movería un P3 a P1 de un solo defecto.
+
+**Y la criticidad se guarda, no se recalcula al leer.** Los catálogos se mueven; un supervisor que mira
+una decisión de marzo tiene que ver los números de marzo.
+
+Lo que la generación **se niega a hacer** es la mitad del valor, y vuelve contada en el informe:
+
+* un activo con trabajo pendiente en campo no se vuelve a proponer (RF-014, aquí como negativa y no
+  como alerta: una bandeja con propuestas de trabajo ya programado es una que se aprende a hojear);
+* un par activo+defecto con propuesta abierta tampoco, y la unicidad está en un índice parcial de la
+  base y no en una comprobación de la función, que es algo que un segundo trabajador puede correr en
+  paralelo. Parcial sobre el estado abierto a propósito: un defecto que alguien descartó puede volver;
+* un hallazgo sin código de activo no se puede proponer, y se cuenta aparte en vez de desaparecer.
+
+**El defecto que encontraron los tests de integración vale escribirlo, porque nació de una resta.** La
+lista de estados «con trabajo abierto» se derivaba restando los estados atendidos, y eso dejaba dentro
+`sincronizada` y `en_revision` — que son justo los estados de la OT cuya captura produjo el hallazgo.
+Resultado: **ninguna propuesta podía levantarse nunca**, y el generador devolvía «omitida por OT
+abierta» sobre el activo de cada hallazgo. La lista está ahora escrita a mano, con `devuelta` dentro
+(manda a la cuadrilla otra vez al campo) y `en_revision` fuera (su trabajo de campo está hecho; lo que
+falta es un supervisor, y que un supervisor esté ocupado no es razón para dejar de proponer trabajo). Y
+la comprobación excluye además la OT del propio hallazgo: es la única OT que con certeza existe sobre
+ese activo, y contarla callaría al generador incluso con la lista bien.
+
+**Las tres decisiones son de una persona.** `approve` es el único camino de esta tabla a `work_order`,
+toma al decisor de un token y ninguna tarea programada lo llama. La prioridad calculada es un parámetro
+que el supervisor puede cambiar —saben si ese tramo es troncal, que es exactamente lo que la plataforma
+no sabe— y la bitácora guarda que la cambió. `merge` existe porque la bandeja va a proponer lo que
+alguien ya programó a mano, y deja los hallazgos en la descripción de la OT de destino: una fusión sin
+rastro haría que la cuadrilla llegue sin saber por qué. `reject` exige un motivo **de catálogo**.
+
+**Y el motivo de rechazo es de catálogo por una razón que no es el orden.** RF-114 dice que «se usa como
+señal negativa en el entrenamiento», y no todos los motivos enseñan lo mismo: «no es un defecto» dice
+que la detección se equivocó, «ya está resuelto» dice que acertó y el mundo cambió. Usar el segundo como
+ejemplo negativo enseñaría a un modelo a no ver un defecto que estaba ahí. Así que `attributes.signal`
+dice qué enseña cada motivo, la señal se resuelve el día de la decisión —el catálogo se mueve— y hay un
+endpoint que los agrupa por señal para quien arme el conjunto.
+
+Un defecto más, encontrado de paso: el lector de hallazgos de RF-133 seguía al activo de la fila o al de
+la OT, y **no al que la captura identifica**. Una OT creada sin activo cuya cuadrilla leyó el código de
+la placa en sitio dejaba un hallazgo perfectamente seguible contado como imposible de seguir. La lista
+simple de defectos sí lo usaba; la tabla de hallazgos no, y esa diferencia entre los dos lectores era el
+defecto. Ahora los dos miran lo mismo, en el mismo orden: la fila, la captura, la OT.
+
+**La bandeja web (RF-114)** tiene una sola insistencia: una prioridad estimada no puede parecerse a una
+calculada. La banda del anexo, la aritmética completa, la palabra «Estimada» y los caveats en las
+palabras del servidor —nunca parafraseados, porque son las palabras que acordó el área— están todos por
+eso. Las tres decisiones dicen qué van a hacer antes de hacerlo, y cambiar la prioridad calculada se
+anuncia como lo que es: «en lugar de la que calculó el anexo C», y queda en la bitácora. El motivo de
+rechazo es un selector del catálogo, con la señal que enseña debajo; cuando el catálogo no está cargado
+la pantalla **no ofrece rechazar** y dice por qué, en vez de caer en un campo libre que produciría
+etiquetas con las que nadie puede entrenar.
+
+Dieciséis guardas rotas a propósito y detectadas. Falta la mitad de visión: una detección como origen de
+propuesta, con su modelo y confianza, que la tabla y la pantalla ya admiten y que llega con I11.
+
+---
+
 ### RF-182: los guardrails que faltaban, y por qué el cero no probaba nada
 
 Los conjuntos dorados de RNF-060 **medían** las fugas de datos personales desde el día que se
@@ -1496,9 +1585,8 @@ está y se prueba.
 ## Nota sobre el estado de verificación
 
 Los tests de integración **se ejecutaron contra PostgreSQL 16 + PostGIS 3.4 real**, no solo en CI:
-957 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las trece
-migraciones aplicadas y revertidas sobre una base limpia (28 tablas de la aplicación, más
-`alembic_version` y las de PostGIS).
+1 580 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las veintiuna
+migraciones aplicadas y revertidas sobre una base limpia.
 
 Eso destapó cuatro defectos que ni el lint, ni `mypy --strict`, ni el renderizado de SQL offline
 podían ver:
@@ -1536,8 +1624,8 @@ niveles:
 
 | Nivel | Qué prueba | Cuántos |
 |---|---|---|
-| Lógica pura | Orden, severidad, PKCE, sesión, importador, validación, disposición, informe | 202 |
-| Render (jsdom) | Que las pantallas muestren lo que hay que ver | 76 |
+| Lógica pura | Orden, severidad, PKCE, sesión, importador, validación, disposición, informe | 491 |
+| Render (jsdom) | Que las pantallas muestren lo que hay que ver | 201 |
 | Navegador real (Chromium) | Que **el artefacto que se despliega** cargue y la puerta de login aguante | 3 |
 
 `pnpm lint` también era un comando documentado que no existía: no había `eslint.config.js`, así

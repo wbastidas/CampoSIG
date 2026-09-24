@@ -25,6 +25,7 @@ import { MaintenanceScreen } from './features/maintenance/MaintenanceScreen';
 import { ModelProfileScreen } from './features/model-profile/ModelProfileScreen';
 import { OperationsBoard } from './features/operations/OperationsBoard';
 import { PolicyScreen } from './features/policy/PolicyScreen';
+import { ProposalsScreen } from './features/proposals/ProposalsScreen';
 import { RegulatoryScreen } from './features/regulatory/RegulatoryScreen';
 import { ReviewScreen } from './features/review/ReviewScreen';
 import { ZonesScreen } from './features/zones/ZonesScreen';
@@ -47,6 +48,7 @@ type Screen =
   | 'operacion'
   | 'alumbrado'
   | 'mantenimiento'
+  | 'propuestas'
   | 'ia'
   | 'integraciones'
   | 'bitacora'
@@ -67,6 +69,9 @@ const SCREENS: { key: Screen; label: string; roles: string[] }[] = [
   { key: 'alumbrado', label: 'Alumbrado', roles: ['supervisor', 'planificador'] },
   // El área de mantenimiento planifica con los hallazgos de las inspecciones (RF-133).
   { key: 'mantenimiento', label: 'Mantenimiento', roles: ['supervisor', 'planificador'] },
+  // La bandeja de propuestas es del supervisor, que es quien decide, y del planificador porque
+  // alimenta su tablero. Levantar propuestas no es decidir y no se hace desde aquí (RF-013).
+  { key: 'propuestas', label: 'OT propuestas', roles: ['supervisor', 'planificador'] },
   // RF-134 nombra los dos roles: el analista ML porque es su trabajo, y el supervisor porque es
   // quien decide con esos números. El servidor exige lo mismo.
   { key: 'ia', label: 'Tablero de IA', roles: ['analista_ml', 'supervisor'] },
@@ -166,6 +171,12 @@ export function App() {
         {screen === 'operacion' && <OperationsBoard businessUnit={unit} />}
         {screen === 'alumbrado' && <ApgScreen businessUnit={unit} />}
         {screen === 'mantenimiento' && <MaintenanceScreen businessUnit={unit} />}
+        {screen === 'propuestas' && (
+          <ProposalsScreen
+            businessUnit={unit}
+            mayDecide={roles.includes('supervisor') || roles.includes('planificador')}
+          />
+        )}
         {screen === 'ia' && <AiDashboardScreen businessUnit={unit} />}
         {screen === 'integraciones' && (
           <IntegrationsScreen businessUnit={unit} operator={operator} />
