@@ -954,6 +954,39 @@ fieldset {
   padding-left: 1.2rem;
 }
 
+/* --- RF-017: los adjuntos de oficina en el panel del planificador --- */
+.planner__attachments {
+  border-top: 1px solid var(--borde);
+  padding-top: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.planner__attachment-list {
+  list-style: none;
+  padding-left: 0;
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.planner__attachment-list > li + li {
+  margin-top: 0.6rem;
+  border-top: 1px dotted var(--borde);
+  padding-top: 0.6rem;
+}
+
+/* Cada dato del adjunto en su línea: el peso y el «no baja al teléfono» son lo que decide si la
+   cuadrilla tiene el archivo, y en una sola línea se leen como parte del título. */
+.planner__attachment-list span {
+  display: block;
+  color: var(--texto-suave);
+}
+
+.planner__withdraw {
+  margin-top: 0.4rem;
+  padding-left: 0.6rem;
+  border-left: 2px solid var(--borde);
+}
+
 .frm-screen section {
   margin-bottom: 1.5rem;
 }

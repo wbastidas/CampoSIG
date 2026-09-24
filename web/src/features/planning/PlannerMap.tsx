@@ -12,11 +12,7 @@
 // MapLibre 6 dejó de exponer un export por defecto; se importan los símbolos que se usan.
 // El salto de major se hizo por una vulnerabilidad crítica de XSS en el sanitizador de la 5.x
 // (GHSA-jrc7-96c5-q579), y el mapa muestra datos que vienen de nuestra API.
-import {
-  type GeoJSONSource,
-  Map as MapLibreMap,
-  type MapMouseEvent,
-} from 'maplibre-gl';
+import { type GeoJSONSource, Map as MapLibreMap, type MapMouseEvent } from 'maplibre-gl';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
@@ -30,6 +26,7 @@ import {
   type WorkOrderCollection,
   type WorkOrderFeature,
 } from '../../api/planning';
+import { AttachmentsPanel } from '../attachments/AttachmentsPanel';
 import {
   candidateHeadline,
   exclusionLines,
@@ -89,10 +86,7 @@ export function PlannerMap({
     const map = mapRef.current;
     if (!map) return;
     for (const feature of featuresRef.current) {
-      map.setFeatureState(
-        { source: SOURCE_ID, id: feature.id },
-        { selected: ids.has(feature.id) },
-      );
+      map.setFeatureState({ source: SOURCE_ID, id: feature.id }, { selected: ids.has(feature.id) });
     }
   }, []);
 
@@ -274,11 +268,7 @@ export function PlannerMap({
       setSuggestion(null);
       await reload();
     } catch (error) {
-      setStatus(
-        error instanceof ApiError
-          ? error.message
-          : 'No se pudo completar la asignación',
-      );
+      setStatus(error instanceof ApiError ? error.message : 'No se pudo completar la asignación');
     } finally {
       setBusy(false);
     }
@@ -293,15 +283,15 @@ export function PlannerMap({
     try {
       setSuggestion(await fetchSuggestedCrews(businessUnit, only));
     } catch (error) {
-      setStatus(
-        error instanceof ApiError ? error.message : 'No se pudo pedir la sugerencia',
-      );
+      setStatus(error instanceof ApiError ? error.message : 'No se pudo pedir la sugerencia');
     } finally {
       setBusy(false);
     }
   }, [businessUnit, selected]);
 
   const summary = summarise(features.filter((feature) => selected.has(feature.id)));
+  /** La única OT seleccionada, o null. Los adjuntos son de una OT, no de un grupo. */
+  const only = selected.size === 1 ? ([...selected][0] ?? null) : null;
 
   return (
     <div className="planner">
@@ -310,8 +300,8 @@ export function PlannerMap({
       <aside className="planner__panel" aria-label="Asignación">
         <h2>Asignar trabajo</h2>
         <p className="planner__hint">
-          Mantenga <kbd>Shift</kbd> y arrastre para seleccionar un grupo de OT. Clic para
-          añadir o quitar una.
+          Mantenga <kbd>Shift</kbd> y arrastre para seleccionar un grupo de OT. Clic para añadir o
+          quitar una.
         </p>
 
         {truncated && (
@@ -331,8 +321,8 @@ export function PlannerMap({
 
         {summary.reassignment > 0 && (
           <p role="status" className="planner__warning">
-            {summary.reassignment} de las seleccionadas ya están asignadas a otra cuadrilla.
-            Al confirmar se les quitará el trabajo.
+            {summary.reassignment} de las seleccionadas ya están asignadas a otra cuadrilla. Al
+            confirmar se les quitará el trabajo.
           </p>
         )}
 
@@ -402,12 +392,13 @@ export function PlannerMap({
           </section>
         )}
 
+        {only && (
+          // Los adjuntos son de una OT, y aquí el planificador ya tiene una en la mano (RF-017).
+          <AttachmentsPanel businessUnit={businessUnit} workOrderId={only} />
+        )}
+
         <label htmlFor="crew">Cuadrilla</label>
-        <select
-          id="crew"
-          value={crewId}
-          onChange={(event) => setCrewId(event.target.value)}
-        >
+        <select id="crew" value={crewId} onChange={(event) => setCrewId(event.target.value)}>
           {crews.map((crew) => (
             <option key={crew.crew_id} value={crew.crew_id}>
               {crew.code} — {crew.name} ({crew.open_work_orders} abiertas)

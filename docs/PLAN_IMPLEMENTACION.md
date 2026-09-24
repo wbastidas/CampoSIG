@@ -830,6 +830,57 @@ Falta la mitad que necesita modelos: los nodos VLM y de redacción, en I12.
 
 ---
 
+### RF-017: los adjuntos de oficina, y qué significa «se abre en modo avión»
+
+El criterio son cuatro palabras —«un PDF adjunto se abre en modo avión»— y son todo el diseño. Un
+archivo que el servidor entrega cuando se lo piden es un archivo que **no existe** en una subestación
+sin cobertura, así que un adjunto no es un enlace en la pantalla de la OT: es una parte del paquete
+offline, listada en el manifiesto con su hash y su peso, descargada antes de que la cuadrilla salga.
+
+**El paquete deriva las OT de la zona; no se le pide al llamante que las enumere.** Fue el primer
+error de esta implementación y la clase de error que este proyecto ya reconoce: la función aceptaba una
+lista de ids de OT y la API, que publica paquetes **por zona**, no pasaba ninguna. El requerimiento
+habría quedado declarado y apuntando a nada —nadie enumera ids a mano—, con sus pruebas en verde porque
+las pruebas también pasaban la lista. Ahora el paquete resuelve las OT de la zona en estado
+sincronizable y **suma la obra de cada frente**, porque los planos viven en la obra (RF-015) y la
+cuadrilla del frente tres abre el mismo plano que la del frente uno. Hay un test que publica por la API
+real, sin enumerar nada, y exige que el plano esté en el manifiesto.
+
+**El hash está en el manifiesto, no solo en la fila.** Es lo que deja a un teléfono decir «ya tengo
+este plano» y saltarse una descarga de 4 MB sobre un enlace que la unidad paga, y lo que le deja notar
+que el plano **cambió** después de asignada la OT, que pasa. Y por eso la lista del manifiesto va
+**ordenada**: el manifiesto se hashea, y un orden que decidiera la base de datos haría que dos
+publicaciones idénticas produjeran hashes distintos y que todos los teléfonos volvieran a descargar.
+
+**Hay dos límites y los dos dicen su número.** 25 MB por archivo y 60 MB por OT, porque un límite por
+archivo no alcanza: diez planos de 20 MB pasan uno por uno y la cuadrilla sigue sin poder descargarlos.
+El mensaje dice cuánto pesa, cuánto cabe y la salida —marcar como «no baja al teléfono» lo que no se
+abre en el sitio—, en el escritorio, en vez de descubrirse en el campo. La web avisa a las cuatro
+quintas partes, antes de que el servidor rechace la subida.
+
+**Un tipo que el teléfono no abre se rechaza al subirlo, con 415 y no con 422.** Un DWG es un plano
+para quien diseña y un archivo inútil para quien lo abre con guantes puestos; la diferencia entre «este
+tipo no sirve» y «pesa demasiado» es justo lo que necesita quien tiene que volver a exportarlo.
+
+**Retirado, nunca borrado.** La cuadrilla pudo ejecutar el trabajo con el plano viejo, y un adjunto
+desaparecido dejaría sin respuesta la revisión de ese trabajo. Retirar exige motivo, deja autor y
+fecha, y saca el archivo de los paquetes **nuevos**. Y el mismo archivo enviado dos veces es uno solo
+—la clave es el hash del contenido—: la oficina reenviando el plano es la oficina reenviándolo, no un
+segundo plano; si estaba retirado, vuelve.
+
+Veintiséis guardas rotas a propósito y detectadas, todas en el primer pase.
+
+**Falta la mitad de los bytes, y es una carencia de plataforma, no de este requerimiento.** La API
+registra metadatos —qué es, cuánto pesa, con qué hash, dónde está— igual que las evidencias: **nada en
+la plataforma escribe todavía en el almacenamiento de objetos**, ni para evidencias ni para adjuntos.
+Por eso el panel web lista, avisa del peso y retira, y **no tiene botón de subir**: un botón que
+registrara una fila apuntando a bytes que no están en ninguna parte es peor que no tenerlo. El camino
+de escritura a SeaweedFS (subida firmada, para evidencias y adjuntos a la vez) es un incremento propio,
+y con él llega el formulario de subida. El criterio de aceptación completo —abrir el PDF en modo
+avión— necesita además la mitad Android, que espera al entorno de compilación.
+
+---
+
 ### RF-024: la consignación, su ventana y el permiso que no se habilita sin número
 
 El criterio es una negativa: «no se habilita el formulario F-TR-02 sin un N.º de consignación». Y el

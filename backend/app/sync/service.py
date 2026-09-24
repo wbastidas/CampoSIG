@@ -20,6 +20,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.attachments.service import for_package as attachments_for_package
 from app.catalogs.service import versions as catalog_versions
 from app.dispatch.service import record_delivery
 from app.forms.catalog import load_definitions
@@ -291,6 +292,38 @@ def undelivered_for(session: Session, device: Device, work_order_id: uuid.UUID) 
     )
 
 
+def _package_order_ids(
+    session: Session, unit: BusinessUnit, zone: str, explicit: list[uuid.UUID] | None
+) -> list[uuid.UUID]:
+    """Which work orders' attachments this package carries (RF-017).
+
+    Derived from the zone by default, and not asked of the caller: a package is published per zone,
+    nobody enumerates order ids by hand, and an attachment that travels only when somebody
+    remembered to list it is an attachment that does not open in airplane mode. `explicit` exists
+    for a package built for a known set of orders.
+
+    A front's parent comes along because the drawings live on the parent (RF-015): the crew that
+    executes front three opens the same plan as the crew on front one.
+    """
+    if explicit is not None:
+        return explicit
+    rows = session.execute(
+        select(WorkOrder.id, WorkOrder.parent_id).where(
+            WorkOrder.business_unit_id == unit.id,
+            WorkOrder.zone == zone,
+            WorkOrder.state.in_(SYNCABLE_STATES),
+        )
+    ).all()
+    ids: list[uuid.UUID] = []
+    seen: set[uuid.UUID] = set()
+    for order_id, parent_id in rows:
+        for candidate in (order_id, parent_id):
+            if candidate is not None and candidate not in seen:
+                seen.add(candidate)
+                ids.append(candidate)
+    return ids
+
+
 # --- offline package (RF-360) ------------------------------------------------------
 def build_offline_package(
     session: Session,
@@ -300,6 +333,7 @@ def build_offline_package(
     tile_url: str,
     asset_count: int,
     model_package_version: str | None = None,
+    work_order_ids: list[uuid.UUID] | None = None,
 ) -> OfflinePackage:
     """Assemble the manifest for a zone package and supersede the previous one.
 
@@ -311,6 +345,25 @@ def build_offline_package(
         {"name": "assets", "kind": "geojson", "count": asset_count},
         {"name": "forms", "kind": "json", "versions": form_versions(session)},
     ]
+    # The office's drawings and documents (RF-017). Inside the package and not behind a link,
+    # because the criterion is «un PDF adjunto se abre en modo avión» and a file fetched on demand
+    # does not exist in a substation with no coverage. Each one carries its hash, so a phone skips
+    # what it already holds and notices what changed after the order was assigned.
+    order_ids = _package_order_ids(session, unit, zone, work_order_ids)
+    attachments = attachments_for_package(session, unit, order_ids=order_ids)
+    if attachments:
+        parts.append(
+            {
+                "name": "attachments",
+                "kind": "files",
+                "count": len(attachments),
+                # The total, said out loud: it is what somebody is about to download over a link
+                # the unit pays for, and a package that grew by forty megabytes should be visible
+                # before the crew leaves rather than after.
+                "size_bytes": sum(item.size_bytes for item in attachments),
+                "items": [item.as_dict() for item in attachments],
+            }
+        )
     manifest: dict[str, Any] = {
         "business_unit": unit.code,
         "zone": zone,
