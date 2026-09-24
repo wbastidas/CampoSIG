@@ -830,6 +830,60 @@ Falta la mitad que necesita modelos: los nodos VLM y de redacción, en I12.
 
 ---
 
+### El contrato de sincronización por HTTP: el teléfono no tenía a qué llamar
+
+El servicio de sincronización estaba escrito y probado desde I4 —enrolar, cursor, bandeja de
+idempotencia, paquete offline— y **no tenía router**. `grep prefix=` sobre `app/api/` devolvía
+diecinueve routers y ninguno de sincronización: el módulo Kotlin habla «solo con nuestra API»
+(ADR-003) y nuestra API no tenía ese borde. Es la carencia más grande que ha aparecido en este
+proyecto, y la más fácil de no ver: todo lo que el teléfono necesita existía como función de Python
+con tests en verde.
+
+**Y entregar no aplicaba nada.** `push_operation` escribía el asiento de idempotencia con
+`result={"payload_keys": [...]}`. Una captura entregada quedaba registrada como recibida y las
+respuestas del formulario no se guardaban en ninguna parte: ni respuesta, ni evidencias, ni cambio de
+estado. El asiento contesta «¿llegó antes?»; faltaba quien contestara «¿y qué hizo?». Eso es
+`sync/operations.py`, que despacha por tipo a los servicios que ya son dueños de cada regla —
+`save_answers`, `register_evidence`, `transition`— y escribe el resultado en el asiento, para que un
+reenvío devuelva exactamente lo mismo sin volver a aplicarlo.
+
+**Un dispositivo solo mueve los estados del campo.** Puede decir «en camino», «en sitio»,
+«suspendida», «cerrada en campo»; no puede decir «aprobada», «cerrada» ni «anulada». La tabla de
+transiciones describe lo alcanzable, no quién puede pedirlo, y sin esta lista un teléfono en
+`en_revision` podía aprobar su propio trabajo — que es exactamente la separación que M06 existe para
+sostener.
+
+**Lo que no se puede aplicar se rechaza con su motivo y queda en el asiento; nunca un 500.** Un
+formulario que no valida, una transición que no existe, una evidencia antes de su respuesta, un tipo
+de operación que el servidor no conoce: todos vuelven con la frase que lee el técnico, y el teléfono
+*aparca* esa operación. Un error de servidor la haría reintentar para siempre, que es la forma más
+segura de perder una captura sin que nadie se entere.
+
+**La clave del dispositivo no es una credencial.** Viaja en un QR y se puede copiar; el token, no. Si
+el dispositivo está enrolado a nombre de alguien, el llamante tiene que ser ese alguien — sin esa
+comprobación, la clave del teléfono de un compañero traía su trabajo. Y reenrolar un dispositivo en
+otra unidad de negocio se niega con 409: movería de geodatabase lo que ya capturó (ADR-009).
+
+**Un lote que toca trabajo de otra unidad se niega entero, antes de aplicar nada.** La primera versión
+lo comprobaba operación por operación, con un `rollback` al encontrarlo: media entrega aplicada antes
+de descubrir la que cruzaba, y un `rollback` dentro de la petición que además rompía el aislamiento de
+los tests. Ahora el lote se revisa primero y la respuesta es una sola: «este lote no».
+
+**La consignación viaja dentro de la OT.** El F-TR-02 se llena en una subestación sin cobertura y
+necesita el número (RF-024): un número que hubiera que consultar al servidor sería un permiso que no
+se puede llenar donde se llena. Y con él viaja `grants_permit`, resuelto en el servidor, para que el
+teléfono obedezca la regla en vez de reimplementarla.
+
+Veintiún guardas rotas a propósito y detectadas, una tras el primer pase: una evidencia **sin hash**
+pasaba, porque `register_evidence` acepta la cadena vacía sin protestar y no había test. El hash es
+lo que sostiene la cadena de custodia — sin él la revisión no puede afirmar que la foto que mira es
+la que se tomó.
+
+Falta la mitad del teléfono: el cliente HTTP en Kotlin sobre este contrato, que espera al entorno de
+compilación de Android.
+
+---
+
 ### RF-017: los adjuntos de oficina, y qué significa «se abre en modo avión»
 
 El criterio son cuatro palabras —«un PDF adjunto se abre en modo avión»— y son todo el diseño. Un
