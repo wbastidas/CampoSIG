@@ -91,6 +91,12 @@ services:
       context: ../../tools/erp-mock
     ports: ["8184:8184"]
 
+  # El OMS/ADMS: eventos de falla hacia acá, el registro de interrupción de vuelta (RF-123).
+  oms-mock:
+    build:
+      context: ../../tools/oms-mock
+    ports: ["8185:8185"]
+
   # Drena el outbox de integraciones (ADR-012). Separado del backend a propósito: si muere,
   # los eventos siguen en la tabla y el siguiente pase los recoge.
   integration-worker:
@@ -106,6 +112,7 @@ services:
       SIGEC_WORK_ORDER_SYSTEM_URL: http://legacy-ot-mock:8182
       SIGEC_CALL_CENTRE_URL: http://call-centre-mock:8183
       SIGEC_ERP_URL: http://erp-mock:8184
+      SIGEC_OMS_URL: http://oms-mock:8185
     depends_on:
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}

@@ -17,6 +17,7 @@ from app.audit import service as audit
 from app.audit.models import EventKind
 from app.integrations.callcentre_adapter import enqueue_claim_closure
 from app.integrations.erp_adapter import enqueue_material_movements
+from app.integrations.oms_adapter import enqueue_interruption_report
 from app.integrations.workorder_adapter import enqueue_result_push, enqueue_status_push
 from app.org.models import BusinessUnit
 from app.regulatory import rules as compliance
@@ -229,6 +230,9 @@ def decide(
         # movimiento existe antes de que la aprobación termine, o el ERP nunca sabe qué salió
         # de bodega en un trabajo que todos dan por cerrado.
         enqueue_material_movements(session, unit, order)
+        # Y, si la OT es un registro de interrupción, la interrupción al OMS (RF-123):
+        # «una interrupción registrada en F-OP-03 se refleja en el OMS».
+        enqueue_interruption_report(session, unit, order)
     elif decision == Decision.RETURNED:
         transition(
             session,

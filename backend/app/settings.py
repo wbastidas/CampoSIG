@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     call_centre_url: str = ""
     #: The ERP that owns the material catalogue and the stock (RF-122).
     erp_url: str = ""
+    #: Outage management: fault events in, interruption records out (RF-123).
+    oms_url: str = ""
     #: How many events one worker pass delivers. Bounded so a backlog is drained in visible
     #: chunks rather than in one pass that either finishes or dies holding everything.
     integration_batch_size: int = 50

@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import require_roles, unit_scope
 from app.auth.principal import Role
 from app.infra.database import get_session
-from app.integrations import erp_adapter
+from app.integrations import erp_adapter, oms_adapter
 from app.integrations.erp_models import StockLocationKind
 from app.integrations.models import Connector, EventStatus, IntegrationEvent
 from app.integrations.service import abandon, connector_health, ledger, retry_now
@@ -224,3 +224,40 @@ def import_stock(session: SessionDep, unit_code: str) -> dict[str, Any]:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
     session.commit()
     return report
+
+
+@router.post(
+    "/units/{unit_code}/oms/import-events",
+    dependencies=[Depends(require_roles(*IMPORTERS, Role.PLANNER))],
+    summary="Traer los eventos de falla del OMS (RF-011, RF-123)",
+)
+def import_fault_events(session: SessionDep, unit_code: str) -> dict[str, Any]:
+    """El planificador también puede: un alimentador disparado es trabajo que ya está ocurriendo."""
+    unit = _unit(session, unit_code)
+    base_url = get_settings().oms_url
+    if not base_url:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "el conector del OMS no está configurado; sin su URL no hay de dónde traer nada",
+        )
+    try:
+        report = oms_adapter.import_fault_events(session, unit, HttpTransport(), base_url=base_url)
+    except TransportError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+    session.commit()
+    return report
+
+
+@router.get(
+    "/units/{unit_code}/oms/pending-reports",
+    summary="Interrupciones que todavía no llegaron al OMS (RF-123)",
+)
+def pending_interruption_reports(
+    session: SessionDep,
+    unit_code: str,
+    _: Annotated[Any, Depends(require_roles(*IMPORTERS, Role.SUPERVISOR, Role.AUDITOR))] = None,
+) -> dict[str, int]:
+    """«Se reflejó en el OMS» es el criterio de aceptación, y un número que no baja es la forma de
+    que una persona note que no se reflejó."""
+    unit = _unit(session, unit_code)
+    return {"pending": oms_adapter.pending_reports(session, unit)}

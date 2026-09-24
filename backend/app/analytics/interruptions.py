@@ -248,37 +248,48 @@ def collect(session: Session, unit_id: uuid.UUID, *, since: datetime, until: dat
         .order_by(FormResponse.submitted_at)
     )
     for order, response in rows:
-        entry = Interruption(
-            work_order_id=order.id,
-            order_code=order.code,
-            answers=dict(response.answers or {}),
-        )
-        finding = next(
-            (
-                item
-                for item in compliance_findings(session, order, response)
-                if item.rule == COMPUTABLE_RULE
-            ),
-            None,
-        )
-        if finding is not None and finding.outcome is compliance.Outcome.COMPLIES:
-            # The rule's message carries the verdict; the flag is derived from the same comparison
-            # so the export and the review screen cannot disagree.
-            entry.threshold_seconds = (
-                float(finding.limit) if isinstance(finding.limit, int | float) else None
-            )
-            entry.threshold_verified = finding.limit_verified
-            entry.threshold_norm = finding.norm_ref
-            seconds = entry.seconds
-            entry.computable = (
-                seconds >= entry.threshold_seconds
-                if seconds is not None and entry.threshold_seconds is not None
-                else None
-            )
+        entry = classify(session, order, response)
         if entry.computable is None:
             base.unclassified += 1
         base.rows.append(entry)
     return base
+
+
+def classify(session: Session, order: WorkOrder, response: FormResponse) -> Interruption:
+    """One interruption, with what the rule in force said about it.
+
+    Extracted from :func:`collect` so the export of RF-132 and the report the OMS receives
+    (RF-123) read the **same** classification. Two readers of «is this interruption computable»
+    would drift, and the one that drifted would be the one the regulator sees.
+    """
+    entry = Interruption(
+        work_order_id=order.id,
+        order_code=order.code,
+        answers=dict(response.answers or {}),
+    )
+    finding = next(
+        (
+            item
+            for item in compliance_findings(session, order, response)
+            if item.rule == COMPUTABLE_RULE
+        ),
+        None,
+    )
+    if finding is not None and finding.outcome is compliance.Outcome.COMPLIES:
+        # The rule's message carries the verdict; the flag is derived from the same comparison
+        # so the export and the review screen cannot disagree.
+        entry.threshold_seconds = (
+            float(finding.limit) if isinstance(finding.limit, int | float) else None
+        )
+        entry.threshold_verified = finding.limit_verified
+        entry.threshold_norm = finding.norm_ref
+        seconds = entry.seconds
+        entry.computable = (
+            seconds >= entry.threshold_seconds
+            if seconds is not None and entry.threshold_seconds is not None
+            else None
+        )
+    return entry
 
 
 # --- writing the file --------------------------------------------------------------------

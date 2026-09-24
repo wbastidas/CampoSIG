@@ -23,7 +23,12 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.integrations import callcentre_adapter, erp_adapter, workorder_adapter
+from app.integrations import (
+    callcentre_adapter,
+    erp_adapter,
+    oms_adapter,
+    workorder_adapter,
+)
 from app.integrations.models import Connector, EventStatus, IntegrationEvent
 from app.integrations.service import due_events, mark_failed
 from app.integrations.transport import HttpTransport, Transport, TransportError
@@ -67,6 +72,7 @@ def connector_urls() -> dict[str, str]:
         Connector.WORK_ORDER_SYSTEM.value: settings.work_order_system_url,
         Connector.CALL_CENTRE.value: settings.call_centre_url,
         Connector.ERP.value: settings.erp_url,
+        Connector.OMS.value: settings.oms_url,
         # The GIS is not reached over HTTP at all: the arcpy agent pulls its batches
         # (ADR-008). Listed so the worker says "not configured" rather than "unknown".
         Connector.GIS.value: "",
@@ -87,6 +93,8 @@ def deliver_one(
         return callcentre_adapter.deliver(session, event, transport, base_url=base_url)
     if event.connector == Connector.ERP:
         return erp_adapter.deliver(session, event, transport, base_url=base_url)
+    if event.connector == Connector.OMS:
+        return oms_adapter.deliver(session, event, transport, base_url=base_url)
     # A connector with no adapter is a programming error, not a transport failure. Marked
     # non-retryable so it surfaces on the screen instead of retrying forever.
     return mark_failed(

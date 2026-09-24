@@ -50,6 +50,8 @@ class Connector(StrEnum):
     #: Materials, stock and movements (RF-122). The ERP owns the material catalogue, so the
     #: platform refuses to edit those values by hand (RF-034).
     ERP = "erp"
+    #: Outage management (RF-123): fault events in, the interruption record back.
+    OMS = "oms"
 
 
 class EventStatus(StrEnum):
@@ -76,6 +78,10 @@ class EventKind(StrEnum):
     #: Material removed and returned: to the warehouse if reusable, to scrap otherwise. A second
     #: movement and not a negative consumption, because the two land in different places.
     MATERIAL_RETURNED = "devolucion_material"
+    #: The OMS told us about a fault (RF-123).
+    FAULT_EVENT_RECEIVED = "evento_falla_recibido"
+    #: The interruption record going back to the OMS: cause, element and restoration hours.
+    INTERRUPTION_REPORTED = "interrupcion_reportada"
 
 
 class IntegrationEvent(Base):

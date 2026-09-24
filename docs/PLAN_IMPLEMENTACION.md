@@ -56,7 +56,7 @@ Duración de referencia: **11 a 13 meses** (retirar el RAG ahorra del orden de t
 | Entregable | Detalle |
 |---|---|
 | Monorepo | Estructura del SRS 10.1, con los módulos nuevos del addendum 7.2 |
-| Docker Compose de desarrollo | PostgreSQL 16 + PostGIS, Redis, SeaweedFS, Keycloak con realm de prueba, backend, web, `llama.cpp` con Qwen2.5-1.5B tras la pasarela de modelos, `tools/arcgis-mock` y `tools/legacy-ot-mock` |
+| Docker Compose de desarrollo | PostgreSQL 16 + PostGIS, Redis, SeaweedFS, Keycloak con realm de prueba, backend, web, `llama.cpp` con Qwen2.5-1.5B tras la pasarela de modelos y los simuladores `tools/arcgis-mock`, `tools/legacy-ot-mock`, `tools/call-centre-mock`, `tools/erp-mock` y `tools/oms-mock` |
 | Esqueleto del agente arcpy | Paquete `gis-agent/` en Python 2.7 con el contrato HTTP hacia el backend, las invariantes de ADR-008 en `guards.py`, y **tests que corren sin arcpy** con un doble de prueba. Así el agente se desarrolla y se prueba en CI sin ArcMap |
 | Esquema base | Migraciones Alembic sobre PostgreSQL; PostGIS y JSONB con índice GIN probados con un ida y vuelta. **Ninguna conexión a Oracle**: el backend no lleva driver Oracle (ADR-006) |
 | CI | Lint, tests, verificación de licencias, `THIRD_PARTY_LICENSES.md` automático, **prueba de fuga de modelo de datos** (RF-305) y **rechazo de artefactos `com.esri.*`** en el módulo Android (ADR-003), desde el día uno |
@@ -827,6 +827,50 @@ DeepEval y promptfoo entran con I12 sobre estos mismos corpus: los dos envuelven
 una compuerta necesita primero son los datos etiquetados, que es lo que un framework no da.
 
 Falta la mitad que necesita modelos: los nodos VLM y de redacción, en I12.
+
+---
+
+### RF-123: el OMS, y un clasificador que no se puede desviar
+
+El OMS sabe que un alimentador disparó antes de que llame nadie; esta plataforma sabe qué encontró la
+cuadrilla y cuándo volvió el servicio. RF-123 son esas dos mitades, y su criterio es «una interrupción
+registrada en F-OP-03 se refleja en el OMS».
+
+**El informe lo arma el mismo clasificador que la exportación regulatoria.** La lógica que decide si
+una interrupción es computable contra el umbral en vigencia vivía dentro del bucle de `collect`
+(RF-132); se extrajo a `interruptions.classify` y ahora la leen las dos: la base de FMIK y TTIK, y el
+mensaje que recibe el OMS. Dos lectores de «¿es computable?» se desviarían, y el que se desviara sería
+el que acaba viendo el regulador. Hay un test que compara las dos salidas campo por campo.
+
+**La plataforma no manda índices.** El informe lleva la duración, el kVA y la causa; FMIK y TTIK
+necesitan el kVA instalado de la unidad como denominador, que vive en los sistemas corporativos. Un
+índice contra un denominador supuesto es un número que alguien tiene que defender después ante el
+regulador, y el payload lleva `indices: null` a propósito.
+
+**CIM está declarado, no supuesto.** El SRS dice «cuando sea posible», y un mensaje IEC 61968 completo
+necesita el perfil del OMS de la distribuidora: endpoint, versión del esquema y listas de códigos. El
+payload lleva las correspondencias inequívocas en un bloque `cim` **con una nota que dice justamente
+eso**. Inventar un envoltorio CIM completo produciría algo que parece interoperable y no lo es, que es
+peor que un payload plano que el taller de integración puede mapear.
+
+**Un evento del OMS se vuelve una OT y solo una**, con `source: evento_oms` — distinto de
+`sistema_ot`, porque los tableros agrupan por origen y «lo trajo el OMS» contesta otra pregunta que
+«lo mandó la plataforma de OT»: una es una falla que reportó la red, la otra es trabajo planificado. Y
+la prioridad es la que dijo el OMS, nunca inferida del número de clientes afectados: esa aritmética es
+del planificador y del anexo C, no de un conector.
+
+**Un ciclo de importación que hubo que romper**, y vale decir cómo: `analytics.interruptions` lee
+`review.service` para la regla de cumplimiento, y `review.service` llama a este adaptador al aprobar.
+La salida fue un import diferido dentro de la función, con el ciclo nombrado en un comentario, en vez
+de una segunda copia de «qué formulario es una interrupción». Es la misma clase de decisión que ya
+estaba tomada en `review.service` para la pre-revisión.
+
+Dieciocho guardas rotas a propósito y detectadas — y **tres de ellas pasaron invisibles en el primer
+pase**, las tres por tests que pasaban por la razón equivocada: una OT sin captura que se detenía en
+la guarda siguiente y no en la que el test nombraba, un borrador que tampoco llegaba a la guarda que
+decía probar, y una corrección que no cambiaba la duración, así que no habría notado que la clave de
+idempotencia dependiera de un valor corregible. Los tres tests están reescritos para ejercitar lo que
+afirman.
 
 ---
 
@@ -1750,7 +1794,7 @@ está y se prueba.
 ## Nota sobre el estado de verificación
 
 Los tests de integración **se ejecutaron contra PostgreSQL 16 + PostGIS 3.4 real**, no solo en CI:
-1 744 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las veintitrés
+1 765 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las veintitrés
 migraciones aplicadas y revertidas sobre una base limpia.
 
 Eso destapó cuatro defectos que ni el lint, ni `mypy --strict`, ni el renderizado de SQL offline

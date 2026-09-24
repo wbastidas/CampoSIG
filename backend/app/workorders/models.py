@@ -70,6 +70,10 @@ class WorkOrderSource(StrEnum):
     AI_FINDING = "hallazgo_ia"
     PREVENTIVE_PLAN = "plan_preventivo"
     CALL_CENTER = "call_center"
+    #: An outage-management event (RF-011, RF-123). Distinct from `sistema_ot` because the boards
+    #: group by source and «lo trajo el OMS» answers a different question from «lo mandó la
+    #: plataforma de OT»: one is a fault the network reported, the other is planned work.
+    OMS_EVENT = "evento_oms"
 
 
 class Priority(StrEnum):
