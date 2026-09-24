@@ -115,6 +115,10 @@ class InvalidTransitionError(Exception):
     """Raised when a state change is not allowed from the current state."""
 
 
+class OpenFrontsError(Exception):
+    """Raised when a work would be closed or cancelled over a front that is still open (RF-015)."""
+
+
 class ReasonRequiredError(Exception):
     """Raised when a transition that demands a reason is attempted without one."""
 
@@ -240,6 +244,21 @@ def transition(
         )
     if target in REASON_REQUIRED and not reason:
         raise ReasonRequiredError(f"el paso a '{target}' exige un motivo")
+
+    # A work with open fronts cannot be settled (RF-015). Checked in the funnel, like the trail
+    # below, because the twelve places that cause a transition must not each remember this.
+    #
+    # The import is deferred: `fronts` reads this module for the state enum and the audit helper,
+    # and a module-level import would close the cycle.
+    from app.workorders.fronts import blocking_fronts
+
+    blocking = blocking_fronts(session, order, target)
+    if blocking:
+        raise OpenFrontsError(
+            f"la obra tiene {len(blocking)} frente(s) sin resolver ({', '.join(blocking)}): "
+            "un avance que dijera «hecho» sobre un frente abierto mentiría justo el día en que "
+            "alguien reporta la obra como terminada"
+        )
 
     was = order.state
     order.state = target

@@ -830,6 +830,45 @@ Falta la mitad que necesita modelos: los nodos VLM y de redacción, en I12.
 
 ---
 
+### RF-015: obras con varios frentes, y un agregado que no puede mentir
+
+El criterio es una frase: «una OT padre muestra el avance agregado de sus hijas». Todo lo demás sale
+de hacer ese agregado honesto.
+
+**El padre es un contenedor, no un segundo lugar donde hacer el trabajo.** Los frentes son donde se
+asignan cuadrillas y se capturan formularios; un padre que también se pudiera asignar volvería «¿está
+hecho?» una pregunta con dos respuestas. Por eso colgar un frente rechaza una obra que ya salió con
+cuadrilla: añadir uno cambiaría en silencio lo que significaba «hecho» para quien ya la miró.
+
+**Un padre no se cierra sobre un frente abierto**, y la regla vive en el embudo de `transition` —no en
+las doce llamadas que causan una transición— igual que la bitácora. Sin ella, el agregado miente
+exactamente el día en que alguien se apoya en él: el día en que la obra se reporta terminada. Y anular
+**no cae en cascada**: una cascada anularía trabajo que una cuadrilla puede estar haciendo ahora mismo,
+desde una pantalla donde nadie está mirando esos frentes.
+
+**Un nivel, no un árbol.** Un frente no puede tener frentes: con nietos, «el avance» deja de tener un
+significado único, y se abre la puerta a un ciclo que nadie nota hasta que algo se cuelga.
+
+**Anulado cuenta como resuelto y no como logrado**, y por eso se reporta además por separado: una obra
+cuyos cuatro frentes se anularon está terminada y no se construyó nada, y un «4 de 4» a secas diría lo
+contrario. El avance es una fracción con su denominador —«1 de 3 frentes resueltos»— y nombra los
+frentes que faltan, nunca un porcentaje a secas. Cero de cero no es «hecho»: es una obra a la que
+todavía no le colgaron nada.
+
+**Y la cuarta aparición del mismo defecto de siempre**, esta vez atrapada por un test que afirmaba un
+orden en vez de por un número mal: los frentes se ordenaban por `created_at`, y `now()` de PostgreSQL
+es el reloj de la **transacción**, así que tres frentes creados juntos lo comparten al microsegundo y
+el desempate era un UUID aleatorio — una lista que se baraja entre dos lecturas de la misma obra.
+Ahora ordena por el código, que es lo que un planificador lee y nombra. El orden en que un frente fue
+*colgado* no se registra en ninguna parte, y por eso no es el que se usa: sacarlo de `created_at`
+habría sido sacarlo de la columna equivocada.
+
+Diecinueve guardas rotas a propósito y detectadas, dos tras el primer pase: que un frente **en
+revisión** frene el cierre (los conteos lo veían, el cierre no) y que el conteo de frentes por obra no
+cruce unidades — invisible con una sola unidad en la base.
+
+---
+
 ### RF-123: el OMS, y un clasificador que no se puede desviar
 
 El OMS sabe que un alimentador disparó antes de que llame nadie; esta plataforma sabe qué encontró la
@@ -1794,7 +1833,7 @@ está y se prueba.
 ## Nota sobre el estado de verificación
 
 Los tests de integración **se ejecutaron contra PostgreSQL 16 + PostGIS 3.4 real**, no solo en CI:
-1 765 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las veintitrés
+1 801 tests del backend en verde bajo ambos perfiles y en orden aleatorio, y las veinticuatro
 migraciones aplicadas y revertidas sobre una base limpia.
 
 Eso destapó cuatro defectos que ni el lint, ni `mypy --strict`, ni el renderizado de SQL offline

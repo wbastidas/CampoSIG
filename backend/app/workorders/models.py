@@ -153,6 +153,16 @@ class WorkOrder(Base):
     )
     assigned_user_sub: Mapped[str | None] = mapped_column(String(255))
 
+    #: The work this order is a front of (RF-015). Null for an ordinary order.
+    #:
+    #: Self-referential and **one level deep**, enforced by the service: a parent cannot itself
+    #: have a parent. «Una obra con múltiples frentes» is a tree of depth one, and allowing
+    #: grandchildren would make the aggregate progress a question about which level you meant —
+    #: besides opening the door to a cycle nobody notices until a query hangs.
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("work_order.id", ondelete="RESTRICT")
+    )
+
     #: Optimistic lock: two planners editing the same order do not overwrite each other
     #: (RF-311). Incremented by the service on every administrative change.
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
@@ -176,6 +186,8 @@ class WorkOrder(Base):
         # The planner's board: this unit's orders in this state.
         Index("ix_work_order_unit_state", "business_unit_id", "state"),
         Index("ix_work_order_unit_crew", "business_unit_id", "assigned_crew_id"),
+        # The parent's board reads its fronts on every view.
+        Index("ix_work_order_parent", "parent_id"),
         Index("ix_work_order_sla", "sla_due_at"),
         # GiST index for the map's bbox and polygon selection, which is the hot query of
         # the graphical assignment screen.
@@ -185,6 +197,11 @@ class WorkOrder(Base):
     @property
     def is_assignable(self) -> bool:
         return self.state in {WorkOrderState.PLANNED, WorkOrderState.ASSIGNED}
+
+    @property
+    def is_front(self) -> bool:
+        """True when this order is one front of a larger work (RF-015)."""
+        return self.parent_id is not None
 
 
 class DeviceCustody(Base):

@@ -20,6 +20,7 @@ from app.auth.dependencies import require_roles, unit_scope_query
 from app.auth.principal import Role
 from app.infra.database import get_session
 from app.org.service import UnknownBusinessUnitError, get_business_unit_by_code
+from app.workorders import fronts
 from app.workorders.models import Crew, WorkOrder, WorkOrderState
 from app.workorders.service import (
     ConcurrentEditError,
@@ -305,3 +306,117 @@ def get_custody(
 @router.get("/states", summary="Estados de OT disponibles para filtrar el mapa")
 def list_states() -> list[str]:
     return [state.value for state in WorkOrderState]
+
+
+# --- obras con varios frentes (RF-015) ------------------------------------------------------
+
+
+class AttachFrontIn(BaseModel):
+    """The order that becomes a front of this work."""
+
+    work_order_id: uuid.UUID
+
+
+def _order(session: Session, unit_id: uuid.UUID, work_order_id: uuid.UUID) -> WorkOrder:
+    order = session.get(WorkOrder, work_order_id)
+    if order is None or order.business_unit_id != unit_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "la OT no existe en esta unidad")
+    return order
+
+
+@router.get(
+    "/work-orders/{work_order_id}/fronts",
+    summary="Los frentes de una obra y su avance agregado (RF-015)",
+)
+def fronts_of(work_order_id: uuid.UUID, session: SessionDep, business_unit: str) -> dict[str, Any]:
+    """«Una OT padre muestra el avance agregado de sus hijas», con su denominador."""
+    unit = _unit(session, business_unit)
+    parent = _order(session, unit.id, work_order_id)
+    children = fronts.children_of(session, parent)
+    return {
+        "work_order_id": str(parent.id),
+        "code": parent.code,
+        "progress": fronts.progress_of(session, parent).as_dict(),
+        "fronts": [
+            {
+                "work_order_id": str(child.id),
+                "code": child.code,
+                "work_type": child.work_type,
+                "state": child.state,
+                "priority": child.priority,
+                "asset_code": child.asset_code,
+                "assigned_crew_id": str(child.assigned_crew_id) if child.assigned_crew_id else None,
+            }
+            for child in children
+        ],
+    }
+
+
+@router.get("/works", summary="Las obras de la unidad con su avance (RF-015)")
+def works_with_fronts(session: SessionDep, business_unit: str) -> list[dict[str, Any]]:
+    unit = _unit(session, business_unit)
+    return [
+        {
+            "work_order_id": str(parent.id),
+            "code": parent.code,
+            "description": parent.description,
+            "state": parent.state,
+            "progress": progress.as_dict(),
+        }
+        for parent, progress in fronts.parents_with_fronts(session, unit)
+    ]
+
+
+@router.post(
+    "/work-orders/{work_order_id}/fronts",
+    summary="Colgar una OT como frente de una obra (RF-015)",
+    dependencies=[Depends(require_roles(Role.PLANNER, Role.SUPERVISOR))],
+)
+def attach_front(
+    work_order_id: uuid.UUID,
+    payload: AttachFrontIn,
+    session: SessionDep,
+    business_unit: str,
+    principal: Annotated[Any, Depends(require_roles(Role.PLANNER, Role.SUPERVISOR))] = None,
+) -> dict[str, Any]:
+    unit = _unit(session, business_unit)
+    parent = _order(session, unit.id, work_order_id)
+    child = _order(session, unit.id, payload.work_order_id)
+    try:
+        fronts.attach(session, unit, parent, child, actor=principal.subject)
+    except fronts.FrontError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    session.commit()
+    return {
+        "work_order_id": str(parent.id),
+        "progress": fronts.progress_of(session, parent).as_dict(),
+    }
+
+
+@router.delete(
+    "/work-orders/{work_order_id}/fronts/{front_id}",
+    summary="Separar un frente de su obra (RF-015)",
+    dependencies=[Depends(require_roles(Role.PLANNER, Role.SUPERVISOR))],
+)
+def detach_front(
+    work_order_id: uuid.UUID,
+    front_id: uuid.UUID,
+    session: SessionDep,
+    business_unit: str,
+    principal: Annotated[Any, Depends(require_roles(Role.PLANNER, Role.SUPERVISOR))] = None,
+) -> dict[str, Any]:
+    """Separar, no anular: el frente sigue siendo trabajo y conserva lo que ya capturó."""
+    unit = _unit(session, business_unit)
+    parent = _order(session, unit.id, work_order_id)
+    child = _order(session, unit.id, front_id)
+    if child.parent_id != parent.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "esa OT no es frente de esta obra")
+    try:
+        fronts.detach(session, unit, child, actor=principal.subject)
+    except fronts.FrontError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    session.commit()
+    return {
+        "work_order_id": str(parent.id),
+        "progress": fronts.progress_of(session, parent).as_dict(),
+    }
