@@ -93,6 +93,13 @@ class Zone(Base):
     #: of their history, and deleting it would leave that history pointing at nothing.
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
+    #: Annex C's exposure adjustment: «zona urbana o escolar, vía principal: +1 nivel». A flag on
+    #: the zone because the zone is what the annex describes, and because the platform has no road
+    #: classification of its own — «vía principal» is knowledge the area has and the platform does
+    #: not. False by default: raising every proposal by a level because nobody ticked a box would
+    #: be worse than not applying the adjustment at all (RF-013).
+    exposure: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
     #: Who last touched the boundary, which is the question asked when a zone stops matching the
     #: operation (RF-150's «usuario que modificó», applied to the same module's other objects).
     updated_by: Mapped[str | None] = mapped_column(String(255))

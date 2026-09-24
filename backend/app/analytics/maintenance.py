@@ -35,6 +35,8 @@ from app.workorders.models import WorkOrder, WorkOrderState
 KEY_FINDINGS = "findings"
 KEY_DEFECTS = "defects"
 KEY_ASSET = "asset_code"
+#: The asset the capture itself is about, which is the canonical `code` of the asset block.
+KEY_CAPTURED_ASSET = "code"
 KEY_DEFECT = "defect_code"
 KEY_CRITICALITY = "criticality"
 KEY_WANTS_ORDER = "generate_work_order"
@@ -206,7 +208,17 @@ def _findings_of(order: WorkOrder, response: FormResponse) -> list[Finding]:
                 Finding(
                     work_order_id=order.id,
                     order_code=order.code,
-                    asset_code=_text(row.get(KEY_ASSET)) or order.asset_code,
+                    # Three sources, in order of how well each one knows the asset: the row says
+                    # so when the finding is about a *different* asset (the neighbouring pole);
+                    # otherwise it is about the asset the capture identifies, which the crew read
+                    # off the plate on site; and only then the code the planner typed. The middle
+                    # one was missing, and its absence counted a followable finding as untrackable
+                    # whenever the work order had been created without an asset.
+                    asset_code=(
+                        _text(row.get(KEY_ASSET))
+                        or _text(answers.get(KEY_CAPTURED_ASSET))
+                        or order.asset_code
+                    ),
                     defect_code=defect.strip(),
                     criticality=_text(row.get(KEY_CRITICALITY)) or "media",
                     feeder_code=_text(answers.get("feeder_code")) or order.feeder_code,
@@ -224,7 +236,7 @@ def _findings_of(order: WorkOrder, response: FormResponse) -> list[Finding]:
                 Finding(
                     work_order_id=order.id,
                     order_code=order.code,
-                    asset_code=_text(answers.get("code")) or order.asset_code,
+                    asset_code=_text(answers.get(KEY_CAPTURED_ASSET)) or order.asset_code,
                     defect_code=defect.strip(),
                     # The plain list carries no criticality; the asset's general condition is the
                     # closest thing the capture says, and inventing «alta» would put work at the

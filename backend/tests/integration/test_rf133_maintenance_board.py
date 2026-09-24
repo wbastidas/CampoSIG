@@ -380,6 +380,29 @@ class TestTheBacklog:
         assert backlog["open"] == 0
         assert backlog["attended"] == 0
 
+    def test_el_hallazgo_sigue_al_activo_que_identificó_la_captura(
+        self, client: TestClient, session: Session, unit: BusinessUnit
+    ) -> None:
+        """La OT pudo crearse sin activo y la cuadrilla leerlo de la placa en sitio.
+
+        El código de la captura es entonces el mejor dato que hay, y contar ese hallazgo como
+        imposible de seguir sería descartar el que más se sabe. La lista simple de defectos ya lo
+        hacía; la tabla de hallazgos no, y esa diferencia entre los dos lectores era el defecto.
+        """
+        order = an_inspection(
+            session,
+            unit,
+            code="OT-SC",
+            asset="P-000777",
+            findings=[{"defect_code": "x", "criticality": "alta"}],
+        )
+        order.asset_code = None
+        session.flush()
+
+        backlog = board(client, unit)["backlog"]
+        assert backlog["untrackable"] == 0
+        assert backlog["open"] == 1
+
     def test_los_que_la_cuadrilla_pidió_convertir_en_ot_se_cuentan(
         self, client: TestClient, session: Session, unit: BusinessUnit
     ) -> None:

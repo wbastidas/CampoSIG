@@ -7,6 +7,11 @@
 # `attributes.suggested_criticality` es una sugerencia, no un veredicto: el formulario pide la
 # criticidad y la persona la confirma. Un defecto que llegara con criticidad ya puesta sería una
 # decisión que nadie tomó.
+#
+# `attributes.severity` es la severidad 1–5 del **anexo C** del SRS, que es una de las dos entradas
+# del cálculo de criticidad de una OT propuesta (RF-013). Vive aquí, como dato, porque el anexo la
+# define por ejemplos de defecto y cada área tiene que poder ajustarla sin tocar código. Un defecto
+# sin severidad no impide proponer: la propuesta lo dice y usa la severidad por omisión.
 catalog:
   code: defect
   title: Defecto encontrado
@@ -17,119 +22,119 @@ entries:
     label: Poste inclinado
     synonyms: [poste chueco, poste torcido, poste inclinado]
     sort_order: 10
-    attributes: {asset: support_structure, suggested_criticality: alta}
+    attributes: {severity: 3, asset: support_structure, suggested_criticality: alta}
   - code: poste_fisurado
     label: Poste fisurado o agrietado
     synonyms: [poste rajado, poste fisurado, poste agrietado]
     sort_order: 11
-    attributes: {asset: support_structure, suggested_criticality: alta}
+    attributes: {severity: 3, asset: support_structure, suggested_criticality: alta}
   - code: cruceta_podrida
     label: Cruceta deteriorada
     synonyms: [cruceta podrida, cruceta dañada, cruceta mala]
     sort_order: 12
-    attributes: {asset: support_structure, suggested_criticality: alta}
+    attributes: {severity: 2, asset: support_structure, suggested_criticality: alta}
   - code: retenida_floja
     label: Retenida floja o cortada
     synonyms: [retenida suelta, viento flojo, retenida cortada]
     sort_order: 13
-    attributes: {asset: support_structure, suggested_criticality: media}
+    attributes: {severity: 3, asset: support_structure, suggested_criticality: media}
   - code: puesta_tierra_faltante
     label: Puesta a tierra faltante o cortada
     synonyms: [sin tierra, tierra cortada, falta puesta a tierra]
     sort_order: 14
-    attributes: {asset: support_structure, suggested_criticality: critica}
+    attributes: {severity: 4, asset: support_structure, suggested_criticality: critica}
   - code: senalizacion_faltante
     label: Señalización o rótulo faltante
     synonyms: [sin rótulo, falta señalización, sin placa]
     sort_order: 15
-    attributes: {asset: support_structure, suggested_criticality: baja}
+    attributes: {severity: 1, asset: support_structure, suggested_criticality: baja}
   # --- Aislamiento y conductores ---
   - code: aislador_roto
     label: Aislador roto o quebrado
     synonyms: [aislador quebrado, aislador partido, aislador roto]
     sort_order: 20
-    attributes: {suggested_criticality: alta}
+    attributes: {severity: 4, suggested_criticality: alta}
   - code: aislador_contaminado
     label: Aislador contaminado
     synonyms: [aislador sucio, aislador salino]
     sort_order: 21
-    attributes: {suggested_criticality: media}
+    attributes: {severity: 2, suggested_criticality: media}
   - code: conductor_bajo
     label: Conductor con altura insuficiente
     synonyms: [cable bajo, conductor bajo, cable colgado]
     sort_order: 22
-    attributes: {asset: line_segment, suggested_criticality: critica}
+    attributes: {severity: 5, asset: line_segment, suggested_criticality: critica}
   - code: conductor_deshilachado
     label: Conductor deshilachado o con hilos rotos
     synonyms: [cable deshilachado, hilos rotos]
     sort_order: 23
-    attributes: {asset: line_segment, suggested_criticality: alta}
+    attributes: {severity: 4, asset: line_segment, suggested_criticality: alta}
   - code: empalme_defectuoso
     label: Empalme defectuoso
     synonyms: [empalme malo, conexión floja, empalme recalentado]
     sort_order: 24
-    attributes: {suggested_criticality: alta}
+    attributes: {severity: 4, suggested_criticality: alta}
   - code: vegetacion_proxima
     label: Vegetación en contacto o próxima
     synonyms: [árbol en la línea, rama sobre el cable, vegetación]
     sort_order: 25
-    attributes: {asset: line_segment, suggested_criticality: alta}
+    attributes: {severity: 5, asset: line_segment, suggested_criticality: alta}
   # --- Transformador ---
   - code: transformador_fuga
     label: Transformador con fuga de aceite
     synonyms: [transformador goteando, fuga de aceite]
     sort_order: 30
-    attributes: {asset: distribution_transformer, suggested_criticality: alta}
+    attributes: {severity: 4, asset: distribution_transformer, suggested_criticality: alta}
   - code: transformador_corrosion
     label: Transformador con corrosión
     synonyms: [transformador oxidado, corrosión]
     sort_order: 31
-    attributes: {asset: distribution_transformer, suggested_criticality: media}
+    attributes: {severity: 2, asset: distribution_transformer, suggested_criticality: media}
   - code: transformador_ruido
     label: Transformador con ruido anormal
     synonyms: [transformador zumba, ruido anormal]
     sort_order: 32
-    attributes: {asset: distribution_transformer, suggested_criticality: media}
+    attributes: {severity: 3, asset: distribution_transformer, suggested_criticality: media}
   # --- Protección ---
   - code: fusible_operado
     label: Seccionador fusible operado
     synonyms: [fusible quemado, fusible abierto, seccionador operado]
     sort_order: 40
-    attributes: {asset: fuse_switch, suggested_criticality: alta}
+    attributes: {severity: 3, asset: fuse_switch, suggested_criticality: alta}
   - code: fusible_puenteado
     label: Seccionador fusible puenteado
     synonyms: [fusible puenteado, con alambre, puenteado]
     sort_order: 41
-    attributes: {asset: fuse_switch, suggested_criticality: critica}
+    attributes: {severity: 4, asset: fuse_switch, suggested_criticality: critica}
   # --- Alumbrado público ---
   - code: luminaria_apagada
     label: Luminaria apagada
     synonyms: [luminaria no prende, lámpara apagada, no enciende]
     sort_order: 50
-    attributes: {asset: street_light, suggested_criticality: media}
+    attributes: {severity: 2, asset: street_light, suggested_criticality: media}
   - code: luminaria_intermitente
     label: Luminaria intermitente
     synonyms: [luminaria titila, prende y apaga, intermitente]
     sort_order: 51
-    attributes: {asset: street_light, suggested_criticality: media}
+    attributes: {severity: 2, asset: street_light, suggested_criticality: media}
   - code: luminaria_dia
     label: Luminaria encendida de día
     synonyms: [prendida de día, encendida en el día]
     sort_order: 52
-    attributes: {asset: street_light, suggested_criticality: baja}
+    attributes: {severity: 1, asset: street_light, suggested_criticality: baja}
   - code: luminaria_vandalizada
     label: Luminaria vandalizada o faltante
     synonyms: [se robaron la luminaria, luminaria destruida, falta luminaria]
     sort_order: 53
-    attributes: {asset: street_light, suggested_criticality: alta}
+    attributes: {severity: 2, asset: street_light, suggested_criticality: alta}
   # --- Punto de carga ---
   - code: medidor_inaccesible
     label: Medidor inaccesible
     synonyms: [no se puede leer, medidor encerrado, sin acceso]
     sort_order: 60
-    attributes: {asset: service_point, suggested_criticality: baja}
+    attributes: {severity: 1, asset: service_point, suggested_criticality: baja}
   - code: acometida_deteriorada
     label: Acometida deteriorada
     synonyms: [acometida mala, cable de acometida pelado]
     sort_order: 61
-    attributes: {asset: service_point, suggested_criticality: alta}
+    attributes: {severity: 4, asset: service_point, suggested_criticality: alta}

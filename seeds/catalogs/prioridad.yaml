@@ -1,10 +1,15 @@
 # Prioridad de una OT (SRS 3.3). Los mismos cuatro valores que `WorkOrder.priority`.
+#
+# `attributes.sla_hours` es el «plazo sugerido (parametrizable)» del anexo C: inmediato para P1,
+# 72 h para P2, 30 días para P3, y el plan de mantenimiento para P4 —que no es un plazo, y por eso
+# esa entrada no lo lleva en vez de llevar un número inventado—. Es operativo y no regulatorio: un
+# plazo que una norma imponga vive en `regulatory_parameter` con su vigencia y su cita (ADR-007).
 catalog:
   code: priority
   title: Prioridad de la orden de trabajo
   source: manual
 entries:
-  - {code: critica, label: Crítica, sort_order: 1}
-  - {code: alta, label: Alta, sort_order: 2}
-  - {code: media, label: Media, sort_order: 3}
-  - {code: baja, label: Baja, sort_order: 4}
+  - {code: critica, label: Crítica, sort_order: 1, attributes: {annex_c: P1, sla_hours: 0, notify_control_centre: true}}
+  - {code: alta, label: Alta, sort_order: 2, attributes: {annex_c: P2, sla_hours: 72}}
+  - {code: media, label: Media, sort_order: 3, attributes: {annex_c: P3, sla_hours: 720}}
+  - {code: baja, label: Baja, sort_order: 4, attributes: {annex_c: P4}}
