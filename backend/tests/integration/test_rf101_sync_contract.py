@@ -33,7 +33,7 @@ from app.sync.service import (
     undelivered_for,
 )
 from app.workorders.models import WorkOrderState
-from app.workorders.service import create_work_order
+from app.workorders.service import assign, create_work_order, custody_history
 
 pytestmark = pytest.mark.integration
 
@@ -323,6 +323,44 @@ class TestRf322ReleaseGate:
             session, device, operation_id="op-1", kind="form_response", work_order_id=order.id
         )
         assert undelivered_for(session, device, order.id) is False
+
+
+class TestRf322WiredIntoReassignment:
+    """`assign` itself flags the closed custody (RF-023); nobody has to remember to call
+    `mark_pending_handover` by hand, which is exactly what left this gate unwired before."""
+
+    def test_reassigning_a_device_that_never_synced_flags_the_closed_custody(
+        self, session: Session, unit, device
+    ):
+        order = make_order(session, unit)
+        assign(session, order, device_id=device.device_key, user_sub="tecnico.a")
+
+        other, _ = enrol_device(session, unit, device_key="phone-002", user_sub="tecnico.b")
+        assign(
+            session, order, device_id=other.device_key, user_sub="tecnico.b", reason="reasignada"
+        )
+
+        history = custody_history(session, order)
+        closed = next(h for h in history if h.device_id == device.device_key)
+        assert closed.had_unsynced_data is True
+
+    def test_reassigning_a_device_that_delivered_leaves_the_flag_unset(
+        self, session: Session, unit, device
+    ):
+        order = make_order(session, unit)
+        assign(session, order, device_id=device.device_key, user_sub="tecnico.a")
+        push_operation(
+            session, device, operation_id="op-1", kind="form_response", work_order_id=order.id
+        )
+
+        other, _ = enrol_device(session, unit, device_key="phone-002", user_sub="tecnico.b")
+        assign(
+            session, order, device_id=other.device_key, user_sub="tecnico.b", reason="reasignada"
+        )
+
+        history = custody_history(session, order)
+        closed = next(h for h in history if h.device_id == device.device_key)
+        assert closed.had_unsynced_data is False
 
 
 class TestRf360OfflinePackage:

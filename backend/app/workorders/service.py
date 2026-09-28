@@ -297,9 +297,14 @@ def assign(
 ) -> WorkOrder:
     """Assign or reassign a work order (RF-320, RF-321, RF-324).
 
-    Reassignment closes the current custody row and opens a new one, so the chain survives.
-    If the previous holder had unsynced captured data, that is recorded on the closed row:
-    the platform must not free the order until what they captured has arrived (RF-322).
+    Reassignment closes the current custody row and opens a new one, so the chain survives. If the
+    device being revoked never delivered anything for this order — `undelivered_for` says so — the
+    closed row is marked `had_unsynced_data` (RF-322), which is what a planner sees on
+    `/work-orders/{id}/custody` before deciding the reassignment was safe. The order itself is not
+    held back: RF-023 says the *previous* device loses the OT on its next sync regardless, because
+    holding it back would leave whoever needs the work waiting on a phone that may never reconnect.
+    What RF-322 actually promises is narrower and just as real — the capture is not silently
+    dropped, and the conflict is visible for a person to resolve, not that the reassignment waits.
 
     :param expected_version: the version the planner was looking at. When given and stale,
         the change is refused so two planners never silently overwrite each other (RF-311).
@@ -324,6 +329,8 @@ def assign(
         previous.until = now
         if reason:
             previous.reason = reason
+        if previous.device_id and _owes_undelivered_data(session, previous.device_id, order.id):
+            mark_pending_handover(session, order, device_id=previous.device_id)
 
     was = order.state
     before = {
@@ -426,14 +433,30 @@ def current_custody(session: Session, order: WorkOrder) -> DeviceCustody | None:
     ).first()
 
 
+def _owes_undelivered_data(session: Session, device_key: str, work_order_id: uuid.UUID) -> bool:
+    """Whether the device being revoked never delivered anything for this order (RF-322).
+
+    Deferred import: `app.sync.service` reaches `app.dispatch.service`, which this module's own
+    callers sit behind in the request path, and importing it at module load time is a cycle this
+    function does not need to risk for a single lookup made at reassignment.
+    """
+    from app.sync.models import Device
+    from app.sync.service import undelivered_for
+
+    device = session.scalars(select(Device).where(Device.device_key == device_key)).first()
+    return device is not None and undelivered_for(session, device, work_order_id)
+
+
 def mark_pending_handover(
     session: Session, order: WorkOrder, *, device_id: str
 ) -> DeviceCustody | None:
     """Record that a device still holds unsynced data for this order (RF-322).
 
-    Called when a reassignment reaches a device that captured work offline. The order is not
-    freed until that data arrives, which is the difference between a reassignment and losing
-    a technician's afternoon.
+    Called from `assign` when the device being revoked never delivered anything it captured for
+    this order. The reassignment still goes through — RF-023 does not let one unreachable phone
+    hold up whoever needs the work next — but the closed custody row is flagged, so a planner
+    reading `/work-orders/{id}/custody` sees the conflict instead of a capture that vanished
+    without a trace.
     """
     rows = session.scalars(
         select(DeviceCustody)

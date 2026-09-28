@@ -1096,6 +1096,27 @@ avión— necesita además la mitad Android, que espera al entorno de compilaci�
 
 ---
 
+### RF-322/RF-023: la compuerta de custodia existía y no la llamaba nadie
+
+`undelivered_for` (¿este dispositivo entregó algo de esta OT?) y `mark_pending_handover` (marcar la
+custodia cerrada como con datos sin subir) ya existían, cada una correcta y con su propia prueba. Lo
+que faltaba era la tercera pieza: `assign()`, que es donde de verdad ocurre una reasignación, no
+llamaba a ninguna de las dos. La compuerta de RF-322 estaba declarada y no apuntaba a nada —la misma
+clase de hueco que ya había aparecido en RF-024 (pantalla ausente) y RF-017 (botón de subida ausente)—,
+y sus propias pruebas pasaban porque probaban las piezas sueltas, no el ensamble.
+
+RF-023 es explícito en que la OT **no espera** al teléfono saliente: la cuadrilla nueva la recibe en
+su siguiente sync sin importar si la anterior alcanzó a subir algo. Lo que RF-322 promete es más
+angosto y sigue siendo real: que la captura no se pierde en silencio. Ahora `assign()`, al cerrar la
+custodia anterior, pregunta si ese dispositivo debía algo de esta OT y, si es así, marca la fila
+cerrada — visible después en `/work-orders/{id}/custody` para quien decide la reasignación, sin
+detener nada. Tres mutaciones sembradas a propósito (quitar la llamada, hacer que la pregunta siempre
+responda que no, hacer que marcar no marque) y las tres atrapadas por la prueba nueva, que ahora ejerce
+`assign()` de punta a punta con un dispositivo inscrito de verdad, en vez de una custodia con un id de
+dispositivo escrito a mano que no corresponde a ningún `Device`.
+
+---
+
 ### RF-024: la consignación, su ventana y el permiso que no se habilita sin número
 
 El criterio es una negativa: «no se habilita el formulario F-TR-02 sin un N.º de consignación». Y el
