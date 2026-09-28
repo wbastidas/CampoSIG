@@ -43,6 +43,7 @@ function feature(
       asset_code: null,
       feeder_code: null,
       sla_due_at: null,
+      zone: null,
       version: 1,
     },
   };

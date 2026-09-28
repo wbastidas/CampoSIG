@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.audit import service as audit
 from app.audit.models import EventKind
+from app.forms.catalog import codes_for_area
 from app.integrations.callcentre_adapter import enqueue_claim_closure
 from app.integrations.erp_adapter import enqueue_material_movements
 from app.integrations.oms_adapter import enqueue_interruption_report
@@ -69,7 +70,9 @@ def review_queue(
     if crew_id is not None:
         statement = statement.where(WorkOrder.assigned_crew_id == crew_id)
     if area is not None:
-        statement = statement.where(WorkOrder.work_type.startswith(area))
+        # Por el formulario y no por el nombre del tipo de trabajo: `work_type.startswith(area)`
+        # parecía correcto y no devolvía nada para casi ninguna área (ver `codes_for_area`).
+        statement = statement.where(WorkOrder.form_code.in_(codes_for_area(area)))
     return list(session.scalars(statement))
 
 

@@ -43,9 +43,15 @@ const PlannerMap = lazy(async () => ({
   default: (await import('./features/planning/PlannerMap')).PlannerMap,
 }));
 
+/** El mapa de despacho carga MapLibre igual que el de planificación, así que se difiere igual. */
+const DispatchMap = lazy(async () => ({
+  default: (await import('./features/dispatch-map/DispatchMap')).DispatchMap,
+}));
+
 type Screen =
   | 'planificacion'
   | 'despliegue'
+  | 'despacho'
   | 'revision'
   | 'operacion'
   | 'alumbrado'
@@ -66,6 +72,9 @@ type Screen =
 const SCREENS: { key: Screen; label: string; roles: string[] }[] = [
   { key: 'planificacion', label: 'Planificación', roles: ['planificador', 'supervisor'] },
   { key: 'despliegue', label: 'Despliegue', roles: ['planificador', 'supervisor'] },
+  // El mapa de despacho es de quien decide a qué cuadrilla mandar según dónde está: el mismo
+  // conjunto de roles que el servidor exige para leer las posiciones (RF-020).
+  { key: 'despacho', label: 'Mapa de despacho', roles: ['planificador', 'supervisor'] },
   { key: 'revision', label: 'Revisión', roles: ['supervisor', 'inspector'] },
   // El tablero operativo es de quien reparte y de quien responde por el SLA (RF-130).
   { key: 'operacion', label: 'Operación', roles: ['supervisor', 'planificador'] },
@@ -98,7 +107,11 @@ const SCREENS: { key: Screen; label: string; roles: string[] }[] = [
   // Publicar un formulario congela su forma, y desde ahí cada OT conserva la suya. Es un acto
   // de administración; el supervisor mira, porque es quien pregunta con qué versión se llenó
   // una OT que le llegó rara (RF-032).
-  { key: 'formularios', label: 'Formularios', roles: ['admin_funcional', 'admin_ti', 'supervisor'] },
+  {
+    key: 'formularios',
+    label: 'Formularios',
+    roles: ['admin_funcional', 'admin_ti', 'supervisor'],
+  },
   // Un catálogo vacío es un selector sin valores, y el técnico acaba escribiendo en
   // observaciones. El supervisor mira porque es quien ve el resultado (RF-034).
   { key: 'catalogos', label: 'Catálogos', roles: ['admin_funcional', 'admin_ti', 'supervisor'] },
@@ -177,6 +190,11 @@ export function App() {
           </Suspense>
         )}
         {screen === 'despliegue' && <DispatchBoard businessUnit={unit} />}
+        {screen === 'despacho' && (
+          <Suspense fallback={<p>Cargando el mapa…</p>}>
+            <DispatchMap businessUnit={unit} />
+          </Suspense>
+        )}
         {screen === 'revision' && <ReviewScreen businessUnit={unit} reviewer={operator} />}
         {screen === 'operacion' && <OperationsBoard businessUnit={unit} />}
         {screen === 'alumbrado' && <ApgScreen businessUnit={unit} />}
@@ -212,9 +230,7 @@ export function App() {
         {screen === 'politica' && (
           <PolicyScreen businessUnit={unit} mayEdit={roles.includes('admin_funcional')} />
         )}
-        {screen === 'normativa' && (
-          <RegulatoryScreen mayEdit={roles.includes('admin_funcional')} />
-        )}
+        {screen === 'normativa' && <RegulatoryScreen mayEdit={roles.includes('admin_funcional')} />}
         {screen === 'catalogos' && (
           <CatalogsScreen
             businessUnit={unit}

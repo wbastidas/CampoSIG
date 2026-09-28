@@ -830,6 +830,57 @@ Falta la mitad que necesita modelos: los nodos VLM y de redacción, en I12.
 
 ---
 
+### RF-020: el mapa de despacho, y la mitad que faltaba — dónde está cada cuadrilla
+
+El criterio pide dos cosas: «el mapa muestra OT y cuadrillas con filtros por área, zona y prioridad»
+y «ubicación de cuadrillas según el último GPS reportado». La primera mitad —OT en un mapa, con
+filtros— ya existía en el mapa del planificador. La segunda **no existía de ninguna forma**: nada en
+la plataforma guardaba una posición. No había tabla, no había endpoint, no había nada que el GPS de
+un teléfono pudiera alimentar.
+
+**Solo existe la última posición, y eso está en el esquema, no en una política.** `device_position`
+tiene al dispositivo como clave primaria: no hay columna de historial ni tabla de movimientos donde
+guardar uno. RF-020 pregunta «¿dónde está esta cuadrilla ahora?», no «¿por dónde anduvo el técnico el
+martes?» — esa segunda pregunta nadie la hizo, y un sindicato tendría razón en objetarla. Diseñarlo
+así en el modelo, y no prometerlo en un comentario, es lo que hace la promesa verificable: no hay
+manera de acumular un historial aunque alguien lo quisiera después.
+
+**Una posición sin su edad miente.** Se reporta cuando el teléfono habla con el servidor de todas
+formas —no en un canal aparte, no continuamente—, así que es tan vieja como el último sync. Cada
+punto del GeoJSON lleva `minutes_old`, `stale` y `doubtful`, calculados por el servidor: si la web
+repitiera el umbral de «dos horas», cambiarlo aquí dejaría a la pantalla pintando como reciente lo
+que el servidor ya dejó de considerarlo. Una posición vieja se dibuja translúcida en el mapa, no se
+oculta: sigue ahí, pero no es sobre la que se despacha.
+
+**Un GPS sin señal no es una ubicación.** (0, 0) es el punto donde WGS84 pone la ausencia de fix, y
+está en el golfo de Guinea; dibujarlo pondría a una cuadrilla de Manabí a novecientos kilómetros de
+la costa africana. Se rechaza igual que una latitud fuera de rango, con el motivo.
+
+**Un teléfono no es una cuadrilla.** El vínculo se deriva del trabajo que el dispositivo tiene
+entregado —la misma tabla que ya usa el tablero de despacho en filas—, porque un dispositivo es de
+una persona y las personas cambian de cuadrilla. Un teléfono sin trabajo de cuadrilla dice «sin
+trabajo de cuadrilla» en vez de heredar la etiqueta de otro.
+
+**El filtro por área estaba roto y nadie lo había notado.** `review_queue` filtraba con
+`work_type.startswith(area)`, que parece razonable y no encuentra casi nada: `atencion_luminaria` es
+trabajo de APG y su nombre no empieza con «apg». Una bandeja que filtra así no está vacía por falta
+de trabajo, está vacía por el filtro, y las dos se ven idénticas. Ahora el área se resuelve por el
+**formulario** —`forms.codes_for_area`, que ya sabe qué formulario es de cada área porque lo declara
+el propio YAML— y el mismo filtro sirve al mapa de despacho y a la bandeja de revisión.
+
+**Solo despacha.** Saber dónde está cada compañero no es parte del trabajo de campo, así que el
+técnico reporta su posición y no puede leer la de nadie; el mapa es de planificación, supervisión y
+administración, los mismos roles que ya podían asignar y decidir sobre ese trabajo.
+
+**Una purga nocturna, no un archivo que crece.** Guardar la última posición para despachar y no un
+registro histórico exige borrar lo viejo: sin la purga, la tabla terminaría siendo en la práctica el
+historial que el diseño dice que no existe. A las 03:15 de Guayaquil, antes de que el primer turno
+empiece a sincronizar.
+
+Veinte guardas rotas a propósito y detectadas, todas en el primer pase.
+
+---
+
 ### El contrato de sincronización por HTTP: el teléfono no tenía a qué llamar
 
 El servicio de sincronización estaba escrito y probado desde I4 —enrolar, cursor, bandeja de

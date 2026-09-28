@@ -31,6 +31,7 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import require_roles, unit_scope
 from app.auth.principal import Principal, Role
 from app.catalogs.service import versions as catalog_versions
+from app.dispatch import positions
 from app.infra.database import get_session
 from app.org.models import BusinessUnit
 from app.org.service import UnknownBusinessUnitError, get_business_unit_by_code
@@ -261,6 +262,62 @@ def push(
         "accepted": sum(1 for item in results if item["accepted"]),
         "rejected": sum(1 for item in results if not item["accepted"]),
         "operations": results,
+    }
+
+
+class PositionIn(BaseModel):
+    """Dónde dice el teléfono que está (RF-020).
+
+    Se reporta cuando el teléfono habla con el servidor de todas formas, no en un canal aparte y no
+    continuamente: la plataforma contesta «dónde está esta cuadrilla ahora» y no guarda por dónde
+    anduvo nadie.
+    """
+
+    device_key: str = Field(min_length=8, max_length=128)
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    accuracy_m: float | None = Field(default=None, ge=0)
+    #: El reloj del teléfono. Es la **edad** del punto, que es lo que decide si se puede despachar
+    #: sobre él: sin ella, una posición de hace cuatro horas se dibuja igual que una de hace uno.
+    reported_at: datetime | None = None
+
+
+@router.post(
+    "/units/{unit_code}/position",
+    dependencies=[Depends(require_roles(*FIELD_ROLES))],
+    summary="Reportar la última posición del dispositivo (RF-020)",
+)
+def report_position(
+    unit_code: str,
+    payload: PositionIn,
+    session: SessionDep,
+    principal: Annotated[Any, Depends(require_roles(*FIELD_ROLES))] = None,
+) -> dict[str, Any]:
+    """Un endpoint propio además del `push`: una cuadrilla en camino no tiene nada que entregar.
+
+    Es justo el momento en que el despachador necesita saber dónde está —«¿quién está más cerca de
+    esta falla?»— y colgar la posición solo del `push` la haría aparecer únicamente cuando ya hubo
+    captura, es decir cuando ya llegaron.
+    """
+    unit = _unit(session, unit_code)
+    device = _device(session, unit, principal, payload.device_key)
+    try:
+        position = positions.report(
+            session,
+            unit,
+            device,
+            latitude=payload.latitude,
+            longitude=payload.longitude,
+            accuracy_m=payload.accuracy_m,
+            reported_at=payload.reported_at,
+        )
+    except positions.PositionError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    session.commit()
+    return {
+        "device_key": device.device_key,
+        "reported_at": position.reported_at.isoformat(),
+        "received_at": position.received_at.isoformat(),
     }
 
 

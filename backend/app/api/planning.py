@@ -114,6 +114,9 @@ def work_orders_geojson(
     north: float,
     unassigned_only: bool = False,
     states: Annotated[list[str] | None, Query()] = None,
+    priorities: Annotated[list[str] | None, Query()] = None,
+    area: Annotated[str | None, Query()] = None,
+    zone: Annotated[str | None, Query()] = None,
     limit: int = MAX_MAP_FEATURES,
 ) -> dict[str, Any]:
     """A FeatureCollection MapLibre can render without transformation.
@@ -132,6 +135,10 @@ def work_orders_geojson(
         north=bounds.north,
         states=states,
         unassigned_only=unassigned_only,
+        # Los tres filtros que pide RF-020 para el tablero de despacho con mapa.
+        priorities=priorities,
+        area=area,
+        zone=zone,
         limit=min(limit, MAX_MAP_FEATURES),
     )
 
@@ -169,6 +176,7 @@ def work_orders_geojson(
                     "asset_code": order.asset_code,
                     "feeder_code": order.feeder_code,
                     "sla_due_at": order.sla_due_at.isoformat() if order.sla_due_at else None,
+                    "zone": order.zone,
                     "version": order.version,
                 },
             }

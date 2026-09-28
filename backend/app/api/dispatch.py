@@ -9,12 +9,13 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_roles, unit_scope
 from app.auth.principal import Role
+from app.dispatch import positions
 from app.dispatch.service import device_readiness, dispatch_board
 from app.infra.database import get_session
 from app.org.service import UnknownBusinessUnitError, get_business_unit_by_code
@@ -44,6 +45,41 @@ def devices(session: SessionDep, unit_code: str) -> list[dict[str, Any]]:
     """Per-device readiness, with the reasons a phone should not leave yet."""
     unit = _unit(session, unit_code)
     return [row.as_dict() for row in device_readiness(session, unit)]
+
+
+#: Quien despacha. Y solo quien despacha: saber dónde está cada compañero no es parte del trabajo de
+#: campo, y un mapa de posiciones abierto a todo el personal es vigilancia entre pares con otro
+#: nombre. El técnico reporta su posición y no lee la de nadie.
+DISPATCHERS = (Role.SUPERVISOR, Role.PLANNER, Role.IT_ADMIN, Role.FUNCTIONAL_ADMIN)
+
+
+@router.get(
+    "/units/{unit_code}/crews.geojson",
+    dependencies=[Depends(require_roles(*DISPATCHERS))],
+    summary="La última posición de las cuadrillas, para el mapa de despacho (RF-020)",
+)
+def crew_positions(
+    session: SessionDep,
+    unit_code: str,
+    zone: Annotated[str | None, Query()] = None,
+) -> dict[str, Any]:
+    """Las posiciones como GeoJSON, con su edad y con lo que no se puede afirmar de ellas.
+
+    Cada punto lleva `minutes_old`, `stale` y `doubtful` porque una posición sin su edad miente: se
+    captura cuando el teléfono sincroniza, así que es tan vieja como el último sync, y un punto de
+    hace cuatro horas dibujado con la misma confianza que uno de hace uno manda una cuadrilla a la
+    parroquia equivocada.
+    """
+    unit = _unit(session, unit_code)
+    found = positions.crew_positions(session, unit, zone=zone)
+    return {
+        "type": "FeatureCollection",
+        "features": [row.as_feature() for row in found],
+        # Los umbrales, dichos por el servidor: si la web los repitiera, cambiarlos aquí dejaría a
+        # la pantalla pintando «reciente» sobre lo que el servidor ya considera viejo.
+        "stale_after_minutes": int(positions.STALE_AFTER.total_seconds() // 60),
+        "doubtful_accuracy_m": positions.DOUBTFUL_ACCURACY_M,
+    }
 
 
 class PublishPackageIn(BaseModel):

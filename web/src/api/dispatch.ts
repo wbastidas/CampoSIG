@@ -109,3 +109,47 @@ export function publishPackage(
     }),
   });
 }
+
+/** One phone's last reported position, as the dispatch map's GeoJSON carries it (RF-020). */
+export interface CrewPositionFeature {
+  type: 'Feature';
+  id: string;
+  geometry: { type: 'Point'; coordinates: [number, number] };
+  properties: {
+    device_key: string;
+    user_sub: string | null;
+    accuracy_m: number | null;
+    reported_at: string;
+    /** The age in minutes, from the server: the browser's clock is not the one that counts. */
+    minutes_old: number;
+    stale: boolean;
+    doubtful: boolean;
+    crews: { crew_id: string; code: string; name: string }[];
+  };
+}
+
+export interface CrewPositionCollection {
+  type: 'FeatureCollection';
+  features: CrewPositionFeature[];
+  /** The server's thresholds. Repeating them here would let the two drift apart. */
+  stale_after_minutes: number;
+  doubtful_accuracy_m: number;
+}
+
+/**
+ * The last position of every phone in the unit (RF-020).
+ *
+ * Only a dispatcher may call it: the server refuses it for field roles, because knowing where
+ * every colleague is is not part of field work.
+ */
+export function fetchCrewPositions(
+  businessUnit: string,
+  options: { zone?: string } = {},
+  signal?: AbortSignal,
+): Promise<CrewPositionCollection> {
+  const params = options.zone ? `?zone=${encodeURIComponent(options.zone)}` : '';
+  return request<CrewPositionCollection>(
+    `${BASE}/units/${encodeURIComponent(businessUnit)}/crews.geojson${params}`,
+    { signal },
+  );
+}

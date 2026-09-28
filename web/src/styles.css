@@ -364,6 +364,45 @@ fieldset {
   min-height: 24rem;
 }
 
+/* --- RF-020: el mapa de despacho --- */
+.dm-priorities {
+  border: none;
+  padding: 0;
+  margin: 0.5rem 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+}
+
+.dm-priorities legend {
+  width: 100%;
+  color: var(--texto-suave);
+  font-size: 0.85rem;
+}
+
+.dm-crews {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0;
+  font-size: 0.9rem;
+}
+
+.dm-crews > li + li {
+  margin-top: 0.5rem;
+  border-top: 1px dotted var(--borde);
+  padding-top: 0.5rem;
+}
+
+.dm-crews span {
+  display: block;
+  color: var(--texto-suave);
+}
+
+.dm-device {
+  font-family: monospace;
+  font-size: 0.8rem;
+}
+
 /* Importador de perfiles (RF-301). La lista es larga y se lee de arriba a abajo: una
    tarjeta por tipo de activo canónico, plegada hasta que alguien la abra. */
 .importer__hint,

@@ -21,7 +21,7 @@ from sqlalchemy.sql.elements import Case
 from app.audit import service as audit
 from app.audit.models import ActorKind, EventKind
 from app.forms import registry as form_registry
-from app.forms.catalog import get_definition
+from app.forms.catalog import codes_for_area, get_definition
 from app.org.models import BusinessUnit
 from app.workorders.models import (
     STORAGE_SRID,
@@ -469,12 +469,18 @@ def in_bounding_box(
     north: float,
     states: list[str] | None = None,
     unassigned_only: bool = False,
+    priorities: list[str] | None = None,
+    area: str | None = None,
+    zone: str | None = None,
     limit: int = 1000,
 ) -> list[WorkOrder]:
-    """Work orders inside a map viewport — the planner's map query (RF-310, RF-313).
+    """Work orders inside a map viewport — the planner's and the dispatcher's map (RF-020, RF-310).
 
     Coordinates are WGS84 degrees, matching what MapLibre sends. The result is capped:
     a planner zoomed out to the whole country must not pull every order ever created.
+
+    `area` is resolved through the **forms** of that area and not through the work type's name (see
+    `forms.catalog.codes_for_area`), so «alumbrado» finds `atencion_luminaria` instead of nothing.
     """
     envelope = ST_MakeEnvelope(west, south, east, north, STORAGE_SRID)
     statement = (
@@ -491,6 +497,14 @@ def in_bounding_box(
         statement = statement.where(WorkOrder.state.in_(states))
     if unassigned_only:
         statement = statement.where(WorkOrder.assigned_crew_id.is_(None))
+    if priorities:
+        statement = statement.where(WorkOrder.priority.in_(priorities))
+    if zone is not None:
+        statement = statement.where(WorkOrder.zone == zone)
+    if area is not None:
+        # Una lista vacía —un área que no existe— no se convierte en «sin filtro»: un error de
+        # dedo ensancharía la consulta en silencio, que es peor que no devolver nada.
+        statement = statement.where(WorkOrder.form_code.in_(codes_for_area(area)))
     return list(session.scalars(statement))
 
 

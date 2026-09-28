@@ -7,9 +7,21 @@
  */
 
 export type WorkOrderState =
-  | 'borrador' | 'planificada' | 'asignada' | 'descargada' | 'en_camino' | 'en_sitio'
-  | 'en_ejecucion' | 'suspendida' | 'cerrada_campo' | 'sincronizada' | 'en_revision'
-  | 'devuelta' | 'aprobada' | 'cerrada' | 'anulada';
+  | 'borrador'
+  | 'planificada'
+  | 'asignada'
+  | 'descargada'
+  | 'en_camino'
+  | 'en_sitio'
+  | 'en_ejecucion'
+  | 'suspendida'
+  | 'cerrada_campo'
+  | 'sincronizada'
+  | 'en_revision'
+  | 'devuelta'
+  | 'aprobada'
+  | 'cerrada'
+  | 'anulada';
 
 export type Priority = 'baja' | 'media' | 'alta' | 'critica';
 
@@ -24,6 +36,7 @@ export interface WorkOrderProperties {
   asset_code: string | null;
   feeder_code: string | null;
   sla_due_at: string | null;
+  zone: string | null;
   /** Optimistic-lock version, sent back on assignment so concurrent planners collide
    *  loudly instead of silently overwriting each other (RF-311). */
   version: number;
@@ -69,7 +82,10 @@ import { authHeaders, notifyExpired } from './session';
 const BASE = '/api/v1/planning';
 
 export class ApiError extends Error {
-  constructor(readonly status: number, message: string) {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
     super(message);
     this.name = 'ApiError';
   }
@@ -100,7 +116,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export function fetchWorkOrders(
   businessUnit: string,
   bounds: BoundingBox,
-  options: { unassignedOnly?: boolean; states?: WorkOrderState[] } = {},
+  options: {
+    unassignedOnly?: boolean;
+    states?: WorkOrderState[];
+    /** The three filters RF-020 asks of the dispatch map. */
+    priorities?: Priority[];
+    area?: string;
+    zone?: string;
+  } = {},
   signal?: AbortSignal,
 ): Promise<WorkOrderCollection> {
   const params = new URLSearchParams({
@@ -112,6 +135,9 @@ export function fetchWorkOrders(
   });
   if (options.unassignedOnly) params.set('unassigned_only', 'true');
   for (const state of options.states ?? []) params.append('states', state);
+  for (const priority of options.priorities ?? []) params.append('priorities', priority);
+  if (options.area) params.set('area', options.area);
+  if (options.zone) params.set('zone', options.zone);
   return request<WorkOrderCollection>(`${BASE}/work-orders.geojson?${params}`, { signal });
 }
 

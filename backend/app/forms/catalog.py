@@ -174,6 +174,23 @@ def definitions_for_area(area: Area) -> list[FormDefinition]:
     return [d for d in load_definitions().values() if d.form.area is area]
 
 
+def codes_for_area(area: str) -> list[str]:
+    """Form codes of one area, for filtering work by the area that answers for it.
+
+    The area of a work order is the area of **its form**, declared in the catalogue. The obvious
+    shortcut — matching the work type's name — looks right and is not: `atencion_luminaria` is APG
+    work whose name starts with neither «apg» nor anything like it, and `inspeccion_preventiva` is
+    maintenance. A filter built that way silently returns nothing for most areas, and a queue that
+    silently returns nothing reads as «no hay trabajo».
+
+    An unknown area gives an empty list, which callers must treat as «nothing matches» rather than
+    as «no filter» — otherwise a typo would quietly widen the query.
+    """
+    return sorted(
+        code for code, definition in load_definitions().items() if definition.form.area == area
+    )
+
+
 def validate_catalog() -> list[str]:
     """Problems a functional administrator must fix. Empty means the catalogue is sound."""
     problems: list[str] = []

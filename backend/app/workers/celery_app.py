@@ -18,6 +18,7 @@ from typing import Any
 from celery import Celery
 from celery.schedules import crontab
 
+from app.dispatch.positions import purge as purge_positions
 from app.infra.database import get_session_factory
 from app.settings import get_settings
 from app.workers.integration_delivery import run_once
@@ -59,6 +60,13 @@ celery_app.conf.update(
         "emitir-planes-preventivos": {
             "task": "sigec.plans.generate",
             "schedule": crontab(hour=4, minute=30),
+        },
+        # Las posiciones de ayer se borran de madrugada (RF-020). No es limpieza de espacio: la
+        # plataforma guarda la última posición para despachar, no un registro de por dónde anduvo
+        # la gente, y una tabla que solo crece se volvería en silencio la segunda cosa.
+        "purgar-posiciones": {
+            "task": "sigec.positions.purge",
+            "schedule": crontab(hour=3, minute=15),
         },
     },
 )
@@ -102,3 +110,17 @@ def generate_preventive_plans() -> dict[str, Any]:
     """
     with get_session_factory()() as session:
         return run_plan_generation(session).as_dict()
+
+
+@celery_app.task(name="sigec.positions.purge")  # type: ignore[untyped-decorator]
+def purge_device_positions() -> dict[str, Any]:
+    """Delete field positions older than the retention window (RF-020).
+
+    No `autoretry_for`: nothing is lost if a night is missed — the next pass deletes the same rows
+    plus a day's worth. What must not happen is the opposite, a table of positions that only grows,
+    and that is what this task exists to prevent.
+    """
+    with get_session_factory()() as session:
+        deleted = purge_positions(session)
+        session.commit()
+        return {"deleted": deleted}
