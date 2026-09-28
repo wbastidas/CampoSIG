@@ -830,6 +830,51 @@ Falta la mitad que necesita modelos: los nodos VLM y de redacción, en I12.
 
 ---
 
+### RF-025: rutas sugeridas, y el hallazgo de que una sola arrancada no bastaba
+
+El criterio es una comparación: «genera un orden de visita que reduce la distancia total frente al
+orden aleatorio». No hay tabla nueva — la ruta no se guarda, se calcula al pedirla sobre las OT que
+el planificador ya tiene seleccionadas en el mapa — y el solucionador es OR-Tools, Apache 2.0, la
+licencia que el propio SRS nombra para este requerimiento.
+
+**Distancia en línea recta, dicha como lo que es.** La plataforma no tiene red vial ni tiempos de
+viaje reales —eso vive en ArcGIS Network Analyst, que este incremento no toca— así que la distancia
+es geodésica (`haversine`) y el resultado lleva el aviso en sus propias palabras: sirve para ordenar
+la visita, no para prometer minutos de manejo.
+
+**El truco es un nodo fantasma, no un algoritmo propio.** Un nodo a distancia cero de todos los
+demás hace que «terminar en cualquier parte» no cueste nada, así que un solo depósito —el punto de
+partida cuando lo hay, o el propio fantasma cuando no— resuelve las dos formas del problema: inicio
+fijo con final libre, o los dos extremos libres. Una primera versión llevaba además una variante con
+destino explícito para el caso de inicio fijo; las pruebas de sabotaje mostraron que las dos daban
+siempre el mismo orden —el fantasma ya absorbe el costo de cerrar el ciclo, se declare o no como
+destino—, así que se quedó la más simple.
+
+**El hallazgo que casi se queda sin ver: una sola arrancada del solucionador no basta.** Con una
+única estrategia de primera solución, cuatro OT con las mismas coordenadas exactas resolvían el
+óptimo real (~24,3 km) o se quedaban en un óptimo local de ~46,8 km —casi el doble— según el orden
+en que llegaban en la **lista de entrada**, algo que no debería importarle a la distancia de salida.
+Se descubrió por una geometría buscada a propósito por fuerza bruta —colineales y cuadrados dan
+empate entre camino abierto y ciclo cerrado, así que no sirven para probar esto— y se confirmó
+reordenando la lista de la misma prueba. La solución fue correr varias estrategias de arranque y
+quedarse con la de menor distancia real, comparadas por la geodésica final y no por lo que cada
+solucionador cree haber ganado internamente. Es la clase de hallazgo que esta disciplina de sabotaje
+existe para encontrar: no una guarda que falta, sino un resultado que depende de algo que no debería.
+
+**La comparación va en la respuesta.** El criterio de aceptación es explícitamente contra el orden
+aleatorio, así que la distancia del orden **en que llegaron las OT** —incluido el tramo desde el
+punto de partida, si lo hay— viaja junto a la sugerida: es la que un planificador habría recorrido
+sin pedir esto.
+
+**El punto de partida puede venir de RF-020.** Un dispositivo, su última posición reportada, sirve
+de inicio: la cuadrilla empieza la ruta donde está, no donde nació geográficamente la primera OT de
+la lista.
+
+Trece guardas rotas a propósito y detectadas, una tras el primer pase —la de un límite de paradas que
+nadie había probado con OT inexistentes, que no necesitan existir para que la guarda se dispare.
+
+---
+
 ### RF-020: el mapa de despacho, y la mitad que faltaba — dónde está cada cuadrilla
 
 El criterio pide dos cosas: «el mapa muestra OT y cuadrillas con filtros por área, zona y prioridad»

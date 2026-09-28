@@ -24,6 +24,9 @@ dependencies = [
     # El QR de verificación. `segno` es BSD-3, Python puro y genera SVG sin Pillow: un
     # código QR no necesita una biblioteca de imágenes.
     "segno>=1.6",
+    # Rutas sugeridas (RF-025). OR-Tools es Apache 2.0, la licencia que el SRS nombra
+    # explícitamente para este requerimiento.
+    "ortools>=9.11",
 ]
 
 [project.optional-dependencies]

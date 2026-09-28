@@ -27,6 +27,7 @@ import {
   type WorkOrderFeature,
 } from '../../api/planning';
 import { AttachmentsPanel } from '../attachments/AttachmentsPanel';
+import { RouteSuggestionPanel } from '../route-suggestion/RouteSuggestionPanel';
 import {
   candidateHeadline,
   exclusionLines,
@@ -395,6 +396,12 @@ export function PlannerMap({
         {only && (
           // Los adjuntos son de una OT, y aquí el planificador ya tiene una en la mano (RF-017).
           <AttachmentsPanel businessUnit={businessUnit} workOrderId={only} />
+        )}
+
+        {summary.total > 1 && (
+          // Una ruta ordena, no elige: hace falta más de una OT para que haya algo que ordenar
+          // (RF-025).
+          <RouteSuggestionPanel businessUnit={businessUnit} workOrderIds={[...selected]} />
         )}
 
         <label htmlFor="crew">Cuadrilla</label>
