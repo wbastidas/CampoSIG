@@ -1117,6 +1117,40 @@ dispositivo escrito a mano que no corresponde a ningún `Device`.
 
 ---
 
+### RF-022: la OT de una cuadrilla no le llegaba a ningún teléfono
+
+El criterio de aceptación dice «la OT asignada aparece en el móvil ≤ 1 min tras el sync con red», y
+`pull_work_orders` decía en su propio docstring que filtraba «por el usuario o la cuadrilla que
+sirve» el dispositivo — pero el código no tenía ninguna rama de cuadrilla, solo
+`WorkOrder.assigned_user_sub == device.user_sub`. Un docstring que promete algo que el código de al
+lado no hace es el mismo hueco que ya apareció en RF-322: la diferencia es que aquí ni siquiera había
+una prueba sobre la pieza suelta que lo escondiera.
+
+RF-021 asigna **a una cuadrilla** («arrastrar OT a cuadrilla»), no a una persona, y `assign_many` —el
+lazo del mapa— nunca recibe `user_sub`, solo `crew` y, cuando el planificador lo da, `device_id`: el
+identificador de la tablet compartida de la cuadrilla. Esa OT queda con `assigned_user_sub` en null
+para siempre. Una tablet así tiene `device.user_sub` vacío, así que la única rama que existía ni
+siquiera se evaluaba — la OT quedaba asignada y jamás bajaba, sin importar cuántas veces sincronizara
+ese teléfono.
+
+Lo que sí queda escrito cuando `assign()` recibe un `device_id` es la custodia abierta
+(`DeviceCustody`, la misma tabla de RF-322/RF-324): esa fila ya nombra el dispositivo exacto. Ahora
+`pull_work_orders` entra por cualquiera de las dos puertas — `assigned_user_sub` para el caso
+mayoritario de una persona, o una custodia abierta a nombre de este `device_key` para la tablet
+compartida — sin columna nueva ni migración, porque el dato ya existía y nadie lo leía desde aquí.
+Tres mutaciones (quitar la rama de custodia, dejarla sin exigir `until IS NULL` así arrastraría
+custodias ya cerradas, dejarla sin exigir el `device_key` exacto así cualquier tablet vería el trabajo
+de cualquier otra) y las tres atrapadas.
+
+**Lo que queda fuera, a propósito.** `assign_many` puede asignar una cuadrilla sin `device_id` en
+absoluto —la vía normal del lazo del mapa—, y en ese caso sigue sin haber ningún teléfono al que
+entregar nada: no existe todavía una lista de integrantes por cuadrilla (RF-005 la pide, «integrantes,
+jefe, vehículo, competencias y zona», y el modelo `Crew` de hoy no tiene esa lista, solo
+`leader_name` como texto libre). Cerrar eso de verdad es una gestión de dotación completa —quién
+está en qué cuadrilla hoy— y es un incremento aparte, no una corrección de una consulta.
+
+---
+
 ### RF-024: la consignación, su ventana y el permiso que no se habilita sin número
 
 El criterio es una negativa: «no se habilita el formulario F-TR-02 sin un N.º de consignación». Y el

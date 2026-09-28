@@ -32,7 +32,7 @@ from app.sync.service import (
     resolve_device,
     undelivered_for,
 )
-from app.workorders.models import WorkOrderState
+from app.workorders.models import Crew, WorkOrderState
 from app.workorders.service import assign, create_work_order, custody_history
 
 pytestmark = pytest.mark.integration
@@ -208,6 +208,48 @@ class TestRf102DeltaPull:
         second, _ = pull_work_orders(session, device, cursor=cursor, limit=2)
         assert len(second) == 2
         assert {o.id for o in first} & {o.id for o in second} == set()
+
+
+class TestRf022CrewSharedDeviceDelivery:
+    """A crew's shared tablet has no `user_sub` of its own; `assign` names it by `device_id`
+    alone (RF-021's "arrastrar a cuadrilla"). `assigned_user_sub` never gets set in that case, so
+    it must not be the only door an order can walk through."""
+
+    def test_a_device_named_only_by_custody_still_gets_the_order(self, session: Session, unit):
+        crew = Crew(business_unit_id=unit.id, code="C-01", name="Cuadrilla 1", competencies=[])
+        session.add(crew)
+        session.flush()
+        tablet, _ = enrol_device(session, unit, device_key="tablet-cuadrilla-1")
+        order = make_order(session, unit, user_sub=None)
+        assign(session, order, crew=crew, device_id="tablet-cuadrilla-1")
+
+        orders, _ = pull_work_orders(session, tablet)
+        assert [o.id for o in orders] == [order.id]
+
+    def test_a_different_devices_shared_tablet_does_not_see_it(self, session: Session, unit):
+        crew = Crew(business_unit_id=unit.id, code="C-01", name="Cuadrilla 1", competencies=[])
+        session.add(crew)
+        session.flush()
+        enrol_device(session, unit, device_key="tablet-cuadrilla-1")
+        other_tablet, _ = enrol_device(session, unit, device_key="tablet-cuadrilla-2")
+        order = make_order(session, unit, user_sub=None)
+        assign(session, order, crew=crew, device_id="tablet-cuadrilla-1")
+
+        orders, _ = pull_work_orders(session, other_tablet)
+        assert orders == []
+
+    def test_closing_the_custody_stops_the_delivery(self, session: Session, unit):
+        crew = Crew(business_unit_id=unit.id, code="C-01", name="Cuadrilla 1", competencies=[])
+        session.add(crew)
+        session.flush()
+        tablet, _ = enrol_device(session, unit, device_key="tablet-cuadrilla-1")
+        order = make_order(session, unit, user_sub=None)
+        assign(session, order, crew=crew, device_id="tablet-cuadrilla-1")
+        # Reassigned away from the tablet — its custody row is now closed.
+        assign(session, order, crew=crew, device_id="tablet-cuadrilla-2", reason="cambio")
+
+        orders, _ = pull_work_orders(session, tablet)
+        assert orders == []
 
 
 class TestCursorEncoding:

@@ -17,7 +17,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, or_, select
 from sqlalchemy.orm import Session
 
 from app.attachments.service import for_package as attachments_for_package
@@ -34,7 +34,7 @@ from app.sync.models import (
     OfflinePackage,
     SyncOperationLog,
 )
-from app.workorders.models import WorkOrder
+from app.workorders.models import DeviceCustody, WorkOrder
 
 __all__ = ["SYNCABLE_STATES"]
 
@@ -155,19 +155,36 @@ def pull_work_orders(
     cursor: str | None = None,
     limit: int = 200,
 ) -> tuple[list[WorkOrder], str | None]:
-    """Work orders this device should hold, changed since the cursor.
+    """Work orders this device should hold, changed since the cursor (RF-022).
 
-    Filtered by the device's own business unit and by the user or crew it serves, so a
-    technician's phone never receives another unit's work (ADR-009).
+    Filtered by the device's own business unit and by the user or the custody it holds, so a
+    technician's phone never receives another unit's work (ADR-009). Two ways an order reaches a
+    device, matched with `or_` because either is sufficient on its own:
+
+    * `assigned_user_sub` names this device's own person directly — the common case, an order
+      assigned to one technician.
+    * An open `DeviceCustody` row already names this exact device — what a planner leaves behind
+      assigning a **crew's shared** device (`device_id`, no `user_sub`) via `assign()`. Without
+      this branch such an order would sit assigned and undelivered forever: `assigned_user_sub`
+      stays null, so the first filter alone never matches, no matter how long the device syncs.
 
     :returns: (orders, next_cursor). A null cursor means nothing changed.
     """
+    reaches_this_device: list[ColumnElement[bool]] = [
+        WorkOrder.id.in_(
+            select(DeviceCustody.work_order_id).where(
+                DeviceCustody.device_id == device.device_key, DeviceCustody.until.is_(None)
+            )
+        )
+    ]
+    if device.user_sub:
+        reaches_this_device.append(WorkOrder.assigned_user_sub == device.user_sub)
+
     statement = select(WorkOrder).where(
         WorkOrder.business_unit_id == device.business_unit_id,
         WorkOrder.state.in_(SYNCABLE_STATES),
+        or_(*reaches_this_device),
     )
-    if device.user_sub:
-        statement = statement.where(WorkOrder.assigned_user_sub == device.user_sub)
 
     decoded = decode_cursor(cursor)
     if decoded is not None:
