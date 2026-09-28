@@ -27,6 +27,10 @@ dependencies = [
     # Rutas sugeridas (RF-025). OR-Tools es Apache 2.0, la licencia que el SRS nombra
     # explícitamente para este requerimiento.
     "ortools>=9.11",
+    # URLs firmadas hacia SeaweedFS por su API compatible con S3 (Apache 2.0). El backend nunca
+    # sube ni baja bytes: firma una URL y el cliente sube directo al almacenamiento (rule 7 no
+    # aplica — esto no es Oracle — y ADR-006 tampoco: SeaweedFS no es la geodatabase).
+    "boto3>=1.35",
 ]
 
 [project.optional-dependencies]

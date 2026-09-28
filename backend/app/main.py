@@ -22,6 +22,7 @@ from app.api import (
     reports,
     review,
     routing,
+    storage,
     sync,
     voice,
     zones,
@@ -63,6 +64,7 @@ def create_app() -> FastAPI:
     # El único borde que conoce el teléfono (RF-101 a RF-106).
     app.include_router(sync.router)
     app.include_router(routing.router)
+    app.include_router(storage.router)
     return app
 
 

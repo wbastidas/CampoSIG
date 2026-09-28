@@ -830,6 +830,44 @@ Falta la mitad que necesita modelos: los nodos VLM y de redacción, en I12.
 
 ---
 
+### URLs firmadas hacia el almacenamiento de objetos: evidencias y adjuntos ya pueden subir
+
+El hueco lo dejó escrito RF-017: la API registraba metadatos —qué es, cuánto pesa, con qué hash,
+dónde está— y **nada en la plataforma escribía en SeaweedFS**, ni para adjuntos ni para evidencias.
+El panel web listaba, avisaba del peso y retiraba, y no tenía botón de subir a propósito: uno que
+registrara una fila apuntando a bytes que no están en ninguna parte es peor que no tenerlo.
+
+**El backend firma, nunca transporta.** `POST /api/v1/storage/units/{unit}/presign` devuelve una URL
+de `PUT` con vencimiento corto; el cliente sube el archivo directo a SeaweedFS con ella y solo
+entonces llama al registro que ya existía —`attachments.attach`, la sincronización de evidencias—
+con el `storage_key` que recibió y el hash que calculó sobre lo que subió. Una API que recibiera el
+archivo para reenviarlo sería el mismo proxy de 25 MB por petición que `attachments.py` ya evitaba.
+
+**La política de qué se admite vive en un solo lugar, por propósito.** Un `adjunto` reutiliza
+literalmente `ALLOWED_MIME_TYPES` y `MAX_ATTACHMENT_BYTES` de `app.attachments.service` —el mismo
+número en dos sitios es el mismo número hasta que alguien cambia uno y no el otro—; una `evidencia`
+tiene los suyos por `EvidenceKind`, porque una firma de 2 MB no pesa como un audio de campo de 20 MB.
+
+**La URL pública no es la interna, y firmar no exige alcanzar el almacenamiento.** La firma de una
+URL de S3 incluye el host, y ese host tiene que ser el que el cliente —un navegador, un teléfono—
+puede resolver de verdad, no el nombre de servicio que solo el backend conoce dentro de Docker.
+`SIGEC_S3_PUBLIC_URL` es ese host (en desarrollo, el puerto que Compose publica al equipo del
+desarrollador); `SIGEC_S3_ENDPOINT_URL` queda para cuando el propio backend necesite hablar con el
+almacenamiento, que hoy es nunca: firmar es una operación criptográfica sobre la clave y las
+credenciales, y estas pruebas ni siquiera levantan SeaweedFS.
+
+**La web ya sube: la evidencia móvil sigue pendiente del entorno de compilación de Android**, igual
+que el resto de RF-017. El panel de adjuntos calcula el hash con `crypto.subtle`, pide la firma, sube
+y registra —los mismos tres pasos que correría un teléfono— y el formulario no aparece para quien no
+puede escribir, aunque el servidor lo exige igual (ADR-013).
+
+`ortools`, y ahora `boto3`: los dos Apache 2.0, los dos verificados contra el cierre de dependencias
+completo del backend, no contra el entorno de quien escribió el código.
+
+Ocho guardas rotas a propósito y detectadas en el backend; seis en la web, todas en el primer pase.
+
+---
+
 ### RF-021 al día con RF-020: la cercanía deja de ser solo una aproximación
 
 RF-021 nació antes de que existiera una sola posición real en la plataforma, y lo decía en su propio
@@ -1049,13 +1087,11 @@ segundo plano; si estaba retirado, vuelve.
 
 Veintiséis guardas rotas a propósito y detectadas, todas en el primer pase.
 
-**Falta la mitad de los bytes, y es una carencia de plataforma, no de este requerimiento.** La API
-registra metadatos —qué es, cuánto pesa, con qué hash, dónde está— igual que las evidencias: **nada en
-la plataforma escribe todavía en el almacenamiento de objetos**, ni para evidencias ni para adjuntos.
-Por eso el panel web lista, avisa del peso y retira, y **no tiene botón de subir**: un botón que
-registrara una fila apuntando a bytes que no están en ninguna parte es peor que no tenerlo. El camino
-de escritura a SeaweedFS (subida firmada, para evidencias y adjuntos a la vez) es un incremento propio,
-y con él llega el formulario de subida. El criterio de aceptación completo —abrir el PDF en modo
+**La mitad de los bytes que faltaba ya tiene camino: ver «URLs firmadas hacia el almacenamiento de
+objetos», más abajo.** Cuando se escribió esta sección la API registraba metadatos y nada escribía en
+SeaweedFS; el panel web listaba, avisaba del peso y retiraba, y no tenía botón de subir a propósito —
+uno que registrara una fila apuntando a bytes que no están en ninguna parte habría sido peor que no
+tenerlo. Ese hueco ya se cerró para la web. El criterio de aceptación completo —abrir el PDF en modo
 avión— necesita además la mitad Android, que espera al entorno de compilación.
 
 ---

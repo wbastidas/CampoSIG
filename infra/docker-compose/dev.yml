@@ -63,6 +63,10 @@ services:
       SIGEC_REDIS_URL: redis://redis:6379/0
       SIGEC_OIDC_ISSUER: http://keycloak:8080/realms/sigec
       SIGEC_S3_ENDPOINT_URL: http://seaweedfs:8333
+      # Lo que resuelve el navegador o el emulador del teléfono, no el backend: la firma
+      # de una URL de S3 incluye el host, y el nombre de servicio de Compose no existe
+      # fuera de la red de Docker (RF-005, RF-017).
+      SIGEC_S3_PUBLIC_URL: http://localhost:8333
       SIGEC_DEBUG: "true"
     ports: ["8000:8000"]
     depends_on:

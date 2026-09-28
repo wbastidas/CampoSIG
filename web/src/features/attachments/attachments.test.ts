@@ -9,6 +9,10 @@ import { describe, expect, it } from 'vitest';
 
 import type { Attachment, AttachmentList } from '../../api/attachments';
 import {
+  EMPTY_UPLOAD,
+  MAX_UPLOAD_BYTES,
+  sha256Hex,
+  uploadProblems,
   budgetHeadline,
   budgetWarning,
   kindLabel,
@@ -148,5 +152,63 @@ describe('kindLabel', () => {
   it('traduce los tipos y deja pasar uno desconocido sin romperse', () => {
     expect(kindLabel('diseno')).toBe('Diseño');
     expect(kindLabel('otro_tipo')).toBe('otro_tipo');
+  });
+});
+
+describe('uploadProblems', () => {
+  function file(overrides: Partial<{ name: string; type: string; size: number }> = {}): File {
+    const size = overrides.size ?? 1024;
+    const created = new File([new Uint8Array(Math.min(size, 1024))], overrides.name ?? 'a.pdf', {
+      type: overrides.type ?? 'application/pdf',
+    });
+    // El tamaño real del contenido no importa para esta prueba, así que se fuerza el que se
+    // quiere afirmar: crear de verdad 26 MB de bytes sería pagar memoria por nada.
+    Object.defineProperty(created, 'size', { value: size });
+    return created;
+  }
+
+  it('sin título no sale', () => {
+    expect(uploadProblems({ ...EMPTY_UPLOAD, file: file() })).toHaveLength(1);
+  });
+
+  it('sin archivo pide elegirlo', () => {
+    expect(uploadProblems({ ...EMPTY_UPLOAD, title: 'Plano' })).toEqual(['Elija el archivo.']);
+  });
+
+  it('un tipo no admitido no sale, y dice cuáles sí', () => {
+    const problems = uploadProblems({
+      title: 'Plano CAD',
+      kind: 'plano',
+      file: file({ type: 'image/vnd.dwg' }),
+    });
+    expect(problems.some((line) => line.includes('application/pdf'))).toBe(true);
+  });
+
+  it('un archivo sobre el máximo no sale, y dice el número', () => {
+    const problems = uploadProblems({
+      title: 'Levantamiento completo',
+      kind: 'plano',
+      file: file({ size: MAX_UPLOAD_BYTES + 1 }),
+    });
+    expect(problems.some((line) => line.includes('25,0 MB'))).toBe(true);
+  });
+
+  it('un archivo dentro del máximo no tiene problemas', () => {
+    expect(
+      uploadProblems({ title: 'Plano', kind: 'plano', file: file({ size: MAX_UPLOAD_BYTES }) }),
+    ).toEqual([]);
+  });
+});
+
+describe('sha256Hex', () => {
+  it('calcula el hash del contenido, en hexadecimal de 64 caracteres', async () => {
+    const hash = await sha256Hex(new Blob(['contenido de prueba']));
+    expect(hash).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('el mismo contenido da el mismo hash', async () => {
+    const a = await sha256Hex(new Blob(['mismo contenido']));
+    const b = await sha256Hex(new Blob(['mismo contenido']));
+    expect(a).toBe(b);
   });
 });

@@ -1096,6 +1096,12 @@ fieldset {
   border-left: 2px solid var(--borde);
 }
 
+.planner__upload {
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px dashed var(--borde);
+}
+
 .frm-screen section {
   margin-bottom: 1.5rem;
 }

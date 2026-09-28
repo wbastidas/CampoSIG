@@ -62,6 +62,42 @@ function mockApi(body: AttachmentList, onWithdraw?: (url: string, payload: unkno
   });
 }
 
+function mockUploadApi(
+  list_: AttachmentList,
+  calls: { presign: unknown[]; put: { url: string; init: RequestInit }[]; register: unknown[] },
+) {
+  return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes('/storage/units/') && url.includes('/presign')) {
+      calls.presign.push(init?.body ? JSON.parse(String(init.body)) : null);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          url: 'http://localhost:8333/sigec-evidence/GYE/adjunto/plano/x.pdf',
+          storage_key: 'GYE/adjunto/plano/x.pdf',
+          method: 'PUT',
+          expires_in: 300,
+          headers: { 'Content-Type': 'application/pdf' },
+        }),
+      } as unknown as Response;
+    }
+    if (url.startsWith('http://localhost:8333/')) {
+      calls.put.push({ url, init: init ?? {} });
+      return { ok: true, status: 200 } as unknown as Response;
+    }
+    if (init?.method === 'POST' && url.includes('/attachments/units/')) {
+      calls.register.push(init.body ? JSON.parse(String(init.body)) : null);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => attachment({ id: 'a2', title: 'Plano nuevo' }),
+      } as unknown as Response;
+    }
+    return { ok: true, status: 200, json: async () => list_ } as unknown as Response;
+  });
+}
+
 afterEach(() => vi.unstubAllGlobals());
 
 describe('lo que el panel dice', () => {
@@ -193,5 +229,101 @@ describe('cuando el servidor falla', () => {
     await waitFor(() =>
       expect(screen.getByText('la OT no existe en esta unidad de negocio')).toBeTruthy(),
     );
+  });
+});
+
+describe('adjuntar un archivo', () => {
+  function pdf(name = 'plano.pdf'): File {
+    return new File(['contenido del plano'], name, { type: 'application/pdf' });
+  }
+
+  it('firma, sube y registra en ese orden, con el hash calculado', async () => {
+    const calls = {
+      presign: [] as unknown[],
+      put: [] as { url: string; init: RequestInit }[],
+      register: [] as unknown[],
+    };
+    vi.stubGlobal('fetch', mockUploadApi(list({ attachments: [] }), calls));
+    render(<AttachmentsPanel businessUnit="GYE" workOrderId="ot-1" />);
+
+    fireEvent.change(await screen.findByLabelText('Título'), {
+      target: { value: 'Plano nuevo' },
+    });
+    fireEvent.change(screen.getByLabelText('Tipo'), { target: { value: 'plano' } });
+    fireEvent.change(screen.getByLabelText('Archivo'), { target: { files: [pdf()] } });
+    fireEvent.click(screen.getByRole('button', { name: 'Adjuntar' }));
+
+    await waitFor(() => expect(calls.register).toHaveLength(1));
+    expect(calls.presign[0]).toMatchObject({
+      purpose: 'adjunto',
+      kind: 'plano',
+      filename: 'plano.pdf',
+      content_type: 'application/pdf',
+    });
+    expect(calls.put[0]?.url).toBe('http://localhost:8333/sigec-evidence/GYE/adjunto/plano/x.pdf');
+    expect(calls.put[0]?.init.method).toBe('PUT');
+    const registered = calls.register[0] as Record<string, unknown>;
+    expect(registered.storage_key).toBe('GYE/adjunto/plano/x.pdf');
+    expect(registered.title).toBe('Plano nuevo');
+    expect(typeof registered.content_hash).toBe('string');
+    expect((registered.content_hash as string).length).toBe(64);
+  });
+
+  it('sin título no se sube nada', async () => {
+    const calls = { presign: [] as unknown[], put: [], register: [] };
+    vi.stubGlobal('fetch', mockUploadApi(list({ attachments: [] }), calls));
+    render(<AttachmentsPanel businessUnit="GYE" workOrderId="ot-1" />);
+
+    fireEvent.change(await screen.findByLabelText('Archivo'), { target: { files: [pdf()] } });
+    const button = screen.getByRole<HTMLButtonElement>('button', { name: 'Adjuntar' });
+    expect(button.disabled).toBe(true);
+    expect(screen.getByText(/necesita un título/)).toBeTruthy();
+    fireEvent.click(button);
+
+    expect(calls.presign).toHaveLength(0);
+  });
+
+  it('un tipo no admitido no se sube y lo dice antes de intentarlo', async () => {
+    const calls = { presign: [] as unknown[], put: [], register: [] };
+    vi.stubGlobal('fetch', mockUploadApi(list({ attachments: [] }), calls));
+    render(<AttachmentsPanel businessUnit="GYE" workOrderId="ot-1" />);
+
+    fireEvent.change(await screen.findByLabelText('Título'), { target: { value: 'Plano CAD' } });
+    fireEvent.change(screen.getByLabelText('Archivo'), {
+      target: { files: [new File(['x'], 'plano.dwg', { type: 'image/vnd.dwg' })] },
+    });
+
+    expect(screen.getByText(/no se puede abrir en el teléfono/)).toBeTruthy();
+    expect(calls.presign).toHaveLength(0);
+  });
+
+  it('el error del servidor durante la firma se muestra tal cual', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          ({
+            ok: false,
+            status: 422,
+            statusText: 'Unprocessable',
+            json: async () => ({ detail: 'el archivo pesa demasiado' }),
+          }) as unknown as Response,
+      ),
+    );
+    render(<AttachmentsPanel businessUnit="GYE" workOrderId="ot-1" />);
+
+    fireEvent.change(await screen.findByLabelText('Título'), { target: { value: 'Plano' } });
+    fireEvent.change(screen.getByLabelText('Archivo'), { target: { files: [pdf()] } });
+    fireEvent.click(screen.getByRole('button', { name: 'Adjuntar' }));
+
+    await waitFor(() => expect(screen.getByText('el archivo pesa demasiado')).toBeTruthy());
+  });
+
+  it('quien no puede adjuntar no ve el formulario', async () => {
+    vi.stubGlobal('fetch', mockApi(list()));
+    render(<AttachmentsPanel businessUnit="GYE" workOrderId="ot-1" mayUpload={false} />);
+
+    await waitFor(() => expect(screen.getByText(/Plano estructural/)).toBeTruthy());
+    expect(screen.queryByLabelText('Archivo')).toBeNull();
   });
 });

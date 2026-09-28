@@ -5,25 +5,35 @@
  * attachment belongs to an order, and a screen of its own would need a work-order picker the
  * platform does not have.
  *
- * There is no upload button. The platform has no write path to object storage yet — evidence has
- * the same gap — so a button here would open a file dialog and register a row pointing at bytes
- * that are nowhere, which is worse than not having it. The panel does what is real today: it says
- * what is attached, what the crew's download weighs against its ceiling, what is *not* travelling,
- * and it withdraws what should stop travelling.
+ * Uploading is three calls in sequence, none of which touch our API with the file's bytes: the
+ * server only ever signs a URL. The browser hashes the file, asks for the signature, `PUT`s
+ * straight to object storage with it, and only then registers the result through the endpoint
+ * that already existed — the same three steps a phone would run.
  */
 
 import { useCallback, useEffect, useState } from 'react';
 
-import { type AttachmentList, fetchAttachments, withdrawAttachment } from '../../api/attachments';
+import {
+  type AttachmentList,
+  fetchAttachments,
+  registerAttachment,
+  withdrawAttachment,
+} from '../../api/attachments';
 import { ApiError } from '../../api/planning';
+import { presignUpload, uploadFile } from '../../api/storage';
 import {
   type AttachmentRow,
   budgetHeadline,
   budgetWarning,
+  EMPTY_UPLOAD,
   kindLabel,
   megabytes,
   rows,
+  sha256Hex,
   TRAVEL_LABEL,
+  UPLOAD_KINDS,
+  type UploadDraft,
+  uploadProblems,
   withdrawAdvice,
   withdrawProblems,
 } from './attachments';
@@ -34,12 +44,15 @@ export interface AttachmentsPanelProps {
   workOrderId: string;
   /** False for anybody who cannot write. The server refuses it regardless (ADR-013). */
   mayWithdraw?: boolean;
+  /** False for anybody who cannot attach. The server refuses it regardless (ADR-013). */
+  mayUpload?: boolean;
 }
 
 export function AttachmentsPanel({
   businessUnit,
   workOrderId,
   mayWithdraw = true,
+  mayUpload = true,
 }: AttachmentsPanelProps) {
   const [list, setList] = useState<AttachmentList | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -47,6 +60,9 @@ export function AttachmentsPanel({
   const [busy, setBusy] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [reason, setReason] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [draft, setDraft] = useState<UploadDraft>(EMPTY_UPLOAD);
+  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -90,6 +106,41 @@ export function AttachmentsPanel({
     },
     [businessUnit, load, reason],
   );
+
+  const onUpload = useCallback(async () => {
+    const problems = uploadProblems(draft);
+    if (problems.length > 0 || !draft.file) return;
+    const file = draft.file;
+    setUploading(true);
+    setUploadStatus(null);
+    try {
+      const contentHash = await sha256Hex(file);
+      const presigned = await presignUpload(businessUnit, {
+        purpose: 'adjunto',
+        kind: draft.kind,
+        filename: file.name,
+        content_type: file.type,
+        size_bytes: file.size,
+      });
+      await uploadFile(presigned, file);
+      await registerAttachment(businessUnit, workOrderId, {
+        title: draft.title.trim(),
+        filename: file.name,
+        storage_key: presigned.storage_key,
+        content_hash: contentHash,
+        size_bytes: file.size,
+        mime_type: file.type,
+        kind: draft.kind,
+      });
+      await load();
+      setDraft(EMPTY_UPLOAD);
+      setUploadStatus(`«${draft.title.trim()}» se adjuntó.`);
+    } catch (cause) {
+      setUploadStatus(cause instanceof ApiError ? cause.message : 'No se pudo subir el adjunto');
+    } finally {
+      setUploading(false);
+    }
+  }, [businessUnit, draft, load, workOrderId]);
 
   const visible = rows(list);
   const warning = budgetWarning(list);
@@ -166,6 +217,57 @@ export function AttachmentsPanel({
           </li>
         ))}
       </ul>
+
+      {mayUpload && (
+        <div className="planner__upload">
+          <label htmlFor="adjunto-titulo">Título</label>
+          <input
+            id="adjunto-titulo"
+            value={draft.title}
+            onChange={(event) => setDraft({ ...draft, title: event.target.value })}
+          />
+
+          <label htmlFor="adjunto-tipo">Tipo</label>
+          <select
+            id="adjunto-tipo"
+            value={draft.kind}
+            onChange={(event) => setDraft({ ...draft, kind: event.target.value })}
+          >
+            {UPLOAD_KINDS.map((kind) => (
+              <option key={kind} value={kind}>
+                {kindLabel(kind)}
+              </option>
+            ))}
+          </select>
+
+          <label htmlFor="adjunto-archivo">Archivo</label>
+          <input
+            id="adjunto-archivo"
+            type="file"
+            onChange={(event) => setDraft({ ...draft, file: event.target.files?.[0] ?? null })}
+          />
+
+          {uploadProblems(draft).map((problem) => (
+            <p key={problem} role="status" className="planner__warning">
+              {problem}
+            </p>
+          ))}
+
+          <button
+            type="button"
+            disabled={uploading || uploadProblems(draft).length > 0}
+            onClick={() => void onUpload()}
+          >
+            {uploading ? 'Subiendo…' : 'Adjuntar'}
+          </button>
+
+          {uploadStatus && (
+            <p role="status" className="planner__status">
+              {uploadStatus}
+            </p>
+          )}
+        </div>
+      )}
 
       {status && (
         <p role="status" className="planner__status">

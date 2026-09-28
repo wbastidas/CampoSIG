@@ -62,9 +62,22 @@ class Settings(BaseSettings):
     #: is no sample rather than showing a kappa computed over nothing.
     blind_sample_rate: float = 0.10
 
-    # Object storage for evidence (SeaweedFS, S3 API).
+    # Object storage for evidence and attachments (SeaweedFS, S3 API).
     s3_endpoint_url: str = "http://localhost:8333"
     s3_bucket: str = "sigec-evidence"
+    #: What a *client* (the web app, a phone) actually reaches to PUT or GET an object — separate
+    #: from `s3_endpoint_url` because a presigned URL's signature is tied to the host in it, and
+    #: that host has to be the one the uploader can resolve. In development the backend talks to
+    #: SeaweedFS by its Compose service name, but a phone or a browser cannot resolve that name; it
+    #: needs the port Compose published to the developer's own machine. The same split matters
+    #: again outside development, where the backend may reach the store through an internal
+    #: network path a client cannot route to at all.
+    s3_public_url: str = "http://localhost:8333"
+    s3_access_key: str = "sigec-dev"
+    s3_secret_key: str = "sigec-dev-secret"
+    #: How long a presigned upload URL stays valid. Short on purpose: it is handed to one client
+    #: for one upload started right away, not a link that should still work tomorrow.
+    s3_presign_expires_seconds: int = 300
 
     # Active data-model profile (ADR-004). Switching this must be enough to run
     # against a different geodatabase schema, which the CI suite verifies.

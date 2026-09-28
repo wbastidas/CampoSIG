@@ -96,3 +96,54 @@ export function withdrawAdvice(row: AttachmentRow): string {
     `la cuadrilla pudo ejecutar el trabajo con él.${shared}`
   );
 }
+
+//: Los mismos tipos y el mismo peso que admite el servidor (`ALLOWED_MIME_TYPES`,
+//: `MAX_ATTACHMENT_BYTES` en `app.attachments.service`). Repetirlos aquí es solo para el mensaje
+//: antes de intentar subir; el servidor los exige igual y es la autoridad (rule 3 no aplica —esto
+//: no es un formulario generado del perfil— pero el principio es el mismo: un solo número).
+export const ALLOWED_UPLOAD_TYPES = ['application/pdf', 'image/jpeg', 'image/png'] as const;
+export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+
+export const UPLOAD_KINDS = ['plano', 'diseno', 'documento', 'permiso', 'referencia'] as const;
+
+export interface UploadDraft {
+  title: string;
+  kind: string;
+  file: File | null;
+}
+
+export const EMPTY_UPLOAD: UploadDraft = { title: '', kind: 'plano', file: null };
+
+/** Por qué no se puede subir todavía, en las palabras que hay que arreglar antes de intentarlo. */
+export function uploadProblems(draft: UploadDraft): string[] {
+  const problems: string[] = [];
+  if (!draft.title.trim()) {
+    problems.push('El adjunto necesita un título: «documento_1.pdf» no es un título.');
+  }
+  if (!draft.file) {
+    problems.push('Elija el archivo.');
+    return problems;
+  }
+  if (!ALLOWED_UPLOAD_TYPES.includes(draft.file.type as (typeof ALLOWED_UPLOAD_TYPES)[number])) {
+    problems.push(
+      `«${draft.file.type || 'ese tipo'}» no se puede abrir en el teléfono sin software ` +
+        `adicional; admitidos: ${ALLOWED_UPLOAD_TYPES.join(', ')}.`,
+    );
+  }
+  if (draft.file.size > MAX_UPLOAD_BYTES) {
+    problems.push(
+      `El archivo pesa ${megabytes(draft.file.size)} MB y el máximo por adjunto es ` +
+        `${megabytes(MAX_UPLOAD_BYTES)} MB.`,
+    );
+  }
+  return problems;
+}
+
+/** El hash SHA-256 del archivo, en hexadecimal: lo que el servidor guarda junto a la clave, y lo
+ *  que deja a un teléfono confirmar que descargó exactamente lo que se subió. */
+export async function sha256Hex(file: Blob): Promise<string> {
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
