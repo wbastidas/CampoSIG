@@ -30,9 +30,11 @@ from app.assignment.suggest import (
 )
 from app.auth.dependencies import current_principal
 from app.auth.principal import Principal, Role
+from app.dispatch.positions import report as report_position
 from app.infra.database import get_session
 from app.main import create_app
 from app.org.models import BusinessUnit, Organization
+from app.sync.service import enrol_device
 from app.workorders.models import Crew, WorkOrder
 from app.workorders.service import assign, create_work_order
 from app.zones import service as zones
@@ -246,7 +248,8 @@ class TestDistance:
     def test_a_crew_with_no_open_work_says_the_distance_cannot_be_measured(
         self, session: Session, unit: BusinessUnit
     ):
-        """The platform holds no crew GPS, so silence here would look like a bad fit."""
+        """Sin trabajo abierto y sin una posición reportada, no hay de dónde estimarla; el
+        silencio aquí se leería como un mal ajuste."""
         make_crew(session, unit, "C-01")
         order = make_order(session, unit)
         found = suggest_crews(session, unit, order, now=NOW)
@@ -274,6 +277,145 @@ class TestDistance:
         assert any("no tiene ubicación" in line for line in found.caveats)
         reason = next(r for r in found.candidates[0].reasons if r.factor == "cercanía")
         assert reason.points == 0
+
+
+class TestRealPositionBeatsTheProxy:
+    """RF-020's «último GPS reportado» reemplaza la aproximación del centroide (RF-021).
+
+    Hasta que existió RF-020, la cercanía era necesariamente una aproximación: el centroide del
+    trabajo abierto de la cuadrilla, con la advertencia de que era una aproximación. Ahora que un
+    teléfono puede reportar dónde está de verdad, esa posición —si es reciente— tiene que ganarle
+    a la aproximación, y la frase que explica el puntaje tiene que decir cuál de las dos es.
+    """
+
+    def report(
+        self,
+        session: Session,
+        unit: BusinessUnit,
+        crew: Crew,
+        order: WorkOrder,
+        *,
+        lon: float,
+        lat: float,
+        reported_at,
+        device_key: str = "phone-00000001",
+    ) -> None:
+        """El vínculo cuadrilla↔dispositivo sale del trabajo entregado, como en el mapa (RF-020)."""
+        from app.dispatch.service import record_delivery
+
+        device, _ = enrol_device(session, unit, device_key=device_key, user_sub="tecnico.a")
+        record_delivery(session, device, [order])
+        report_position(session, unit, device, latitude=lat, longitude=lon, reported_at=reported_at)
+
+    def test_una_posicion_reciente_reemplaza_el_centroide(
+        self, session: Session, unit: BusinessUnit
+    ):
+        crew = make_crew(session, unit, "C-01")
+        # El trabajo abierto de la cuadrilla queda lejos, pero su teléfono reportó estar cerca.
+        far_order = carry(session, unit, crew, lon=LON + 0.5, lat=LAT)
+        order = make_order(session, unit)
+        self.report(
+            session,
+            unit,
+            crew,
+            far_order,
+            lon=LON + 0.01,
+            lat=LAT,
+            reported_at=NOW - timedelta(minutes=5),
+        )
+
+        found = suggest_crews(session, unit, order, now=NOW)
+
+        reason = next(r for r in found.candidates[0].reasons if r.factor == "cercanía")
+        # A 1,11 km de la OT: round(30 * (1 - 1.11/20)) = 28. El centroide del trabajo lejano
+        # habría dado 0 puntos (está más allá del techo de 20 km).
+        assert reason.points == 28
+        assert reason.detail.startswith("está a")
+        assert "su trabajo abierto está" not in reason.detail
+
+    def test_una_posicion_vieja_no_reemplaza_nada(self, session: Session, unit: BusinessUnit):
+        """Una posición de hace tres horas no dice dónde está la cuadrilla ahora (RF-020)."""
+        crew = make_crew(session, unit, "C-01")
+        far_order = carry(session, unit, crew, lon=LON + 0.5, lat=LAT)
+        order = make_order(session, unit)
+        self.report(
+            session,
+            unit,
+            crew,
+            far_order,
+            lon=LON + 0.01,
+            lat=LAT,
+            reported_at=NOW - timedelta(hours=3),
+        )
+
+        found = suggest_crews(session, unit, order, now=NOW)
+
+        reason = next(r for r in found.candidates[0].reasons if r.factor == "cercanía")
+        assert reason.detail.startswith("su trabajo abierto está")
+
+    def test_una_cuadrilla_sin_trabajo_abierto_igual_se_mide_con_su_posicion(
+        self, session: Session, unit: BusinessUnit
+    ):
+        """Es justo el caso que la aproximación no podía cubrir: sin OT abierta no hay centroide."""
+        crew = make_crew(session, unit, "C-01")
+        returned_order = make_order(session, unit, lon=LON + 0.01, lat=LAT)
+        assign(session, returned_order, crew=crew)
+        returned_order.state = "devuelta"
+        session.flush()
+        self.report(
+            session,
+            unit,
+            crew,
+            returned_order,
+            lon=LON + 0.01,
+            lat=LAT,
+            reported_at=NOW - timedelta(minutes=5),
+        )
+        order = make_order(session, unit)
+
+        found = suggest_crews(session, unit, order, now=NOW)
+
+        reason = next(r for r in found.candidates[0].reasons if r.factor == "cercanía")
+        assert reason.points > 0
+        assert reason.detail.startswith("está a")
+        # La OT devuelta no cuenta como carga: la posición real no puede traer consigo una
+        # carga inventada que no salió de ningún conteo real.
+        load_reason = next(r for r in found.candidates[0].reasons if r.factor == "carga")
+        assert "no tiene OT abiertas" in load_reason.detail
+
+    def test_se_queda_con_la_posicion_mas_cercana_entre_varios_telefonos(
+        self, session: Session, unit: BusinessUnit
+    ):
+        """Una cuadrilla con dos teléfonos: la que sirve para despachar es la más cercana."""
+        crew = make_crew(session, unit, "C-01")
+        order_a = carry(session, unit, crew, lon=LON, lat=LAT)
+        self.report(
+            session,
+            unit,
+            crew,
+            order_a,
+            lon=LON + 0.20,
+            lat=LAT,
+            reported_at=NOW - timedelta(minutes=5),
+            device_key="phone-lejos",
+        )
+        self.report(
+            session,
+            unit,
+            crew,
+            order_a,
+            lon=LON + 0.01,
+            lat=LAT,
+            reported_at=NOW - timedelta(minutes=2),
+            device_key="phone-cerca",
+        )
+        order = make_order(session, unit)
+
+        found = suggest_crews(session, unit, order, now=NOW)
+
+        reason = next(r for r in found.candidates[0].reasons if r.factor == "cercanía")
+        # A 1,11 km (phone-cerca), no a 22 km (phone-lejos, más allá del techo de 20 km).
+        assert reason.points == 28
 
 
 class TestLoadAndSla:

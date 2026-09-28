@@ -830,6 +830,35 @@ Falta la mitad que necesita modelos: los nodos VLM y de redacción, en I12.
 
 ---
 
+### RF-021 al día con RF-020: la cercanía deja de ser solo una aproximación
+
+RF-021 nació antes de que existiera una sola posición real en la plataforma, y lo decía en su propio
+código: «the platform holds no crew GPS yet», con la cercanía estimada desde el centroide del
+trabajo abierto de la cuadrilla — una aproximación razonable («una cuadrilla con seis OT al norte
+está al norte») pero una aproximación al fin, con su caveat.
+
+Con RF-020 en la plataforma, dejar esa frase como estaba habría sido ignorar un dato mejor que ya
+existe. Ahora `_workloads` calcula primero la aproximación de siempre y **la reemplaza** con la
+última posición reportada por un teléfono de la cuadrilla, cuando esa posición no está vencida —el
+mismo umbral de «vieja» que ya define RF-020, no un segundo umbral que alguien tendría que mantener
+sincronizado con el primero. Y la frase que explica el puntaje distingue las dos cosas: «está a X km»
+cuando se sabe dónde está de verdad, «su trabajo abierto está a X km» cuando es la aproximación — la
+diferencia le importa a quien decide si confiar en el número.
+
+**El caso que la aproximación nunca pudo cubrir.** Una cuadrilla sin ninguna OT abierta no tiene
+centroide que calcular, así que antes no se podía decir nada de su cercanía — ahora, si su teléfono
+reportó una posición reciente, sí. Es la cuadrilla que acaba de devolver su última consignación y
+todavía no recibió la siguiente: antes invisible para la cercanía, ahora la primera candidata si está
+cerca.
+
+**Con más de un teléfono, gana el más cercano.** Una cuadrilla puede llevar varios dispositivos —el
+jefe de cuadrilla y un ayudante—, y lo que importa para despachar es cuál de las dos posiciones sirve
+mejor, no la que llegó de último a la base de datos.
+
+Cinco guardas rotas a propósito y detectadas, todas en el primer pase.
+
+---
+
 ### RF-025: rutas sugeridas, y el hallazgo de que una sola arrancada no bastaba
 
 El criterio es una comparación: «genera un orden de visita que reduce la distancia total frente al

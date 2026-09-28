@@ -14,9 +14,10 @@ So the shape is:
   by hand.
 * **Every point carries a sentence.** Not a weight table in a docstring: the reason travels in the
   payload, so the screen shows «+40: la OT cae en la zona NORTE, que es la de esta cuadrilla».
-* **Unknown is said, not scored as zero.** The platform holds no crew GPS (RF-020's «último GPS
-  reportado» is not captured yet), so proximity falls back to where the crew's open work is, and
-  when there is none it says so instead of quietly awarding nothing and looking like a bad fit.
+* **Unknown is said, not scored as zero.** When a crew's phone reported a fresh position
+  (RF-020), proximity uses it; when it has not, or the last one is stale, proximity falls back to
+  the centroid of the crew's open work, and when there is neither it says so instead of quietly
+  awarding nothing and looking like a bad fit.
 
 Nothing here assigns anything. It answers a question; the planner clicks (RF-021 is a suggestion,
 and ADR-013's rule that a decision needs a person holds here too).
@@ -24,6 +25,7 @@ and ADR-013's rule that a decision needs a person holds here too).
 
 from __future__ import annotations
 
+import math
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -33,6 +35,7 @@ from geoalchemy2 import Geography
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.dispatch.positions import crew_positions
 from app.forms.catalog import load_definitions
 from app.org.models import BusinessUnit
 from app.workorders.models import STORAGE_SRID, Crew, WorkOrder, WorkOrderState
@@ -181,9 +184,11 @@ class Workload:
 
     open_orders: int
     due_soon: int
-    #: Kilometres from the centroid of the crew's open work to this order, or None when the crew
-    #: has no open work with a location to compute it from.
+    #: Kilometres to this order, or None when there is nothing to measure it from.
     distance_km: float | None
+    #: Where `distance_km` came from, for the sentence `_score_distance` writes: a fresh position
+    #: says where the crew *is*; the centroid of open work only says where it has been sent.
+    distance_source: str | None = None
 
 
 def _order_point(session: Session, order: WorkOrder) -> tuple[float, float] | None:
@@ -212,11 +217,12 @@ def _workloads(
     now: datetime,
     point: tuple[float, float] | None,
 ) -> dict[uuid.UUID, Workload]:
-    """One query for the three things every candidate needs.
+    """One query for the three things every candidate needs, then the real position overlaid.
 
-    The distance is from the **centroid of the crew's open work**, not from a reported position: the
-    platform holds no crew GPS yet. It is a proxy, and it is a defensible one — a crew with six
-    orders in the north is in the north — but it is a proxy, and the caveats say so.
+    The base distance is from the **centroid of the crew's open work** — a proxy, and a defensible
+    one: a crew with six orders in the north is in the north. A fresh position from RF-020 replaces
+    it where one exists, because it says where the crew *is* rather than where it has been sent, and
+    it is the only source that can answer for a crew carrying nothing yet.
     """
     horizon = now + DUE_SOON
     centroid = func.ST_Centroid(func.ST_Collect(WorkOrder.location))
@@ -253,8 +259,53 @@ def _workloads(
     for row in rows:
         crew_id = row[0]
         km = float(row[3]) if distance is not None and row[3] is not None else None
-        found[crew_id] = Workload(open_orders=int(row[1]), due_soon=int(row[2]), distance_km=km)
+        found[crew_id] = Workload(
+            open_orders=int(row[1]),
+            due_soon=int(row[2]),
+            distance_km=km,
+            distance_source="trabajo_abierto" if km is not None else None,
+        )
+
+    if point is not None:
+        for crew_id, gps_km in _gps_distances_km(session, unit, point, now=now).items():
+            existing = found.get(crew_id)
+            found[crew_id] = Workload(
+                open_orders=existing.open_orders if existing else 0,
+                due_soon=existing.due_soon if existing else 0,
+                distance_km=gps_km,
+                distance_source="gps",
+            )
     return found
+
+
+def _gps_distances_km(
+    session: Session, unit: BusinessUnit, point: tuple[float, float], *, now: datetime
+) -> dict[uuid.UUID, float]:
+    """A crew's distance to `point` from its most recent, still-fresh reported position.
+
+    Reuses RF-020's own definition of «fresh» (`CrewPosition.stale`) rather than a second
+    threshold: two readers of «how old is too old» would drift, and the one that drifted would be
+    the one a planner trusts to send a crew somewhere.
+    """
+    best: dict[uuid.UUID, float] = {}
+    for position in crew_positions(session, unit, now=now):
+        if position.stale:
+            continue
+        km = _haversine_km((position.longitude, position.latitude), point)
+        for crew in position.crews:
+            crew_id = uuid.UUID(crew["crew_id"])
+            if crew_id not in best or km < best[crew_id]:
+                best[crew_id] = km
+    return best
+
+
+def _haversine_km(a: tuple[float, float], b: tuple[float, float]) -> float:
+    """Straight-line distance in kilometres between two (lon, lat) points."""
+    earth_radius_km = 6_371.0
+    lon1, lat1, lon2, lat2 = (math.radians(value) for value in (a[0], a[1], b[0], b[1]))
+    dlon, dlat = lon2 - lon1, lat2 - lat1
+    h = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+    return 2 * earth_radius_km * math.asin(math.sqrt(min(1.0, h)))
 
 
 def _score_zone(candidate: Candidate, crew: Crew, order_zones: list[str]) -> None:
@@ -280,24 +331,27 @@ def _score_distance(candidate: Candidate, load: Workload | None) -> None:
         candidate.add(
             "cercanía",
             0,
-            "no se puede medir: la cuadrilla no tiene trabajo abierto con ubicación desde donde "
-            "estimar dónde está",
+            "no se puede medir: la cuadrilla no reportó una posición reciente ni tiene trabajo "
+            "abierto con ubicación desde donde estimar dónde está",
         )
         return
     km = load.distance_km
+    # «Está a X km» cuando se sabe dónde está de verdad; «su trabajo abierto está a X km» cuando
+    # es la aproximación — la frase dice cuál de las dos cosas se está afirmando.
+    origin = "está" if load.distance_source == "gps" else "su trabajo abierto está"
     if km >= DISTANCE_CEILING_KM:
         candidate.add(
             "cercanía",
             0,
-            f"su trabajo abierto está a {km:.1f} km, más allá de los {DISTANCE_CEILING_KM:.0f} km "
-            "desde donde la cercanía deja de contar".replace(".", ",", 1),
+            f"{origin} a {km:.1f} km, más allá de los {DISTANCE_CEILING_KM:.0f} km desde donde la "
+            "cercanía deja de contar".replace(".", ",", 1),
         )
         return
     points = round(POINTS_DISTANCE * (1 - km / DISTANCE_CEILING_KM))
     candidate.add(
         "cercanía",
         points,
-        f"su trabajo abierto está a {km:.1f} km de esta OT".replace(".", ","),
+        f"{origin} a {km:.1f} km de esta OT".replace(".", ","),
     )
 
 
