@@ -24,9 +24,7 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     op.add_column(
         "crew",
-        sa.Column(
-            "members", sa.ARRAY(sa.String(length=255)), nullable=False, server_default="{}"
-        ),
+        sa.Column("members", sa.ARRAY(sa.String(length=255)), nullable=False, server_default="{}"),
     )
     op.add_column("crew", sa.Column("created_by", sa.String(length=255)))
     op.add_column("crew", sa.Column("updated_by", sa.String(length=255)))
