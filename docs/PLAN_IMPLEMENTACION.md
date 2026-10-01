@@ -1226,6 +1226,24 @@ tampoco filtran por ámbito todavía.
 
 ---
 
+### RF-031: por qué no hay editor visual de formularios
+
+RF-031 pide un editor visual —arrastrar bloques, campos, catálogos y reglas— para que un
+administrador funcional cree un formulario nuevo sin tocar código. Es una decisión de producto, no
+un olvido: la regla 3 de este documento dice que los formularios son datos generados del perfil
+del modelo de datos, nunca escritos a mano, y un editor visual es exactamente la vía manual que esa
+regla excluye. Construirlo competiría con el generador (I2) por ser la fuente de verdad de la
+forma de un formulario, y las dos fuentes divergirían la primera vez que alguien edite con el
+editor un formulario que el generador vuelva a producir.
+
+Lo que sí existe y cumple el espíritu del requerimiento —publicar sin tocar código— es el
+versionado de RF-032 (`FormCatalogueScreen`): un administrador funcional publica, retira y ve qué
+formulario quedó sin publicar, todo desde la web. Si en algún momento se decide construir RF-031
+de verdad, la pregunta previa es cuál de las dos fuentes gana cuando un formulario generado se
+edita a mano — y esa pregunta no tiene todavía una respuesta de producto.
+
+---
+
 ### RF-024: la consignación, su ventana y el permiso que no se habilita sin número
 
 El criterio es una negativa: «no se habilita el formulario F-TR-02 sin un N.º de consignación». Y el
