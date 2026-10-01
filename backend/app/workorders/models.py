@@ -95,11 +95,26 @@ class Crew(Base):
     code: Mapped[str] = mapped_column(String(32), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     leader_name: Mapped[str | None] = mapped_column(String(255))
+    #: Names, not identities: RF-005 asks for a roster administrators can read and edit, not a
+    #: directory tying a crew to login accounts. `assign()`'s `device_id` is the separate, narrower
+    #: link between a work order and the one device actually carrying it (RF-322/RF-324).
+    members: Mapped[list[str]] = mapped_column(ARRAY(String(255)), nullable=False, default=list)
     vehicle: Mapped[str | None] = mapped_column(String(64))
     #: MV, LV, live-line work, APG, height — drives dispatch suggestions.
     competencies: Mapped[list[str]] = mapped_column(ARRAY(String(32)), nullable=False, default=list)
     zone: Mapped[str | None] = mapped_column(String(64))
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    #: Who created or last edited the roster (RF-005's «historial de cambios», together with the
+    #: audit trail entries `crews.py` records on every write).
+    created_by: Mapped[str | None] = mapped_column(String(255))
+    updated_by: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
 
     __table_args__ = (
         UniqueConstraint("business_unit_id", "code", name="uq_crew_code"),

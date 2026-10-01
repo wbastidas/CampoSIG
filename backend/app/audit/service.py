@@ -271,12 +271,17 @@ def trail(
     asset_code: str | None = None,
     actor: str | None = None,
     device_key: str | None = None,
+    subject_type: str | None = None,
+    subject_id: str | None = None,
     since: datetime | None = None,
     until: datetime | None = None,
     limit: int = 200,
     offset: int = 0,
 ) -> list[AuditEvent]:
     """The four questions RF-161 asks: by work order, by asset, by user, by device.
+
+    `subject_type`/`subject_id` answer a fifth, narrower one: the history of one administrative
+    record that is not a work order at all — a crew, a zone, a regulatory parameter.
 
     Oldest first, because the answer to all four is a story and a story read backwards is a
     different story. Paginated because a unit's trail grows without bound and the auditor's screen
@@ -291,6 +296,10 @@ def trail(
         statement = statement.where(AuditEvent.actor == actor)
     if device_key is not None:
         statement = statement.where(AuditEvent.device_key == device_key)
+    if subject_type is not None:
+        statement = statement.where(AuditEvent.subject_type == subject_type)
+    if subject_id is not None:
+        statement = statement.where(AuditEvent.subject_id == subject_id)
     if since is not None:
         statement = statement.where(AuditEvent.occurred_at >= since)
     if until is not None:

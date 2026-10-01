@@ -1,4 +1,4 @@
-"""Firmar una subida al almacenamiento de objetos (RF-005, RF-017).
+"""Firmar una subida al almacenamiento de objetos (RF-076, RF-017).
 
 El paso que faltaba entre «tengo el archivo en el teléfono» y «el servidor sabe que existe»:
 esto entrega una URL de `PUT`, el cliente sube el archivo directo a SeaweedFS con ella, y solo
@@ -24,7 +24,7 @@ router = APIRouter(prefix="/api/v1/storage", tags=["storage"], dependencies=[Dep
 
 SessionDep = Annotated[Session, Depends(get_session)]
 
-#: Quien sube evidencia desde el campo, y quien sube adjuntos desde la oficina (RF-005, RF-017).
+#: Quien sube evidencia desde el campo, y quien sube adjuntos desde la oficina (RF-076, RF-017).
 #: Un solo endpoint para los dos: la política de qué se admite vive en `app.storage.service`, por
 #: propósito, así que el rol no tiene que decidir nada que el servicio no vaya a comprobar igual.
 UPLOADERS = (
@@ -57,7 +57,7 @@ class PresignIn(BaseModel):
 @router.post(
     "/units/{unit_code}/presign",
     dependencies=[Depends(require_roles(*UPLOADERS))],
-    summary="Firmar la subida de un archivo de evidencia o de un adjunto (RF-005, RF-017)",
+    summary="Firmar la subida de un archivo de evidencia o de un adjunto (RF-076, RF-017)",
 )
 def presign(unit_code: str, payload: PresignIn, session: SessionDep) -> dict[str, Any]:
     unit = _unit(session, unit_code)

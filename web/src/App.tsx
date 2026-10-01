@@ -18,6 +18,7 @@ import { AiDashboardScreen } from './features/ai-dashboard/AiDashboardScreen';
 import { ApgScreen } from './features/apg/ApgScreen';
 import { AuditScreen } from './features/audit/AuditScreen';
 import { CatalogsScreen } from './features/catalogs/CatalogsScreen';
+import { CrewsScreen } from './features/crews/CrewsScreen';
 import { DispatchBoard } from './features/dispatch/DispatchBoard';
 import { FormCatalogueScreen } from './features/form-catalogue/FormCatalogueScreen';
 import { IntegrationsScreen } from './features/integrations/IntegrationsScreen';
@@ -59,6 +60,7 @@ type Screen =
   | 'preventivo'
   | 'propuestas'
   | 'consignaciones'
+  | 'cuadrillas'
   | 'ia'
   | 'integraciones'
   | 'bitacora'
@@ -91,6 +93,15 @@ const SCREENS: { key: Screen; label: string; roles: string[] }[] = [
   // El descargo lo pide planificación y lo otorga el Centro de Control, que aquí es operación. Una
   // sola pantalla porque los dos miran la misma cola; el servidor niega por rol y por autor (RF-024).
   { key: 'consignaciones', label: 'Consignaciones', roles: ['planificador', 'supervisor'] },
+  // El jefe, los integrantes, el vehículo, las competencias y la zona son el roster contra el
+  // que se despacha y se sugiere cercanía (RF-021, RF-025); administrarlo es de la
+  // administración funcional, y el planificador y el supervisor entran a mirar quién es quién
+  // (RF-005).
+  {
+    key: 'cuadrillas',
+    label: 'Cuadrillas',
+    roles: ['admin_funcional', 'planificador', 'supervisor'],
+  },
   // RF-134 nombra los dos roles: el analista ML porque es su trabajo, y el supervisor porque es
   // quien decide con esos números. El servidor exige lo mismo.
   { key: 'ia', label: 'Tablero de IA', roles: ['analista_ml', 'supervisor'] },
@@ -218,6 +229,9 @@ export function App() {
             mayDecide={roles.includes('supervisor') || roles.includes('admin_ti')}
             mayRequest={roles.includes('planificador') || roles.includes('admin_funcional')}
           />
+        )}
+        {screen === 'cuadrillas' && (
+          <CrewsScreen businessUnit={unit} mayEdit={roles.includes('admin_funcional')} />
         )}
         {screen === 'ia' && <AiDashboardScreen businessUnit={unit} />}
         {screen === 'integraciones' && (

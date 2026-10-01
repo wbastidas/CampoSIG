@@ -1151,6 +1151,35 @@ está en qué cuadrilla hoy— y es un incremento aparte, no una corrección de 
 
 ---
 
+### RF-005: la gestión de cuadrillas que el modelo ya prometía y la API no tenía
+
+El modelo `Crew` decía en su propio docstring «sus integrantes, su jefe...», y no tenía columna de
+integrantes — la misma clase de promesa sin código de atrás que ya apareció en RF-322 y, en este
+mismo incremento, en el `pull_work_orders` de RF-022. La API solo tenía un `GET /crews` para el
+tablero de carga (RF-313); no había cómo crear, editar ni desactivar una cuadrilla, y «historial de
+cambios» —el criterio de aceptación del requerimiento— no existía en absoluto.
+
+**Crear y editar son un solo verbo**, `PUT .../{code}`, por la misma razón que ya vale para las
+zonas (`zones.save_drawn`): el formulario que llena el código no sabe si ya existe sin preguntarle
+al servidor primero, y preguntar para volver a preguntar es la petición que esto colapsa en una.
+
+**Nunca se borra una cuadrilla, se desactiva.** Una que llevó un año de OT cerradas es parte de esa
+historia, y borrarla dejaría esa historia apuntando a nada — el mismo razonamiento que ya rige las
+zonas. `set_crew_active` además no audita cuando el estado no cambió: reactivar una cuadrilla que ya
+estaba activa no es un cambio y no debía dejar una fila diciendo que lo fue.
+
+**El historial de cambios es la bitácora (RF-160), no una tabla nueva.** `audit.trail` ganó dos
+filtros, `subject_type` y `subject_id`, que ya existían como columnas de `AuditEvent` y nadie los
+usaba para consultar: zonas y parámetros regulatorios tienen el mismo problema sin resolver, así que
+el filtro queda disponible para ellos también, no solo para cuadrillas.
+
+Ocho mutaciones sembradas a propósito entre el servicio y la API —crear sin crear fila nueva, perder
+los integrantes al guardar, auditar una reactivación que no cambió nada, ignorar el filtro de
+activos, mezclar el historial de dos cuadrillas, aceptar un código de ruta distinto del cuerpo, y
+dejar escribir a un planificador— y las ocho atrapadas.
+
+---
+
 ### RF-024: la consignación, su ventana y el permiso que no se habilita sin número
 
 El criterio es una negativa: «no se habilita el formulario F-TR-02 sin un N.º de consignación». Y el

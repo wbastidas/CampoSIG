@@ -1,5 +1,5 @@
 /**
- * Firmar una subida al almacenamiento de objetos (RF-005, RF-017).
+ * Firmar una subida al almacenamiento de objetos (RF-076, RF-017).
  *
  * El backend nunca transporta el archivo: firma una URL de `PUT` y el cliente sube directo a
  * SeaweedFS con ella. Con la URL y el `storage_key` en mano, el llamante hace el `PUT` con

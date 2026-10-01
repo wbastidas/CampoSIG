@@ -1,4 +1,4 @@
-"""URLs firmadas hacia el almacenamiento de objetos (RF-005, RF-017).
+"""URLs firmadas hacia el almacenamiento de objetos (RF-076, RF-017).
 
 El hueco que esto cierra: `register_evidence` y `attachments.attach` registran un `storage_key` y
 suponen que el archivo ya está en SeaweedFS, y nada le daba a un cliente la manera de ponerlo ahí.

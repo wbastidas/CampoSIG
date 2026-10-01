@@ -47,7 +47,7 @@ body {
   margin: 0;
   background: var(--fondo);
   color: var(--texto);
-  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 15px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 
 .app-bar {
@@ -861,6 +861,33 @@ fieldset {
   width: 100%;
   font-family: monospace;
   font-size: 0.8rem;
+}
+
+.crew-screen section {
+  margin-bottom: 1.5rem;
+}
+
+.crew-screen table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.crew-screen th,
+.crew-screen td {
+  text-align: left;
+  padding: 0.2rem 0.3rem;
+  border-bottom: 1px solid var(--borde);
+}
+
+/* Una cuadrilla inactiva sigue en la lista porque es parte de la historia de las OT que ya
+   cerró; atenuada por la misma razón que una zona inactiva (`.zon-inactive`). */
+.crew-inactive {
+  opacity: 0.6;
+}
+
+.crew-form input {
+  display: block;
+  margin-bottom: 0.5rem;
 }
 
 .pol-screen section {

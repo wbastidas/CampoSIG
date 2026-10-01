@@ -117,7 +117,7 @@ def presign_upload(
     content_type: str,
     size_bytes: int,
 ) -> PresignedUpload:
-    """Firmar una subida (RF-005, RF-017).
+    """Firmar una subida (RF-076, RF-017).
 
     :param purpose: `"adjunto"` o `"evidencia"`. Decide qué límites aplican.
     :param kind: para `evidencia`, el `EvidenceKind` (`foto`, `audio`, `firma`, `croquis`,

@@ -7,6 +7,7 @@ from app.api import (
     attachments,
     audit,
     catalogs,
+    crews,
     dispatch,
     forms,
     gis,
@@ -54,6 +55,7 @@ def create_app() -> FastAPI:
     app.include_router(analytics.router)
     app.include_router(audit.router)
     app.include_router(zones.router)
+    app.include_router(crews.router)
     app.include_router(policy.router)
     app.include_router(forms.router)
     app.include_router(catalogs.router)

@@ -135,6 +135,10 @@ class CrossUnitError(Exception):
     """Raised when an operation would move work between business units."""
 
 
+class UnknownCrewError(Exception):
+    """Raised when a crew code does not exist in this business unit (RF-005)."""
+
+
 # --- creation ---------------------------------------------------------------------
 def create_work_order(
     session: Session,
@@ -610,3 +614,123 @@ def crew_workload(session: Session, unit: BusinessUnit) -> list[dict[str, Any]]:
         {"crew_id": row[0], "code": row[1], "name": row[2], "open_work_orders": row[3]}
         for row in rows
     ]
+
+
+def list_crews(
+    session: Session, unit: BusinessUnit, *, include_inactive: bool = False
+) -> list[Crew]:
+    """A unit's crews (RF-005)."""
+    statement = select(Crew).where(Crew.business_unit_id == unit.id)
+    if not include_inactive:
+        statement = statement.where(Crew.active.is_(True))
+    return list(session.scalars(statement.order_by(Crew.code)))
+
+
+def get_crew_by_code(session: Session, unit: BusinessUnit, code: str) -> Crew:
+    crew = session.scalars(
+        select(Crew).where(Crew.business_unit_id == unit.id, Crew.code == code)
+    ).first()
+    if crew is None:
+        raise UnknownCrewError(f"la cuadrilla «{code}» no existe en esta unidad de negocio")
+    return crew
+
+
+def save_crew(
+    session: Session,
+    unit: BusinessUnit,
+    *,
+    code: str,
+    name: str,
+    actor: str,
+    leader_name: str | None = None,
+    vehicle: str | None = None,
+    competencies: list[str] | None = None,
+    members: list[str] | None = None,
+    zone: str | None = None,
+) -> Crew:
+    """Create a crew, or edit one that already carries this code (RF-005).
+
+    A new row and a renamed row share this one function rather than a separate create/update pair
+    for the same reason `zones.save_drawn` does: the web form that fills it in cannot tell which
+    case it is in without first asking the server, and asking first just to ask again is the
+    request this collapses into one.
+    """
+    crew = session.scalars(
+        select(Crew).where(Crew.business_unit_id == unit.id, Crew.code == code)
+    ).first()
+    created = crew is None
+    if created:
+        crew = Crew(business_unit_id=unit.id, code=code, created_by=actor)
+        session.add(crew)
+    assert crew is not None
+    crew.name = name
+    crew.leader_name = leader_name
+    crew.vehicle = vehicle
+    crew.competencies = list(competencies) if competencies else []
+    crew.members = list(members) if members else []
+    crew.zone = zone
+    crew.updated_by = actor
+    session.flush()
+    audit.record(
+        session,
+        unit.id,
+        kind=EventKind.CREATED if created else EventKind.FIELD_CHANGED,
+        subject_type="cuadrilla",
+        subject_id=str(crew.id),
+        actor=actor,
+        payload={
+            "code": crew.code,
+            "name": crew.name,
+            "leader_name": crew.leader_name,
+            "vehicle": crew.vehicle,
+            "competencies": crew.competencies,
+            "members": crew.members,
+            "zone": crew.zone,
+        },
+    )
+    return crew
+
+
+def set_crew_active(
+    session: Session, unit: BusinessUnit, crew: Crew, *, active: bool, actor: str
+) -> Crew:
+    """Deactivate or reactivate a crew. There is no delete: a crew that carried a year of closed
+    work orders is part of their history, and deleting it would leave that history pointing at
+    nothing (the same reasoning `zones.set_active` already applies to a zone)."""
+    if crew.active != active:
+        crew.active = active
+        crew.updated_by = actor
+        session.flush()
+        audit.record(
+            session,
+            unit.id,
+            kind=EventKind.FIELD_CHANGED,
+            subject_type="cuadrilla",
+            subject_id=str(crew.id),
+            actor=actor,
+            payload={"code": crew.code, "field": "active", "to": active},
+        )
+    return crew
+
+
+def crew_history(session: Session, unit: BusinessUnit, crew: Crew) -> list[Any]:
+    """The audit trail entries for one crew — RF-005's «historial de cambios»."""
+    return audit.trail(session, unit.id, subject_type="cuadrilla", subject_id=str(crew.id))
+
+
+def as_crew_dict(crew: Crew) -> dict[str, Any]:
+    return {
+        "id": str(crew.id),
+        "code": crew.code,
+        "name": crew.name,
+        "leader_name": crew.leader_name,
+        "vehicle": crew.vehicle,
+        "competencies": crew.competencies,
+        "members": crew.members,
+        "zone": crew.zone,
+        "active": crew.active,
+        "created_by": crew.created_by,
+        "updated_by": crew.updated_by,
+        "created_at": crew.created_at.isoformat(),
+        "updated_at": crew.updated_at.isoformat(),
+    }
