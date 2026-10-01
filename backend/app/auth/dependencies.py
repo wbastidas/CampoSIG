@@ -30,17 +30,34 @@ DEV_IDENTITY_HEADER = "X-SIGEC-Dev-Identity"
 
 
 def _dev_principal(raw: str) -> Principal:
-    """Build a principal from ``usuario:rol,rol|UNIDAD,UNIDAD``. Development only."""
-    identity, _, units = raw.partition("|")
+    """Build a principal from ``usuario:rol,rol|UNIDAD|AREA|ZONA|AGENCIA|CONTRATISTA``.
+
+    Every segment past the roles is optional and empty means unrestricted, same as a real
+    token's missing claim (RF-002). Development only.
+    """
+    segments = raw.split("|")
+    identity = segments[0]
+    rest = segments[1:]
     username, _, roles = identity.partition(":")
     if not username.strip():
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "la identidad de desarrollo está vacía")
+
+    def _set(index: int) -> frozenset[str]:
+        if index >= len(rest):
+            return frozenset()
+        return frozenset(part.strip() for part in rest[index].split(",") if part.strip())
+
+    contractor = rest[4].strip() if len(rest) > 4 and rest[4].strip() else None
     return Principal(
         subject=f"dev:{username.strip()}",
         username=username.strip(),
         display_name=username.strip(),
         roles=frozenset(role.strip() for role in roles.split(",") if role.strip()),
-        business_units=frozenset(unit.strip() for unit in units.split(",") if unit.strip()),
+        business_units=_set(0),
+        areas=_set(1),
+        zones=_set(2),
+        agencies=_set(3),
+        contractor=contractor,
         token_id=None,
     )
 

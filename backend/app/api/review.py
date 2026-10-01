@@ -23,7 +23,8 @@ from sqlalchemy.orm import Session, selectinload
 from app.audit import service as audit
 from app.audit.models import EventKind
 from app.auth.dependencies import current_principal, require_roles, unit_scope
-from app.auth.principal import Role
+from app.auth.principal import Principal, Role
+from app.forms.catalog import area_of_form_code
 from app.gis_gateway.models import AsBuiltBatch
 from app.gis_gateway.staging_table import asbuilt_proposal
 from app.inference.service import pre_review_degradations
@@ -62,10 +63,25 @@ def _unit(session: Session, code: str):  # type: ignore[no-untyped-def]
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
 
 
-def _order(session: Session, unit_id: uuid.UUID, order_id: uuid.UUID) -> WorkOrder:
+def _order(
+    session: Session,
+    unit_id: uuid.UUID,
+    order_id: uuid.UUID,
+    *,
+    principal: Principal | None = None,
+) -> WorkOrder:
     order = session.get(WorkOrder, order_id)
     if order is None or order.business_unit_id != unit_id:
         # Same answer for "not yours" as for "does not exist" (ADR-009).
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "la orden de trabajo no existe")
+    if principal is not None and not principal.may_see(
+        area=area_of_form_code(order.form_code),
+        zone=order.zone,
+        agency=order.agency,
+        contractor=order.crew.contractor if order.crew else None,
+    ):
+        # Same answer again: a direct id is not a way around the ámbito a listing already
+        # enforces (RF-002) — guessing or remembering one buys nothing a search would not.
         raise HTTPException(status.HTTP_404_NOT_FOUND, "la orden de trabajo no existe")
     return order
 
@@ -86,16 +102,19 @@ def queue(
     crew_id: Annotated[uuid.UUID | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
+    principal: Annotated[Any, Depends(unit_scope)] = None,
 ) -> dict[str, Any]:
     """Work orders awaiting a decision, worst SLA first (RF-110)."""
     unit = _unit(session, unit_code)
-    orders = review_queue(session, unit, area=area, crew_id=crew_id, limit=limit, offset=offset)
+    orders = review_queue(
+        session, unit, principal=principal, area=area, crew_id=crew_id, limit=limit, offset=offset
+    )
     # The pre-review's verdict travels with the row so a supervisor can see which orders a batch
     # approval may take before selecting them (RF-176). One query for the page, not one per row:
     # the queue has two seconds and the screen needs one word per order, not the report.
     risks = risk_levels_for(session, [order.id for order in orders])
     return {
-        "total": queue_size(session, unit),
+        "total": queue_size(session, unit, principal=principal),
         "items": [
             {
                 "work_order_id": str(order.id),
@@ -125,7 +144,7 @@ def detail(
 ) -> dict[str, Any]:
     """Everything the decision depends on, in one call."""
     unit = _unit(session, unit_code)
-    order = _order(session, unit.id, order_id)
+    order = _order(session, unit.id, order_id, principal=principal)
     response = _response_for(session, order)
     form = compose_for(session, unit, order)
 
@@ -319,7 +338,7 @@ def submit_decision(
 ) -> dict[str, Any]:
     """Record a decision (RF-112). Approval is refused when its preconditions are unmet."""
     unit = _unit(session, unit_code)
-    order = _order(session, unit.id, order_id)
+    order = _order(session, unit.id, order_id, principal=principal)
     # Read before deciding: `decide` closes the draw, and afterwards there is nothing pending to
     # tell the screen that this was a blind review whose report is now due (RF-111a).
     was_blind = blind.pending_for(session, order.id) is not None

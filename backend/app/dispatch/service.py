@@ -20,6 +20,8 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.auth.principal import Principal
+from app.auth.scope import crew_scope
 from app.dispatch.models import WorkOrderDelivery
 from app.org.models import BusinessUnit
 
@@ -143,19 +145,25 @@ class CrewDispatch:
         }
 
 
-def dispatch_board(session: Session, unit: BusinessUnit) -> list[CrewDispatch]:
+def dispatch_board(
+    session: Session, unit: BusinessUnit, *, principal: Principal | None = None
+) -> list[CrewDispatch]:
     """Per-crew dispatch state for one business unit.
 
     Scoped to the unit at every step (ADR-009): a dispatcher in one unit cannot see, or
-    count, another unit's crews or devices.
+    count, another unit's crews or devices. `principal`, when given, narrows further to their
+    own ámbito — zona, agencia or contratista (RF-002), the same rule `crew_scope` states once.
     """
-    crews = list(
-        session.scalars(
-            select(Crew)
-            .where(Crew.business_unit_id == unit.id, Crew.active.is_(True))
-            .order_by(Crew.code)
-        )
+    statement = (
+        select(Crew)
+        .where(Crew.business_unit_id == unit.id, Crew.active.is_(True))
+        .order_by(Crew.code)
     )
+    if principal is not None:
+        scope = crew_scope(principal)
+        if scope is not None:
+            statement = statement.where(scope)
+    crews = list(session.scalars(statement))
     board = {
         crew.id: CrewDispatch(crew_id=crew.id, code=crew.code, name=crew.name, zone=crew.zone)
         for crew in crews

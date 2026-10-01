@@ -29,7 +29,10 @@ from typing import Any
 from geoalchemy2.functions import ST_X, ST_Y
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
+from app.auth.principal import Principal
+from app.auth.scope import work_order_scope
 from app.dispatch.models import DevicePosition, WorkOrderDelivery
 from app.org.models import BusinessUnit
 from app.sync.models import SYNCABLE_STATES, Device
@@ -145,11 +148,15 @@ def crew_positions(
     *,
     now: datetime | None = None,
     zone: str | None = None,
+    principal: Principal | None = None,
 ) -> list[CrewPosition]:
     """The last position of every phone in this unit, with the crews it serves.
 
     :param zone: keep only phones carrying work in this zone, which is how a dispatcher narrows a
         map to the area they are responsible for.
+    :param principal: whoever is asking. Unlike `zone` above, this is the ámbito enforcement
+        (RF-002): a dispatcher scoped to a zona, agencia or contratista never sees a phone whose
+        only work is outside it, requested or not.
     """
     moment = now or datetime.now(UTC)
     rows = session.execute(
@@ -169,12 +176,14 @@ def crew_positions(
     if not rows:
         return []
 
-    crews = _crews_of([row[2] for row in rows], session, unit, zone=zone)
+    scope = work_order_scope(principal) if principal is not None else None
+    crews = _crews_of([row[2] for row in rows], session, unit, zone=zone, scope=scope)
+    narrowed = zone is not None or scope is not None
     positions: list[CrewPosition] = []
     for device_key, user_sub, device_id, longitude, latitude, accuracy, reported_at in rows:
-        if zone is not None and not crews.get(device_id):
-            # Filtering by zone means «phones working in this zone»; one with no work there is not
-            # a phone the dispatcher of that zone is looking for.
+        if narrowed and not crews.get(device_id):
+            # Filtering by zone or ámbito means «phones working there»; one with no matching
+            # work is not a phone the dispatcher asking is looking for.
             continue
         age = moment - reported_at
         positions.append(
@@ -218,6 +227,7 @@ def _crews_of(
     unit: BusinessUnit,
     *,
     zone: str | None = None,
+    scope: ColumnElement[bool] | None = None,
 ) -> dict[uuid.UUID, list[dict[str, str]]]:
     """Which crews each device is carrying work for, through what was delivered to it.
 
@@ -237,6 +247,8 @@ def _crews_of(
     )
     if zone is not None:
         statement = statement.where(WorkOrder.zone == zone)
+    if scope is not None:
+        statement = statement.where(scope)
     found: dict[uuid.UUID, list[dict[str, str]]] = {}
     for device_id, crew_id, code, name in session.execute(statement).all():
         entry = {"crew_id": str(crew_id), "code": code, "name": name}

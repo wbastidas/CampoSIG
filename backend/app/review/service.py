@@ -15,6 +15,8 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.audit import service as audit
 from app.audit.models import EventKind
+from app.auth.principal import Principal
+from app.auth.scope import work_order_scope
 from app.forms.catalog import codes_for_area
 from app.integrations.callcentre_adapter import enqueue_claim_closure
 from app.integrations.erp_adapter import enqueue_material_movements
@@ -47,6 +49,7 @@ def review_queue(
     session: Session,
     unit: BusinessUnit,
     *,
+    principal: Principal | None = None,
     area: str | None = None,
     crew_id: uuid.UUID | None = None,
     limit: int = 50,
@@ -56,6 +59,12 @@ def review_queue(
 
     Paginated on the server: the SRS requires this to stay under two seconds with ten thousand
     work orders, which rules out loading the queue and filtering in the browser.
+
+    :param principal: whoever is asking, so a supervisor whose token carries an ámbito claim
+        (área, zona, agencia or contratista — RF-002) never receives a row outside it. This is
+        the enforcement, not the optional `area` query parameter below it: that one narrows a
+        corporate account's view on request, and narrows nothing a scoped account could not
+        already see.
     """
     statement = (
         select(WorkOrder)
@@ -73,19 +82,23 @@ def review_queue(
         # Por el formulario y no por el nombre del tipo de trabajo: `work_type.startswith(area)`
         # parecía correcto y no devolvía nada para casi ninguna área (ver `codes_for_area`).
         statement = statement.where(WorkOrder.form_code.in_(codes_for_area(area)))
+    if principal is not None:
+        scope = work_order_scope(principal)
+        if scope is not None:
+            statement = statement.where(scope)
     return list(session.scalars(statement))
 
 
-def queue_size(session: Session, unit: BusinessUnit) -> int:
-    return int(
-        session.scalar(
-            select(func.count(WorkOrder.id)).where(
-                WorkOrder.business_unit_id == unit.id,
-                WorkOrder.state.in_([WorkOrderState.SYNCED, WorkOrderState.IN_REVIEW]),
-            )
-        )
-        or 0
+def queue_size(session: Session, unit: BusinessUnit, *, principal: Principal | None = None) -> int:
+    statement = select(func.count(WorkOrder.id)).where(
+        WorkOrder.business_unit_id == unit.id,
+        WorkOrder.state.in_([WorkOrderState.SYNCED, WorkOrderState.IN_REVIEW]),
     )
+    if principal is not None:
+        scope = work_order_scope(principal)
+        if scope is not None:
+            statement = statement.where(scope)
+    return int(session.scalar(statement) or 0)
 
 
 def approval_blockers(

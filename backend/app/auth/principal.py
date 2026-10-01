@@ -49,6 +49,18 @@ class Principal:
     #: Business-unit codes this person may act in, from the token. Empty means "every unit",
     #: which only the corporate administrators get.
     business_units: frozenset[str] = field(default_factory=frozenset)
+    #: Work areas (SRS 1.3: sso, operacion, mantenimiento, apg, ingenieria) this person is
+    #: scoped to. Empty means "every area" — the same convention as `business_units`, and the
+    #: one most accounts get: a technician's token does not usually carry this claim at all.
+    areas: frozenset[str] = field(default_factory=frozenset)
+    #: Zone codes (RF-152) this person is scoped to. Empty means "every zone of their units".
+    zones: frozenset[str] = field(default_factory=frozenset)
+    #: Agency codes this person is scoped to. Empty means "every agency of their units".
+    agencies: frozenset[str] = field(default_factory=frozenset)
+    #: A contractor's own code, when this account belongs to a third-party contractor rather
+    #: than CNEL staff. Unlike the other four, this one narrows by *presence*: null means staff,
+    #: who see in-house and contracted work alike, and a contractor sees only their own crews'.
+    contractor: str | None = None
     #: The token's `jti`, so one request can be tied to one token in an audit.
     token_id: str | None = None
 
@@ -71,6 +83,40 @@ class Principal:
     def may_act_in(self, unit_code: str) -> bool:
         """Whether this person may act in a business unit (ADR-009)."""
         return self.is_corporate or unit_code.upper() in {u.upper() for u in self.business_units}
+
+    def may_see(
+        self,
+        *,
+        area: str | None = None,
+        zone: str | None = None,
+        agency: str | None = None,
+        contractor: str | None = None,
+    ) -> bool:
+        """Whether a record with these attributes is inside this person's ámbito (RF-002).
+
+        Called with whatever the record actually has; a dimension the record does not carry
+        (`None`) is not restricted by it — a work order with no zone is not hidden from a
+        zone-scoped supervisor, it is just not narrowed by that one axis.
+
+        Corporate roles bypass every dimension, the same as `may_act_in`: an auditor's whole
+        point is to see across ámbitos, not to be the one person every scope excludes.
+        """
+        if self.is_corporate:
+            return True
+        if self.areas and area is not None and area.lower() not in {a.lower() for a in self.areas}:
+            return False
+        if self.zones and zone is not None and zone.upper() not in {z.upper() for z in self.zones}:
+            return False
+        if (
+            self.agencies
+            and agency is not None
+            and agency.upper() not in {a.upper() for a in self.agencies}
+        ):
+            return False
+        # Contractor is the one dimension that narrows by presence: a contractor account is
+        # never corporate-wide, so it only ever sees its own crews' work, in-house work included
+        # or not depending on whether the record names a contractor at all.
+        return self.contractor is None or (contractor or "").upper() == self.contractor.upper()
 
     def describe(self) -> str:
         """For a log line or an error message. Never the raw token."""

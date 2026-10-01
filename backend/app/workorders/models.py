@@ -103,6 +103,11 @@ class Crew(Base):
     #: MV, LV, live-line work, APG, height — drives dispatch suggestions.
     competencies: Mapped[list[str]] = mapped_column(ARRAY(String(32)), nullable=False, default=list)
     zone: Mapped[str | None] = mapped_column(String(64))
+    #: The agency this crew reports to, free text like `zone` (RF-002's ámbito).
+    agency: Mapped[str | None] = mapped_column(String(64))
+    #: Null for an in-house crew. Set to the contractor's own code for a third-party crew, which
+    #: is what lets that contractor's account see its own work and nobody else's (RF-002).
+    contractor: Mapped[str | None] = mapped_column(String(64))
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     #: Who created or last edited the roster (RF-005's «historial de cambios», together with the
@@ -157,6 +162,8 @@ class WorkOrder(Base):
     )
     feeder_code: Mapped[str | None] = mapped_column(String(32))
     zone: Mapped[str | None] = mapped_column(String(64))
+    #: The agency this order belongs to, free text like `zone` (RF-002's ámbito).
+    agency: Mapped[str | None] = mapped_column(String(64))
 
     sla_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

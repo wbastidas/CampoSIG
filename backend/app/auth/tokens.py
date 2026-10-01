@@ -44,6 +44,12 @@ JWKS_MIN_REFRESH_SECONDS = 30
 #: either; both are accepted so the mapper can be named the obvious thing.
 UNIT_CLAIMS = ("business_units", "unidades_negocio")
 
+#: The same two-name convention, for RF-002's other three ámbito dimensions.
+AREA_CLAIMS = ("areas", "areas_trabajo")
+ZONE_CLAIMS = ("zones", "zonas")
+AGENCY_CLAIMS = ("agencies", "agencias")
+CONTRACTOR_CLAIMS = ("contractor", "contratista")
+
 
 class KeySet:
     """The issuer's public keys, cached with a TTL and a rate-limited refresh."""
@@ -163,19 +169,32 @@ def principal_from_claims(claims: dict[str, Any]) -> Principal:
     for client in claims.get("resource_access", {}).values():
         resource_roles.extend(client.get("roles", []))
 
-    units: list[str] = []
-    for claim in UNIT_CLAIMS:
+    def _multi(claim_names: tuple[str, ...]) -> list[str]:
+        found: list[str] = []
+        for claim in claim_names:
+            value = claims.get(claim)
+            if isinstance(value, str):
+                found.extend(part.strip() for part in value.split(",") if part.strip())
+            elif isinstance(value, list):
+                found.extend(str(part).strip() for part in value if str(part).strip())
+        return found
+
+    contractor: str | None = None
+    for claim in CONTRACTOR_CLAIMS:
         value = claims.get(claim)
-        if isinstance(value, str):
-            units.extend(part.strip() for part in value.split(",") if part.strip())
-        elif isinstance(value, list):
-            units.extend(str(part).strip() for part in value if str(part).strip())
+        if isinstance(value, str) and value.strip():
+            contractor = value.strip()
+            break
 
     return Principal(
         subject=str(subject),
         username=claims.get("preferred_username"),
         display_name=claims.get("name"),
         roles=frozenset(str(role) for role in [*realm_roles, *resource_roles]),
-        business_units=frozenset(units),
+        business_units=frozenset(_multi(UNIT_CLAIMS)),
+        areas=frozenset(_multi(AREA_CLAIMS)),
+        zones=frozenset(_multi(ZONE_CLAIMS)),
+        agencies=frozenset(_multi(AGENCY_CLAIMS)),
+        contractor=contractor,
         token_id=claims.get("jti"),
     )

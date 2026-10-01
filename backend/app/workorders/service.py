@@ -20,6 +20,8 @@ from sqlalchemy.sql.elements import Case
 
 from app.audit import service as audit
 from app.audit.models import ActorKind, EventKind
+from app.auth.principal import Principal
+from app.auth.scope import work_order_scope
 from app.forms import registry as form_registry
 from app.forms.catalog import codes_for_area, get_definition
 from app.org.models import BusinessUnit
@@ -499,6 +501,7 @@ def in_bounding_box(
     priorities: list[str] | None = None,
     area: str | None = None,
     zone: str | None = None,
+    principal: Principal | None = None,
     limit: int = 1000,
 ) -> list[WorkOrder]:
     """Work orders inside a map viewport — the planner's and the dispatcher's map (RF-020, RF-310).
@@ -508,6 +511,10 @@ def in_bounding_box(
 
     `area` is resolved through the **forms** of that area and not through the work type's name (see
     `forms.catalog.codes_for_area`), so «alumbrado» finds `atencion_luminaria` instead of nothing.
+
+    :param principal: whoever is asking. Unlike `area`/`zone` above, which only narrow a view on
+        request, this is the ámbito enforcement (RF-002): a scoped planner never receives a pin
+        outside their own área, zona, agencia or contratista, requested or not.
     """
     envelope = ST_MakeEnvelope(west, south, east, north, STORAGE_SRID)
     statement = (
@@ -532,11 +539,22 @@ def in_bounding_box(
         # Una lista vacía —un área que no existe— no se convierte en «sin filtro»: un error de
         # dedo ensancharía la consulta en silencio, que es peor que no devolver nada.
         statement = statement.where(WorkOrder.form_code.in_(codes_for_area(area)))
+    if principal is not None:
+        scope = work_order_scope(principal)
+        if scope is not None:
+            statement = statement.where(scope)
     return list(session.scalars(statement))
 
 
 def assignable_in_box(
-    session: Session, unit: BusinessUnit, *, west: float, south: float, east: float, north: float
+    session: Session,
+    unit: BusinessUnit,
+    *,
+    west: float,
+    south: float,
+    east: float,
+    north: float,
+    principal: Principal | None = None,
 ) -> list[WorkOrder]:
     """What the planner may lasso and assign in one gesture."""
     return in_bounding_box(
@@ -547,6 +565,7 @@ def assignable_in_box(
         east=east,
         north=north,
         states=[WorkOrderState.PLANNED, WorkOrderState.ASSIGNED],
+        principal=principal,
     )
 
 

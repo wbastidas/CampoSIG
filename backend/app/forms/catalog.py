@@ -191,6 +191,18 @@ def codes_for_area(area: str) -> list[str]:
     )
 
 
+def area_of_form_code(form_code: str) -> str | None:
+    """The area that answers for one form code — `codes_for_area`'s inverse, for checking a
+    single already-fetched work order's ámbito (RF-002) without a second query.
+
+    `None` for a code the catalogue does not declare, which a caller must treat as «cannot be
+    narrowed by area» rather than «belongs to no area»: an orphaned or legacy code is not evidence
+    that nobody should see the order, only that area is not the axis to judge it on.
+    """
+    definition = load_definitions().get(form_code)
+    return str(definition.form.area) if definition is not None else None
+
+
 def validate_catalog() -> list[str]:
     """Problems a functional administrator must fix. Empty means the catalogue is sound."""
     problems: list[str] = []

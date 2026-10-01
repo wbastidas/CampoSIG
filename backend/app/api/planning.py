@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.assignment.suggest import TOP_N, suggest_crews
 from app.auth.dependencies import require_roles, unit_scope_query
 from app.auth.principal import Role
+from app.forms.catalog import area_of_form_code
 from app.infra.database import get_session
 from app.org.service import UnknownBusinessUnitError, get_business_unit_by_code
 from app.workorders import fronts
@@ -118,6 +119,7 @@ def work_orders_geojson(
     area: Annotated[str | None, Query()] = None,
     zone: Annotated[str | None, Query()] = None,
     limit: int = MAX_MAP_FEATURES,
+    principal: Annotated[Any, Depends(unit_scope_query)] = None,
 ) -> dict[str, Any]:
     """A FeatureCollection MapLibre can render without transformation.
 
@@ -139,6 +141,10 @@ def work_orders_geojson(
         priorities=priorities,
         area=area,
         zone=zone,
+        # El ámbito de RF-002: lo que un planificador o supervisor con área, zona, agencia o
+        # contratista en su token puede ver, no lo que pidió — eso es lo que hacen `area`/`zone`
+        # arriba, y narrowing nada que un ámbito restringido ya no deje ver.
+        principal=principal,
         limit=min(limit, MAX_MAP_FEATURES),
     )
 
@@ -290,12 +296,24 @@ def assign_one(
     summary="Historial de custodia de una OT",
 )
 def get_custody(
-    work_order_id: uuid.UUID, session: SessionDep, business_unit: str
+    work_order_id: uuid.UUID,
+    session: SessionDep,
+    business_unit: str,
+    principal: Annotated[Any, Depends(unit_scope_query)] = None,
 ) -> list[CustodyEntry]:
     """RF-324: who held it, on which device, since when and why."""
     unit = _unit(session, business_unit)
     order = session.get(WorkOrder, work_order_id)
     if order is None or order.business_unit_id != unit.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "la OT no existe en esta unidad")
+    if not principal.may_see(
+        area=area_of_form_code(order.form_code),
+        zone=order.zone,
+        agency=order.agency,
+        contractor=order.crew.contractor if order.crew else None,
+    ):
+        # Mismo ámbito que el mapa y la revisión (RF-002): un id directo no es una vía para
+        # esquivar lo que una lista ya no muestra.
         raise HTTPException(status.HTTP_404_NOT_FOUND, "la OT no existe en esta unidad")
     return [
         CustodyEntry(

@@ -34,10 +34,14 @@ def _unit(session: Session, code: str):  # type: ignore[no-untyped-def]
 
 
 @router.get("/units/{unit_code}/board")
-def board(session: SessionDep, unit_code: str) -> list[dict[str, Any]]:
+def board(
+    session: SessionDep,
+    unit_code: str,
+    principal: Annotated[Any, Depends(unit_scope)] = None,
+) -> list[dict[str, Any]]:
     """Per-crew dispatch state: assigned, delivered, stale, in progress, returned."""
     unit = _unit(session, unit_code)
-    return [row.as_dict() for row in dispatch_board(session, unit)]
+    return [row.as_dict() for row in dispatch_board(session, unit, principal=principal)]
 
 
 @router.get("/units/{unit_code}/devices")
@@ -62,6 +66,7 @@ def crew_positions(
     session: SessionDep,
     unit_code: str,
     zone: Annotated[str | None, Query()] = None,
+    principal: Annotated[Any, Depends(require_roles(*DISPATCHERS))] = None,
 ) -> dict[str, Any]:
     """Las posiciones como GeoJSON, con su edad y con lo que no se puede afirmar de ellas.
 
@@ -71,7 +76,7 @@ def crew_positions(
     parroquia equivocada.
     """
     unit = _unit(session, unit_code)
-    found = positions.crew_positions(session, unit, zone=zone)
+    found = positions.crew_positions(session, unit, zone=zone, principal=principal)
     return {
         "type": "FeatureCollection",
         "features": [row.as_feature() for row in found],

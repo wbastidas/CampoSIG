@@ -1180,6 +1180,52 @@ dejar escribir a un planificador— y las ocho atrapadas.
 
 ---
 
+### RF-002: el ámbito que faltaba — área, zona, agencia y contratista
+
+El criterio de aceptación es literal: «un supervisor de APG de la zona Norte no ve OT de
+Mantenimiento de la zona Sur». Esa frase era falsa hasta este incremento — `Principal` solo
+escapaba por unidad de negocio (ADR-009); cualquier rol dentro de una unidad veía toda área, zona,
+agencia y contratista de esa unidad.
+
+**Área y zona ya existían como dato; agencia y contratista no.** Área se resuelve contra el
+catálogo de formularios (`forms.catalog.codes_for_area`, ya usado por RF-022 y la bandeja de
+revisión) y zona ya es una columna de `work_order` y `crew` (RF-152). Agencia y contratista son
+columnas nuevas, texto libre como `zone`: `crew.agency`, `work_order.agency` y `crew.contractor`
+(null para una cuadrilla propia).
+
+**La regla se escribe una vez, en Python puro (`Principal.may_see`), y se traduce a SQL una vez**
+(`auth.scope.work_order_scope` / `crew_scope`), para no tener la misma decisión en dos sitios que
+puedan desalinearse. Dos propiedades de la regla, deliberadas:
+
+- **Un registro sin el dato no queda excluido por ese eje.** Una OT sin zona no se esconde de un
+  supervisor con ámbito de zona — simplemente ese eje no tiene nada que decir sobre ella. El
+  contratista es la excepción: una cuenta de contratista solo ve el trabajo de sus propias
+  cuadrillas, así que una OT sin cuadrilla asignada, o con una cuadrilla propia, responde «no es
+  mía».
+- **Los ejes se combinan con Y, no con O.** Alguien con área y zona en su token necesita las dos
+  para ver un registro, no cualquiera de las dos — el ámbito más restrictivo que esa persona
+  declare, no el más permisivo.
+
+**Cableado en los tres lugares que la propia frase del SRS describe**: la bandeja de revisión
+(`review_queue`/`queue_size`, y el `_order()` de una OT por id — un id directo no es una forma de
+esquivar lo que una lista ya no muestra), el mapa de planificación (`in_bounding_box`) y el
+tablero y mapa de despacho (`dispatch_board`, `crew_positions`). Nueve mutaciones sembradas entre
+la regla, su traducción a SQL y el cableado de cada endpoint, las nueve atrapadas — la primera
+tanda dejó pasar una (quitar el filtro de contratista de `crew_scope` sobrevivió porque no había
+ninguna prueba del tablero de despacho con ámbito de contratista, solo con zona); se escribió la
+prueba que faltaba y la mutación quedó atrapada.
+
+**Lo que queda fuera, a propósito, documentado y no silenciado.** La escritura — asignar una OT
+(`assign_one`, `assign_selection`) — no quedó gateada por ámbito: si un planificador con área
+APG puede asignar una OT de Mantenimiento es una decisión de producto, no una que este incremento
+deba tomar por su cuenta. Tampoco quedaron gateados los adjuntos, las URLs firmadas, los
+descargos ni las rutas sugeridas, que leen una OT por id con su propio `_order()` o equivalente;
+cerrarlos es mecánico una vez se decide la pregunta de la escritura, y se deja para cuando esa
+pregunta tenga respuesta. El tablero operativo y los demás paneles de analítica (RF-130 a RF-134)
+tampoco filtran por ámbito todavía.
+
+---
+
 ### RF-024: la consignación, su ventana y el permiso que no se habilita sin número
 
 El criterio es una negativa: «no se habilita el formulario F-TR-02 sin un N.º de consignación». Y el

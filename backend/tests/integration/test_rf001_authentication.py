@@ -22,6 +22,7 @@ from fastapi.testclient import TestClient
 from jose import jwk, jwt
 from sqlalchemy.orm import Session
 
+from app.auth.dependencies import _dev_principal
 from app.auth.principal import Principal, Role
 from app.auth.tokens import AuthenticationError, KeySet, principal_from_claims
 from app.auth.tokens import key_set as live_key_set
@@ -284,6 +285,21 @@ class TestTheDevelopmentEscapeHatch:
             queue_url("GYE"), headers={"X-SIGEC-Dev-Identity": "ajeno:supervisor|MAN"}
         )
         assert answer.status_code == 403
+
+    def test_the_extended_format_carries_the_other_three_ambito_dimensions(self) -> None:
+        """`usuario:rol|UNIDAD|AREA|ZONA|AGENCIA|CONTRATISTA` (RF-002)."""
+        principal = _dev_principal("supervisor.apg:supervisor|GYE|apg|norte|AG-01|ACME")
+        assert principal.business_units == frozenset({"GYE"})
+        assert principal.areas == frozenset({"apg"})
+        assert principal.zones == frozenset({"norte"})
+        assert principal.agencies == frozenset({"AG-01"})
+        assert principal.contractor == "ACME"
+
+    def test_every_segment_past_roles_is_optional(self) -> None:
+        """A dev identity with just a unit still works — the common case."""
+        principal = _dev_principal("tecnico.a:tecnico|GYE")
+        assert principal.areas == frozenset()
+        assert principal.contractor is None
 
     def test_a_bearer_token_wins_over_the_dev_header(
         self, client, unit, signing_key, monkeypatch
