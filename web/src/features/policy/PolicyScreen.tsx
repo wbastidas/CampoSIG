@@ -32,6 +32,7 @@ import {
   FIELD_LABELS,
   hasChanges,
   isBoolean,
+  isText,
   problemsIn,
   rowFor,
   scopeHeadline,
@@ -232,15 +233,16 @@ export function PolicyScreen({ businessUnit, mayEdit = true }: PolicyScreenProps
                     <label htmlFor={`pol-${entry.field}`}>{entry.label}</label>
                     <input
                       id={`pol-${entry.field}`}
-                      type="number"
+                      type={isText(entry.field) ? 'text' : 'number'}
                       value={current === null ? '' : String(current)}
-                      onChange={(event) =>
+                      onChange={(event) => {
+                        const raw = event.target.value;
                         setEdited({
                           ...edited,
                           [entry.field]:
-                            event.target.value === '' ? null : Number(event.target.value),
-                        })
-                      }
+                            raw === '' ? null : isText(entry.field) ? raw.trim() : Number(raw),
+                        });
+                      }}
                     />
                   </>
                 )}

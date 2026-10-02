@@ -15,6 +15,7 @@ import {
   effectiveRows,
   hasChanges,
   isBoolean,
+  isText,
   labelOf,
   problemsIn,
   rowFor,
@@ -132,7 +133,7 @@ describe('effectiveRows', () => {
   });
 
   it('trae una fila por campo, en el orden de la pantalla', () => {
-    expect(effectiveRows(effective())).toHaveLength(10);
+    expect(effectiveRows(effective())).toHaveLength(15);
     expect(effectiveRows(effective())[0]?.field).toBe('store_audio');
   });
 
@@ -187,5 +188,39 @@ describe('etiquetas y ámbito', () => {
   it('el encabezado dice dónde va a caer el guardado', () => {
     expect(scopeHeadline(null)).toContain('toda la unidad');
     expect(scopeHeadline('NORTE')).toContain('hereda de la unidad');
+  });
+});
+
+describe('RF-107: la jornada y el reporte de posición', () => {
+  it('acepta una jornada bien escrita, incluido el 24:00 de cierre', () => {
+    expect(
+      problemsIn({
+        workday_start: '07:00',
+        workday_end: '24:00',
+        workdays: '1,2,3,4,5,6',
+        position_report_minutes: 15,
+      }),
+    ).toEqual([]);
+  });
+
+  it('rechaza una hora que no es HH:MM', () => {
+    expect(problemsIn({ workday_start: '7:00' })[0]).toContain('HH:MM');
+    expect(problemsIn({ workday_start: '24:00' })).toHaveLength(1);
+  });
+
+  it('rechaza días fuera de 1 a 7 y una lista vacía', () => {
+    expect(problemsIn({ workdays: '0,1' })).toHaveLength(1);
+    expect(problemsIn({ workdays: ' , ' })).toHaveLength(1);
+  });
+
+  it('el intervalo va de 1 a 240 minutos', () => {
+    expect(problemsIn({ position_report_minutes: 0 })).toHaveLength(1);
+    expect(problemsIn({ position_report_minutes: 241 })).toHaveLength(1);
+  });
+
+  it('los campos de texto no son números ni sí/no', () => {
+    expect(isText('workdays')).toBe(true);
+    expect(isText('position_report_minutes')).toBe(false);
+    expect(isBoolean('require_position_consent')).toBe(true);
   });
 });

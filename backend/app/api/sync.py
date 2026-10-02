@@ -300,6 +300,10 @@ class PositionIn(BaseModel):
     #: El reloj del teléfono. Es la **edad** del punto, que es lo que decide si se puede despachar
     #: sobre él: sin ella, una posición de hace cuatro horas se dibuja igual que una de hace uno.
     reported_at: datetime | None = None
+    #: La zona cuyo paquete tiene el teléfono, para juzgar el reporte con la misma política que
+    #: el teléfono recibió (RF-107): si una zona alarga la jornada, el servidor no puede rechazar
+    #: lo que esa zona mandó enviar.
+    zone_code: str | None = Field(default=None, max_length=64)
 
 
 @router.post(
@@ -321,6 +325,24 @@ def report_position(
     """
     unit = _unit(session, unit_code)
     device = _device(session, unit, principal, payload.device_key)
+    # RF-107: sin consentimiento o fuera de horario no se guarda. Un 200 con el motivo y no un
+    # error: no hay nada que reintentar, y un 4xx dejaría la posición dando vueltas en la bandeja
+    # del teléfono hasta que alguien la mire.
+    refused = positions.refusal(
+        session,
+        unit,
+        device,
+        subject=principal.subject,
+        at=payload.reported_at or datetime.now(UTC),
+        zone_code=payload.zone_code,
+    )
+    if refused is not None:
+        return {
+            "device_key": device.device_key,
+            "stored": False,
+            "reason": refused,
+            "detail": positions.REFUSAL_MESSAGES[refused],
+        }
     try:
         position = positions.report(
             session,
@@ -336,8 +358,42 @@ def report_position(
     session.commit()
     return {
         "device_key": device.device_key,
+        "stored": True,
         "reported_at": position.reported_at.isoformat(),
         "received_at": position.received_at.isoformat(),
+    }
+
+
+class PositionConsentIn(BaseModel):
+    """La persona acepta, o retira, que este teléfono reporte su posición (RF-107)."""
+
+    device_key: str = Field(min_length=8, max_length=128)
+    granted: bool
+
+
+@router.post(
+    "/units/{unit_code}/position-consent",
+    dependencies=[Depends(require_roles(*FIELD_ROLES))],
+    summary="Aceptar o retirar el reporte de posición (RF-107)",
+)
+def position_consent(
+    unit_code: str,
+    payload: PositionConsentIn,
+    session: SessionDep,
+    principal: Annotated[Any, Depends(require_roles(*FIELD_ROLES))] = None,
+) -> dict[str, Any]:
+    """Solo la persona del token, sobre su propio teléfono: nadie consiente por otro.
+
+    Retirarlo borra también la posición guardada. Cada cambio queda en la bitácora.
+    """
+    unit = _unit(session, unit_code)
+    device = _device(session, unit, principal, payload.device_key)
+    positions.set_consent(session, unit, device, subject=principal.subject, granted=payload.granted)
+    session.commit()
+    return {
+        "device_key": device.device_key,
+        "granted": positions.has_consent(device, principal.subject),
+        "since": device.position_consent_at.isoformat() if device.position_consent_at else None,
     }
 
 

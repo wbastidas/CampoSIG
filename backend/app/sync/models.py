@@ -77,6 +77,14 @@ class Device(Base):
         UUID(as_uuid=True), ForeignKey("crew.id", ondelete="SET NULL")
     )
 
+    #: Who accepted that this phone reports its position, and when (RF-107). The consent is the
+    #: person's and not the phone's: it holds only while that same person is the one signed in, so
+    #: a shared phone handed to a colleague stops reporting until the colleague accepts too. Every
+    #: grant and every revocation is on the audit trail; these two columns are only the current
+    #: state.
+    position_consent_sub: Mapped[str | None] = mapped_column(String(255))
+    position_consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     model: Mapped[str | None] = mapped_column(String(128))
     android_version: Mapped[str | None] = mapped_column(String(32))
     app_version: Mapped[str | None] = mapped_column(String(32))

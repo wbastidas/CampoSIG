@@ -3,7 +3,7 @@
  *
  * The screen's whole job is to make two things impossible to get wrong.
  *
- * 1. **Saying nothing must not mean saying null.** The form shows ten fields; a save must carry
+ * 1. **Saying nothing must not mean saying null.** The form shows fifteen fields; a save must carry
  *    only the ones the person touched. So the editing state records what changed, not what is
  *    displayed, and `changesOf` is what goes over the wire.
  * 2. **An inherited value must not look like a decision.** A field showing «1 foto» that came from
@@ -50,6 +50,32 @@ export const FIELD_LABELS: { field: string; label: string; help: string }[] = [
     label: 'Reducir la foto fuera de Wi-Fi',
     help: '',
   },
+  {
+    field: 'require_position_consent',
+    label: 'Pedir consentimiento para reportar la posición',
+    help:
+      'La ubicación de una persona es un dato personal (LOPDP). Retirarlo borra la última posición.',
+  },
+  {
+    field: 'position_report_minutes',
+    label: 'Reportar la posición cada (minutos)',
+    help: 'De 1 a 240, solo dentro de la jornada.',
+  },
+  {
+    field: 'workday_start',
+    label: 'Inicio de la jornada (HH:MM)',
+    help: 'Hora de Ecuador. Fuera de la jornada no se reporta ni se guarda la posición.',
+  },
+  {
+    field: 'workday_end',
+    label: 'Fin de la jornada (HH:MM)',
+    help: 'Antes del inicio: turno nocturno que cruza la medianoche. 24:00 cierra el día.',
+  },
+  {
+    field: 'workdays',
+    label: 'Días laborables',
+    help: 'Del 1 (lunes) al 7 (domingo), separados por comas: 1,2,3,4,5.',
+  },
 ];
 
 /** Which fields are booleans, so the screen renders a checkbox and not a number. */
@@ -58,7 +84,16 @@ export const BOOLEAN_FIELDS = [
   'require_audio_consent',
   'upload_on_metered',
   'downscale_on_metered',
+  'require_position_consent',
 ];
+
+/** Which fields are text (a clock time, a list of days), so the screen does not turn them into a
+ *  number. */
+export const TEXT_FIELDS = ['workday_start', 'workday_end', 'workdays'];
+
+export function isText(field: string): boolean {
+  return TEXT_FIELDS.includes(field);
+}
 
 export function isBoolean(field: string): boolean {
   return BOOLEAN_FIELDS.includes(field);
@@ -162,6 +197,28 @@ export function problemsIn(values: PolicyValues): string[] {
   const photos = values.min_photos;
   if (typeof photos === 'number' && photos < 0) {
     problems.push('«Fotos mínimas por OT» no puede ser negativo.');
+  }
+  const minutes = values.position_report_minutes;
+  if (typeof minutes === 'number' && (minutes < 1 || minutes > 240)) {
+    problems.push('«Reportar la posición cada (minutos)» va de 1 a 240.');
+  }
+  for (const field of ['workday_start', 'workday_end']) {
+    const value = values[field];
+    const clock = /^([01]\d|2[0-3]):[0-5]\d$/;
+    const valid =
+      typeof value !== 'string' ||
+      clock.test(value) ||
+      (field === 'workday_end' && value === '24:00');
+    if (!valid) problems.push(`«${labelOf(field)}» es una hora HH:MM, por ejemplo 07:30.`);
+  }
+  const days = values.workdays;
+  if (typeof days === 'string') {
+    const parts = days.split(',').map((part) => part.trim()).filter((part) => part !== '');
+    if (parts.length === 0 || parts.some((part) => !/^[1-7]$/.test(part))) {
+      problems.push(
+        '«Días laborables» son números del 1 (lunes) al 7 (domingo), separados por comas.',
+      );
+    }
   }
   return problems;
 }

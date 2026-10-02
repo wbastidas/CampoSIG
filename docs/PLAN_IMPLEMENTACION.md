@@ -1189,6 +1189,44 @@ las nueve atrapadas.
 **Lo que queda fuera.** El cliente HTTP del móvil todavía no existe (el SDK de Android no está en
 este entorno); cuando exista, `withdrawn` alimenta `ConflictResolver` tal como llega.
 
+### RF-107: cuándo puede un teléfono reportar dónde está
+
+RF-020 construyó la posición y guardó solo la última. Lo que no tenía era ninguna regla sobre
+**cuándo**: un punto enviado un domingo a las 23:00 se guardaba igual que uno de un martes a las
+10:00, y nadie había aceptado nada. RF-107 pide «cada N minutos durante la jornada, parámetro, con
+consentimiento y solo en horario laboral», y que se respete el horario y se pueda auditar.
+
+**Las reglas son política de captura (RF-151), no un módulo aparte.** Cinco campos nuevos —
+`position_report_minutes` (1 a 240), `workday_start`/`workday_end` («HH:MM»), `workdays` (días ISO,
+«1,2,3,4,5») y `require_position_consent` — con la misma herencia unidad → zona, la misma bitácora
+de cambios y el mismo viaje al teléfono dentro del manifiesto del paquete. Así el servidor juzga cada
+reporte con **los mismos valores** que recibió el teléfono, zona incluida (el teléfono dice en qué
+zona está su paquete): si una zona rural alarga la jornada, el servidor no rechaza lo que esa zona
+mandó enviar. Los valores por omisión son la lectura conservadora: lunes a viernes de 07:00 a 17:00,
+cada 15 minutos, con consentimiento.
+
+**La jornada se juzga en hora de Ecuador**, no en UTC ni en la del reloj del teléfono: CNEL atiende
+solo el continente (Galápagos es otra distribuidora), así que `America/Guayaquil` es todo el país en
+el que trabaja la plataforma. Un fin anterior al inicio es un turno nocturno que cruza la medianoche
+y pertenece al día en que **empezó**; «24:00» cierra el día.
+
+**El consentimiento es de la persona, no del teléfono.** `device.position_consent_sub` dice quién
+aceptó; si otra persona inicia sesión en el mismo teléfono compartido, no reporta hasta que acepte
+ella. Retirar el consentimiento borra además la posición guardada — «no quiero que sepan dónde
+estoy» no se cumple con un punto que sigue en el mapa el resto del día. Cada aceptación y cada retiro
+queda en la bitácora (`consentimiento_posicion`), consultable por dispositivo en
+`/audit/.../trail?device_key=`: eso es lo que hace verdad el «se puede auditar».
+
+**Un reporte rechazado responde 200 con `stored: false` y el motivo** (`sin_consentimiento` o
+`fuera_de_horario`), no un error: no hay nada que reintentar, y un 4xx dejaría la posición dando
+vueltas en la bandeja de salida del teléfono. Diecisiete mutaciones (zona horaria, día, límites de
+la ventana, turno nocturno, validaciones, consentimiento de otra persona, la zona del teléfono, el
+borrado al retirar), las diecisiete atrapadas.
+
+**Lo que queda del lado del móvil.** El intervalo lo cumple el teléfono: el servidor solo guarda la
+última posición, así que reportar más seguido no deja rastro, solo gasta batería. La pantalla de
+consentimiento y el temporizador viven en la app Android, que este entorno no puede compilar.
+
 ### RF-005: la gestión de cuadrillas que el modelo ya prometía y la API no tenía
 
 El modelo `Crew` decía en su propio docstring «sus integrantes, su jefe...», y no tenía columna de

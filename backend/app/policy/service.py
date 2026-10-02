@@ -18,9 +18,12 @@ Two things this module insists on:
 
 from __future__ import annotations
 
+import re
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -48,6 +51,11 @@ FIELDS = (
     "upload_on_metered",
     "metered_upload_limit_mb",
     "downscale_on_metered",
+    "position_report_minutes",
+    "workday_start",
+    "workday_end",
+    "workdays",
+    "require_position_consent",
 )
 
 #: What holds when nobody has decided. Chosen to be the conservative reading of each requirement
@@ -65,7 +73,24 @@ DEFAULTS: dict[str, Any] = {
     "upload_on_metered": False,
     "metered_upload_limit_mb": None,
     "downscale_on_metered": True,
+    # RF-107. The conservative reading again: a weekday office day, consent asked, and a report
+    # every quarter of an hour — often enough to dispatch on, not so often that it reads as a trail.
+    "position_report_minutes": 15,
+    "workday_start": "07:00",
+    "workday_end": "17:00",
+    "workdays": "1,2,3,4,5",
+    "require_position_consent": True,
 }
+
+#: The working day is Ecuador's. CNEL serves the continent only (Galápagos is another distributor),
+#: so one time zone is the whole country this platform works in, and a phone's own clock setting is
+#: not what decides whether somebody is at work.
+WORKDAY_TIMEZONE = ZoneInfo("America/Guayaquil")
+
+#: Bounds for the reporting interval. Under a minute is tracking, not dispatching; over four hours
+#: is longer than a position stays useful (`positions.STALE_AFTER` is two).
+MIN_REPORT_MINUTES = 1
+MAX_REPORT_MINUTES = 240
 
 #: Fields whose value must be a positive integer when set. A retention of zero days is not a policy,
 #: it is a deletion rule, and it would arrive as a typo rather than as a decision.
@@ -75,6 +100,8 @@ POSITIVE_INTEGER_FIELDS = (
     "evidence_retention_days",
     "metered_upload_limit_mb",
 )
+
+_CLOCK = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
 class PolicyError(Exception):
@@ -201,6 +228,73 @@ def _validate(changes: dict[str, Any]) -> None:
     photos = changes.get("min_photos")
     if photos is not None and (not isinstance(photos, int) or photos < 0):
         raise PolicyError(f"«min_photos» no puede ser negativo; llegó {photos!r}")
+    minutes = changes.get("position_report_minutes")
+    if minutes is not None and (
+        not isinstance(minutes, int) or not MIN_REPORT_MINUTES <= minutes <= MAX_REPORT_MINUTES
+    ):
+        raise PolicyError(
+            f"«position_report_minutes» va de {MIN_REPORT_MINUTES} a {MAX_REPORT_MINUTES}; "
+            f"llegó {minutes!r}"
+        )
+    for field in ("workday_start", "workday_end"):
+        given = changes.get(field)
+        if given is not None and not _is_clock(given, allow_midnight_end=field == "workday_end"):
+            raise PolicyError(f"«{field}» es una hora «HH:MM»; llegó {given!r}")
+    start, end = changes.get("workday_start"), changes.get("workday_end")
+    if start is not None and end is not None and start == end:
+        raise PolicyError("la jornada no puede empezar y terminar a la misma hora")
+    days = changes.get("workdays")
+    if days is not None:
+        parse_workdays(days)
+
+
+def _is_clock(value: Any, *, allow_midnight_end: bool = False) -> bool:
+    if not isinstance(value, str):
+        return False
+    return bool(_CLOCK.match(value)) or (allow_midnight_end and value == "24:00")
+
+
+def parse_workdays(value: str) -> frozenset[int]:
+    """«1,2,3,4,5» → {1, 2, 3, 4, 5}, ISO weekdays (1 is Monday).
+
+    :raises PolicyError: on anything else, including an empty set — a policy with no working day is
+        «never report», and that is said with `require_position_consent` or not at all, never by
+        accident through a typo.
+    """
+    try:
+        days = frozenset(int(part) for part in value.split(",") if part.strip())
+    except (AttributeError, ValueError) as exc:
+        raise PolicyError(f"«workdays» son días ISO separados por comas; llegó {value!r}") from exc
+    if not days or not days <= set(range(1, 8)):
+        raise PolicyError(f"«workdays» son días del 1 (lunes) al 7 (domingo); llegó {value!r}")
+    return days
+
+
+def _minutes(clock: str) -> int:
+    hours, minutes = clock.split(":")
+    return int(hours) * 60 + int(minutes)
+
+
+def within_workday(policy: EffectivePolicy, moment: datetime) -> bool:
+    """Whether this moment falls inside the policy's working day, in Ecuador's time (RF-107).
+
+    A window whose end is before its start crosses midnight — a night shift — and belongs to the
+    day it **started** on: Friday's 22:00 to 06:00 covers the small hours of Saturday, and a Monday
+    to Friday crew on that shift does report then.
+    """
+    local = moment.astimezone(WORKDAY_TIMEZONE)
+    days = parse_workdays(policy.value("workdays"))
+    start = _minutes(policy.value("workday_start"))
+    end = _minutes(policy.value("workday_end"))
+    now = local.hour * 60 + local.minute
+    if start < end:
+        return local.isoweekday() in days and start <= now < end
+    if now >= start:
+        return local.isoweekday() in days
+    if now < end:
+        previous = (local - timedelta(days=1)).isoweekday()
+        return previous in days
+    return False
 
 
 def set_policy(

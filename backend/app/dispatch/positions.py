@@ -31,10 +31,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
+from app.audit.models import EventKind
+from app.audit.service import record
 from app.auth.principal import Principal
 from app.auth.scope import work_order_scope
 from app.dispatch.models import DevicePosition, WorkOrderDelivery
 from app.org.models import BusinessUnit
+from app.policy.service import effective, within_workday
 from app.sync.models import SYNCABLE_STATES, Device
 from app.workorders.models import STORAGE_SRID, Crew, WorkOrder
 
@@ -55,6 +58,86 @@ DOUBTFUL_ACCURACY_M = 200.0
 
 class PositionError(Exception):
     pass
+
+
+# --- RF-107: when a position may be reported at all ----------------------------------------------
+#: Why a report was not stored. Codes, because the phone acts on them (stop sending until the next
+#: working day, or ask the person); the message beside each is for the person.
+REFUSED_NO_CONSENT = "sin_consentimiento"
+REFUSED_OFF_HOURS = "fuera_de_horario"
+
+REFUSAL_MESSAGES = {
+    REFUSED_NO_CONSENT: "la persona que usa este teléfono no ha aceptado reportar su posición",
+    REFUSED_OFF_HOURS: "fuera del horario laboral no se reporta ni se guarda la posición",
+}
+
+
+def has_consent(device: Device, subject: str) -> bool:
+    """Whether **this** person accepted reporting from this phone. Somebody else's acceptance on a
+    shared phone does not count: consent is a person's, not a device's."""
+    return device.position_consent_sub is not None and device.position_consent_sub == subject
+
+
+def refusal(
+    session: Session,
+    unit: BusinessUnit,
+    device: Device,
+    *,
+    subject: str,
+    at: datetime,
+    zone_code: str | None = None,
+) -> str | None:
+    """The reason this report may not be stored, or `None` when it may (RF-107).
+
+    Judged against the same effective policy the phone received in its package, zone included, so
+    the server never refuses what the phone was told to send. Consent first: off-hours is a
+    schedule, missing consent is a person who said no, and that is the one to tell them about.
+    """
+    policy = effective(session, unit, zone_code)
+    if policy.value("require_position_consent") and not has_consent(device, subject):
+        return REFUSED_NO_CONSENT
+    if not within_workday(policy, at):
+        return REFUSED_OFF_HOURS
+    return None
+
+
+def set_consent(
+    session: Session, unit: BusinessUnit, device: Device, *, subject: str, granted: bool
+) -> Device:
+    """Record that the person carrying this phone accepted, or withdrew, position reporting.
+
+    Withdrawing also deletes the position already stored: «no quiero que sepan dónde estoy» is not
+    honoured by a dot that stays on the dispatch map for the rest of the day. Each change is on the
+    audit trail (RF-160), which is what makes RF-107's «se puede auditar» true for consent — the
+    two columns on the device are only the current state.
+    """
+    if device.business_unit_id != unit.id:
+        raise PositionError("el dispositivo no es de esta unidad de negocio")
+    if granted and has_consent(device, subject):
+        return device
+    if not granted and device.position_consent_sub is None:
+        return device
+    if granted:
+        device.position_consent_sub = subject
+        device.position_consent_at = datetime.now(UTC)
+    else:
+        device.position_consent_sub = None
+        device.position_consent_at = None
+        stored = session.get(DevicePosition, device.id)
+        if stored is not None:
+            session.delete(stored)
+    session.flush()
+    record(
+        session,
+        unit.id,
+        kind=EventKind.DECIDED,
+        subject_type="consentimiento_posicion",
+        subject_id=device.device_key,
+        actor=subject,
+        device_key=device.device_key,
+        payload={"granted": granted},
+    )
+    return device
 
 
 def report(

@@ -89,6 +89,9 @@ def device(session: Session, unit: BusinessUnit) -> Device:
     created, _ = enrol_device(
         session, unit, device_key=DEVICE_KEY, user_sub=TECHNICIAN.subject, model="Pixel 8a"
     )
+    # RF-107: without the person's consent nothing is stored. These tests are about what is done
+    # with a position once it may be stored; whether it may is `test_rf107_position_policy.py`'s.
+    positions.set_consent(session, unit, created, subject=TECHNICIAN.subject, granted=True)
     return created
 
 

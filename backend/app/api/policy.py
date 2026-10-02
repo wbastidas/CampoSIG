@@ -59,6 +59,11 @@ class PolicyIn(BaseModel):
     upload_on_metered: bool | None = None
     metered_upload_limit_mb: int | None = None
     downscale_on_metered: bool | None = None
+    position_report_minutes: int | None = None
+    workday_start: str | None = Field(default=None, max_length=5)
+    workday_end: str | None = Field(default=None, max_length=5)
+    workdays: str | None = Field(default=None, max_length=16)
+    require_position_consent: bool | None = None
     note: str | None = Field(default=None, max_length=2000)
 
     def changes(self) -> dict[str, Any]:

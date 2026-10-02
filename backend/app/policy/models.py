@@ -85,6 +85,19 @@ class CapturePolicy(Base):
     #: Whether photographs are uploaded at full resolution or downscaled first when off Wi-Fi.
     downscale_on_metered: Mapped[bool | None] = mapped_column(Boolean)
 
+    # --- Position reporting (RF-107) ---
+    #: How often, in minutes, the phone reports its position during the working day.
+    position_report_minutes: Mapped[int | None] = mapped_column(Integer)
+    #: The working day as «HH:MM», local time of Ecuador. Outside it no position is reported or
+    #: stored. An end before the start is a window that crosses midnight (a night shift); «24:00»
+    #: closes the day.
+    workday_start: Mapped[str | None] = mapped_column(String(5))
+    workday_end: Mapped[str | None] = mapped_column(String(5))
+    #: The working days, as ISO weekdays separated by commas: «1,2,3,4,5» is Monday to Friday.
+    workdays: Mapped[str | None] = mapped_column(String(16))
+    #: Whether the person carrying the phone must have accepted the reporting first (LOPDP).
+    require_position_consent: Mapped[bool | None] = mapped_column(Boolean)
+
     #: Why this row exists, for whoever reads it in a year.
     note: Mapped[str | None] = mapped_column(Text)
 
