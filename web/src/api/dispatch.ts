@@ -40,6 +40,8 @@ export interface DeviceReadiness {
   package_zone: string | null;
   package_version: number | null;
   package_current: boolean;
+  /** The crew this phone serves when it is a crew's shared phone (RF-320); null when personal. */
+  crew_code: string | null;
   /** Written by the server, in Spanish, for the dispatcher. Rendered verbatim. */
   blockers: string[];
 }
@@ -90,6 +92,23 @@ export function fetchDeviceReadiness(
   return request<DeviceReadiness[]>(`${BASE}/units/${encodeURIComponent(businessUnit)}/devices`, {
     signal,
   });
+}
+
+/**
+ * Declare a phone as a crew's shared phone, or release it with `null` (RF-320).
+ *
+ * From the web and never from the phone: a device that could choose its own crew could read
+ * another crew's work.
+ */
+export function setDeviceCrew(
+  businessUnit: string,
+  deviceKey: string,
+  crewCode: string | null,
+): Promise<{ device_key: string; crew_code: string | null }> {
+  return request(
+    `${BASE}/units/${encodeURIComponent(businessUnit)}/devices/${encodeURIComponent(deviceKey)}/crew`,
+    { method: 'PUT', body: JSON.stringify({ crew_code: crewCode }) },
+  );
 }
 
 export function publishPackage(

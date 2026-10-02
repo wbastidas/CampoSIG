@@ -52,6 +52,7 @@ function device(overrides: Partial<DeviceReadiness> = {}): DeviceReadiness {
     package_zone: 'Durán',
     package_version: 3,
     package_current: true,
+    crew_code: null,
     blockers: [],
     ...overrides,
   };

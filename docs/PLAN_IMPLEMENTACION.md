@@ -1151,6 +1151,44 @@ está en qué cuadrilla hoy— y es un incremento aparte, no una corrección de 
 
 ---
 
+### RF-320/RF-321/RF-023: el teléfono de la cuadrilla y lo que el pull le quita
+
+Lo que la sección anterior dejó fuera a propósito, cerrado. Eran dos huecos del mismo contrato:
+
+**Una OT asignada solo a una cuadrilla no llegaba a ningún teléfono.** El lazo del mapa asigna a una
+cuadrilla y a nada más estrecho. RF-320 dice que esa OT «aparece en el próximo sync/pull de los
+dispositivos de esa cuadrilla», y ningún dispositivo pertenecía a ninguna cuadrilla. La lista de
+integrantes de RF-005 no lo resuelve: son nombres, no cuentas, y un integrante puede estar en dos
+cuadrillas en una semana. Lo que sí es estable es el teléfono compartido de la cuadrilla, así que
+`device.crew_id` (migración 0030) lo declara, y `pull_work_orders` tiene ahora una tercera puerta:
+`assigned_crew_id == device.crew_id`. Lo fija **la web, nunca el teléfono** —
+`PUT /api/v1/dispatch/units/{unidad}/devices/{clave}/crew`, para quien despacha—, porque un equipo
+que eligiera su propia cuadrilla podría leer el trabajo de otra. Queda en la bitácora (asunto
+`dispositivo`), respeta el ámbito de RF-002 (una cuadrilla fuera del ámbito es 404) y niega una
+cuadrilla desactivada (409). En el tablero de despacho, cada dispositivo tiene un selector
+«personal / cuadrilla», y el teléfono declarado aparece en la fila de su cuadrilla aunque todavía no
+haya sincronizado nunca — que es exactamente lo que un despachador necesita ver a las seis.
+
+**El pull nunca decía que una OT se había ido.** Una OT reasignada dejaba de aparecer en el pull del
+teléfono anterior, y «dejar de aparecer» no es algo que un teléfono pueda observar: se quedaba en él
+indefinidamente. El «desaparece del móvil anterior» de RF-023 era falso, y el `ConflictResolver` del
+móvil (`android/core/sync`), que ya sabe qué hacer con una reasignación, nunca recibía una. Ahora la
+respuesta del pull trae `withdrawn`: las OT que **este** dispositivo recibió alguna vez
+(`work_order_delivery`) y que ya no le tocan — reasignadas (`reason: "reasignada"`) o fuera de los
+estados de campo (`"cambio_de_estado"`) —, con estado, dueño y versión actuales, que es la forma de
+`ServerWorkOrderState`. Van en **la misma consulta y el mismo cursor** que las entregas: con dos
+consultas, un límite de página saltaría una de las dos clases. Un teléfono que nunca tuvo la OT no
+se entera de ella, porque contárselo sería decirle que existe. El teléfono la suelta solo después de
+subir lo que capturó en ella (RF-322), y eso lo decide el móvil, no el motivo.
+
+Nueve mutaciones (quitar la puerta de cuadrilla, quitar las retiradas de la consulta, cortar el
+cursor en una página solo de retiradas, aceptar una cuadrilla de otra unidad, auditar dos veces la
+misma declaración, el motivo fijo, el tablero sin teléfonos declarados, el 409 y el 404 por ámbito),
+las nueve atrapadas.
+
+**Lo que queda fuera.** El cliente HTTP del móvil todavía no existe (el SDK de Android no está en
+este entorno); cuando exista, `withdrawn` alimenta `ConflictResolver` tal como llega.
+
 ### RF-005: la gestión de cuadrillas que el modelo ya prometía y la API no tenía
 
 El modelo `Crew` decía en su propio docstring «sus integrantes, su jefe...», y no tenía columna de

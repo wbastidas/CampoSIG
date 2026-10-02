@@ -17,6 +17,7 @@ import {
   type DeviceReadiness,
   fetchDeviceReadiness,
   fetchDispatchBoard,
+  setDeviceCrew,
 } from '../../api/dispatch';
 import {
   crewSeverity,
@@ -80,6 +81,18 @@ export function DispatchBoard({ businessUnit, now = () => new Date() }: Dispatch
       }
     },
     [businessUnit],
+  );
+
+  const declareCrew = useCallback(
+    async (deviceKey: string, crewCode: string | null) => {
+      try {
+        await setDeviceCrew(businessUnit, deviceKey, crewCode);
+        await load();
+      } catch (cause) {
+        setError((cause as Error).message);
+      }
+    },
+    [businessUnit, load],
   );
 
   useEffect(() => {
@@ -196,6 +209,7 @@ export function DispatchBoard({ businessUnit, now = () => new Date() }: Dispatch
             <th scope="col">Estado</th>
             <th scope="col">Dispositivo</th>
             <th scope="col">Técnico</th>
+            <th scope="col">Teléfono de cuadrilla</th>
             <th scope="col">App</th>
             <th scope="col">Modelos</th>
             <th scope="col">OT a bordo</th>
@@ -210,6 +224,25 @@ export function DispatchBoard({ businessUnit, now = () => new Date() }: Dispatch
               <td><SeverityChip severity={deviceSeverity(row)} /></td>
               <td>{row.device_key}</td>
               <td>{row.user_sub ?? '—'}</td>
+              <td>
+                {/* RF-320: an order assigned only to the crew reaches the phones declared here,
+                    on their next sync. Declared from the web, never from the phone. */}
+                <select
+                  aria-label={`Cuadrilla del dispositivo ${row.device_key}`}
+                  value={row.crew_code ?? ''}
+                  onChange={(event) => void declareCrew(row.device_key, event.target.value || null)}
+                >
+                  <option value="">personal</option>
+                  {crews.map((crew) => (
+                    <option key={crew.code} value={crew.code}>
+                      {crew.code} ({crew.name})
+                    </option>
+                  ))}
+                  {row.crew_code !== null && !crews.some((c) => c.code === row.crew_code) && (
+                    <option value={row.crew_code}>{row.crew_code}</option>
+                  )}
+                </select>
+              </td>
               <td>{row.app_version ?? '—'}</td>
               <td>{row.model_package_version ?? 'sin paquete'}</td>
               <td>
@@ -241,7 +274,7 @@ export function DispatchBoard({ businessUnit, now = () => new Date() }: Dispatch
           ))}
           {orderedDevices.length === 0 && (
             <tr>
-              <td colSpan={9}>No hay dispositivos registrados en esta unidad de negocio.</td>
+              <td colSpan={10}>No hay dispositivos registrados en esta unidad de negocio.</td>
             </tr>
           )}
         </tbody>

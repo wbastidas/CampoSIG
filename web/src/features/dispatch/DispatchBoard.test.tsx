@@ -8,7 +8,7 @@
  * el servidor.
  */
 
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { CrewDispatch, DeviceReadiness } from '../../api/dispatch';
@@ -49,6 +49,7 @@ function device(overrides: Partial<DeviceReadiness> = {}): DeviceReadiness {
     package_zone: 'Durán',
     package_version: 3,
     package_current: true,
+    crew_code: null,
     blockers: [],
     ...overrides,
   };
@@ -85,7 +86,9 @@ describe('el tablero', () => {
     // lo que no estaría bien es que el test no supiera cuál de los dos mira.
     const summary = document.querySelector('.dispatch-summary');
     expect(summary).not.toBeNull();
-    const tile = within(summary as HTMLElement).getByText('Sin entregar').closest('div');
+    const tile = within(summary as HTMLElement)
+      .getByText('Sin entregar')
+      .closest('div');
     expect(tile?.textContent).toContain('4');
     expect(tile?.className).toContain('alarming');
   });
@@ -142,9 +145,7 @@ describe('el tablero', () => {
     vi.stubGlobal('fetch', mockApi([], []));
     render(<DispatchBoard businessUnit="GYE" now={() => NOW} />);
 
-    await waitFor(() =>
-      expect(screen.getByText(/No hay cuadrillas activas/)).toBeTruthy(),
-    );
+    await waitFor(() => expect(screen.getByText(/No hay cuadrillas activas/)).toBeTruthy());
     expect(screen.getByText(/No hay dispositivos registrados/)).toBeTruthy();
   });
 
@@ -169,5 +170,60 @@ describe('el tablero', () => {
     await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('la red se cayó'));
     // Dejar la pantalla en blanco daría menos de lo que había un segundo antes.
     expect(screen.getByText('C-01 — Cuadrilla 1')).toBeTruthy();
+  });
+});
+
+describe('el teléfono de la cuadrilla (RF-320)', () => {
+  it('declararlo envía la cuadrilla al servidor y recarga el tablero', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'PUT') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ device_key: 'dev-001', crew_code: 'C-01' }),
+        } as unknown as Response;
+      }
+      const body = url.includes('/devices') ? [device()] : [crew()];
+      return { ok: true, status: 200, json: async () => body } as unknown as Response;
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<DispatchBoard businessUnit="GYE" now={() => NOW} />);
+
+    const select = await screen.findByRole('combobox', {
+      name: 'Cuadrilla del dispositivo dev-001',
+    });
+    fireEvent.change(select, { target: { value: 'C-01' } });
+
+    await waitFor(() => {
+      const put = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT');
+      expect(put).toBeTruthy();
+      expect(String(put![0])).toBe('/api/v1/dispatch/units/GYE/devices/dev-001/crew');
+      expect(JSON.parse(String(put![1]!.body))).toEqual({ crew_code: 'C-01' });
+    });
+  });
+
+  it('«personal» lo suelta con una cuadrilla nula', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'PUT') {
+        return { ok: true, status: 200, json: async () => ({}) } as unknown as Response;
+      }
+      const body = url.includes('/devices') ? [device({ crew_code: 'C-01' })] : [crew()];
+      return { ok: true, status: 200, json: async () => body } as unknown as Response;
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<DispatchBoard businessUnit="GYE" now={() => NOW} />);
+
+    const select = await screen.findByRole('combobox', {
+      name: 'Cuadrilla del dispositivo dev-001',
+    });
+    await waitFor(() => expect((select as HTMLSelectElement).value).toBe('C-01'));
+    fireEvent.change(select, { target: { value: '' } });
+
+    await waitFor(() => {
+      const put = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT');
+      expect(JSON.parse(String(put![1]!.body))).toEqual({ crew_code: null });
+    });
   });
 });

@@ -95,7 +95,7 @@ class TestDeliveryIsRecordedWhereItHappens:
 
     def test_rf_104_pulling_records_the_hand_over(self, session, unit, crew, device) -> None:
         make_order(session, unit, crew)
-        orders, _ = pull_work_orders(session, device)
+        orders, _, _ = pull_work_orders(session, device)
         assert len(orders) == 1
 
         row = dispatch_board(session, unit)[0]

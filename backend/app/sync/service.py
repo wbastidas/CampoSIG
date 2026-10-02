@@ -15,13 +15,16 @@ import hashlib
 import json
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, NamedTuple
 
-from sqlalchemy import ColumnElement, or_, select
+from sqlalchemy import ColumnElement, and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.attachments.service import for_package as attachments_for_package
+from app.audit import service as audit
+from app.audit.models import EventKind
 from app.catalogs.service import versions as catalog_versions
+from app.dispatch.models import WorkOrderDelivery
 from app.dispatch.service import record_delivery
 from app.forms.catalog import load_definitions
 from app.forms.registry import published_versions
@@ -34,7 +37,7 @@ from app.sync.models import (
     OfflinePackage,
     SyncOperationLog,
 )
-from app.workorders.models import DeviceCustody, WorkOrder
+from app.workorders.models import Crew, DeviceCustody, WorkOrder
 
 __all__ = ["SYNCABLE_STATES"]
 
@@ -122,6 +125,45 @@ def block_device(session: Session, device: Device, *, reason: str) -> Device:
     return device
 
 
+def assign_device_to_crew(
+    session: Session, unit: BusinessUnit, device: Device, crew: Crew | None, *, actor: str
+) -> Device:
+    """Declare a device as a crew's shared phone, or release it (RF-320).
+
+    From the web, by whoever organises the crews — never by the phone: a device that could
+    declare its own crew could read another crew's work. Both must belong to the unit; a crew of
+    another unit would be the one cross-unit door the pull filter does not close by itself.
+
+    Recorded in the trail, because «which phone received this crew's work» is the question an
+    investigation into a leaked order asks first.
+    """
+    if device.business_unit_id != unit.id:
+        raise CrossUnitError("el dispositivo no está enrolado en esta unidad de negocio")
+    if crew is not None and crew.business_unit_id != unit.id:
+        raise CrossUnitError("la cuadrilla es de otra unidad de negocio")
+    before = device.crew_id
+    after = crew.id if crew is not None else None
+    if before == after:
+        return device
+    device.crew_id = after
+    session.flush()
+    audit.record(
+        session,
+        unit.id,
+        kind=EventKind.FIELD_CHANGED,
+        subject_type="dispositivo",
+        subject_id=device.device_key,
+        actor=actor,
+        device_key=device.device_key,
+        payload={
+            "field": "crew",
+            "from": str(before) if before else None,
+            "to": crew.code if crew is not None else None,
+        },
+    )
+    return device
+
+
 # --- delta pull (RF-102) -----------------------------------------------------------
 def encode_cursor(updated_at: datetime, last_id: uuid.UUID) -> str:
     """Opaque cursor over (updated_at, id).
@@ -148,29 +190,29 @@ def decode_cursor(cursor: str | None) -> tuple[datetime, uuid.UUID] | None:
         return None
 
 
-def pull_work_orders(
-    session: Session,
-    device: Device,
-    *,
-    cursor: str | None = None,
-    limit: int = 200,
-) -> tuple[list[WorkOrder], str | None]:
-    """Work orders this device should hold, changed since the cursor (RF-022).
+class PullPage(NamedTuple):
+    """One page of the delta: what the device should hold, and what it should let go of."""
 
-    Filtered by the device's own business unit and by the user or the custody it holds, so a
-    technician's phone never receives another unit's work (ADR-009). Two ways an order reaches a
-    device, matched with `or_` because either is sufficient on its own:
+    orders: list[WorkOrder]
+    #: Null when nothing changed: the device keeps the cursor it already had.
+    next_cursor: str | None
+    #: Orders this device was handed earlier and that no longer reach it — reassigned elsewhere
+    #: (RF-023, RF-321) or moved out of the field states (closed, cancelled, in review). Sent with
+    #: their current state, owner and version so the phone's `ConflictResolver` can decide what to
+    #: do, and so it uploads what it captured before releasing them (RF-322).
+    withdrawn: list[WorkOrder]
 
-    * `assigned_user_sub` names this device's own person directly — the common case, an order
-      assigned to one technician.
-    * An open `DeviceCustody` row already names this exact device — what a planner leaves behind
-      assigning a **crew's shared** device (`device_id`, no `user_sub`) via `assign()`. Without
-      this branch such an order would sit assigned and undelivered forever: `assigned_user_sub`
-      stays null, so the first filter alone never matches, no matter how long the device syncs.
 
-    :returns: (orders, next_cursor). A null cursor means nothing changed.
+def _reaches(device: Device) -> ColumnElement[bool]:
+    """Whether an order belongs on this device right now. Three doors, any one is enough:
+
+    * `assigned_user_sub` names this device's own person — an order assigned to one technician.
+    * An open `DeviceCustody` row names this exact device — `assign(..., device_id=...)`.
+    * `assigned_crew_id` is the crew this device was declared for (RF-320) — the lasso of the map,
+      which assigns to a crew and nothing narrower. Without this door that order reached no phone
+      at all: no person, no custody, no device.
     """
-    reaches_this_device: list[ColumnElement[bool]] = [
+    doors: list[ColumnElement[bool]] = [
         WorkOrder.id.in_(
             select(DeviceCustody.work_order_id).where(
                 DeviceCustody.device_id == device.device_key, DeviceCustody.until.is_(None)
@@ -178,12 +220,40 @@ def pull_work_orders(
         )
     ]
     if device.user_sub:
-        reaches_this_device.append(WorkOrder.assigned_user_sub == device.user_sub)
+        doors.append(WorkOrder.assigned_user_sub == device.user_sub)
+    if device.crew_id is not None:
+        doors.append(WorkOrder.assigned_crew_id == device.crew_id)
+    return and_(WorkOrder.state.in_(SYNCABLE_STATES), or_(*doors))
 
-    statement = select(WorkOrder).where(
+
+def pull_work_orders(
+    session: Session,
+    device: Device,
+    *,
+    cursor: str | None = None,
+    limit: int = 200,
+) -> PullPage:
+    """Work orders this device should hold, and those it should release, since the cursor.
+
+    Filtered by the device's own business unit before anything else, so a phone never receives
+    another unit's work (ADR-009). Which orders belong on it is `_reaches`.
+
+    **The withdrawals ride the same query and the same cursor.** Until they did, a reassigned
+    order simply stopped appearing in the old phone's pull — and «stopped appearing» is not
+    something a phone can observe, so the order stayed on it indefinitely: RF-023's «desaparece
+    del móvil anterior» was false, and the device-side `ConflictResolver` that knows what to do
+    with a reassignment was never handed one. One ordering over both sets is what keeps a page
+    boundary from skipping either kind.
+
+    :returns: the page. A null cursor means nothing changed.
+    """
+    reaches = _reaches(device)
+    delivered_here = WorkOrder.id.in_(
+        select(WorkOrderDelivery.work_order_id).where(WorkOrderDelivery.device_id == device.id)
+    )
+    statement = select(WorkOrder, reaches.label("reaches")).where(
         WorkOrder.business_unit_id == device.business_unit_id,
-        WorkOrder.state.in_(SYNCABLE_STATES),
-        or_(*reaches_this_device),
+        or_(reaches, delivered_here),
     )
 
     decoded = decode_cursor(cursor)
@@ -195,19 +265,25 @@ def pull_work_orders(
             | ((WorkOrder.updated_at == watermark) & (WorkOrder.id > last_id))
         )
 
-    orders = list(
-        session.scalars(statement.order_by(WorkOrder.updated_at, WorkOrder.id).limit(limit))
-    )
-    if not orders:
-        return [], None
+    rows = session.execute(
+        statement.order_by(WorkOrder.updated_at, WorkOrder.id).limit(limit)
+    ).all()
+    if not rows:
+        return PullPage([], None, [])
+
+    # `reaches` is NULL rather than false when a comparison meets a null column, so the split is
+    # on truthiness and not on `is False`.
+    orders = [order for order, reached in rows if reached]
+    withdrawn = [order for order, reached in rows if not reached]
 
     # The hand-over is recorded here, where it happens. Recording it anywhere else leaves a
     # window in which the server believes a crew has work it was never sent — and "assigned"
     # and "actually on the phone" are the two numbers a dispatcher compares every morning.
-    record_delivery(session, device, orders)
+    if orders:
+        record_delivery(session, device, orders)
 
-    last = orders[-1]
-    return orders, encode_cursor(last.updated_at, last.id)
+    last = rows[-1][0]
+    return PullPage(orders, encode_cursor(last.updated_at, last.id), withdrawn)
 
 
 def form_versions(session: Session | None = None) -> dict[str, str]:

@@ -126,21 +126,21 @@ class TestRf004RemoteBlock:
 class TestRf102DeltaPull:
     def test_first_pull_returns_assigned_work(self, session: Session, unit, device):
         order = make_order(session, unit)
-        orders, cursor = pull_work_orders(session, device)
+        orders, cursor, _ = pull_work_orders(session, device)
         assert [o.id for o in orders] == [order.id]
         assert cursor is not None
 
     def test_second_pull_without_changes_returns_nothing(self, session: Session, unit, device):
         make_order(session, unit)
-        _, cursor = pull_work_orders(session, device)
-        orders, next_cursor = pull_work_orders(session, device, cursor=cursor)
+        _, cursor, _ = pull_work_orders(session, device)
+        orders, next_cursor, _ = pull_work_orders(session, device, cursor=cursor)
         # RF-102: a second sync with no changes must transfer almost nothing.
         assert orders == []
         assert next_cursor is None
 
     def test_a_change_after_the_cursor_is_returned(self, session: Session, unit, device):
         make_order(session, unit)
-        _, cursor = pull_work_orders(session, device)
+        _, cursor, _ = pull_work_orders(session, device)
 
         later = make_order(session, unit)
         # PostgreSQL's now() is the *transaction* timestamp, so rows created in one
@@ -150,7 +150,7 @@ class TestRf102DeltaPull:
         later.updated_at = datetime.now(UTC) + timedelta(seconds=1)
         session.flush()
 
-        orders, _ = pull_work_orders(session, device, cursor=cursor)
+        orders, _, _ = pull_work_orders(session, device, cursor=cursor)
         assert [o.id for o in orders] == [later.id]
 
     def test_rows_sharing_a_timestamp_are_not_skipped(self, session: Session, unit, device):
@@ -167,29 +167,29 @@ class TestRf102DeltaPull:
         second.updated_at = shared
         session.flush()
 
-        page_one, cursor = pull_work_orders(session, device, limit=1)
+        page_one, cursor, _ = pull_work_orders(session, device, limit=1)
         assert len(page_one) == 1
-        page_two, _ = pull_work_orders(session, device, cursor=cursor, limit=1)
+        page_two, _, _ = pull_work_orders(session, device, cursor=cursor, limit=1)
         assert len(page_two) == 1
         # Both seen, neither twice.
         assert {page_one[0].id, page_two[0].id} == {first.id, second.id}
 
     def test_work_of_another_user_is_not_sent(self, session: Session, unit, device):
         make_order(session, unit, user_sub="tecnico.b")
-        orders, _ = pull_work_orders(session, device)
+        orders, _, _ = pull_work_orders(session, device)
         assert orders == []
 
     def test_work_of_another_unit_is_never_sent(self, session: Session, units, device):
         """The isolation guarantee, on the query every phone runs constantly."""
         make_order(session, units["MAN"])
-        orders, _ = pull_work_orders(session, device)
+        orders, _, _ = pull_work_orders(session, device)
         assert all(o.business_unit_id == units["GYE"].id for o in orders)
 
     def test_closed_work_is_not_pushed_back_to_the_phone(self, session: Session, unit, device):
         order = make_order(session, unit)
         order.state = WorkOrderState.CLOSED
         session.flush()
-        orders, _ = pull_work_orders(session, device)
+        orders, _, _ = pull_work_orders(session, device)
         assert orders == []
 
     def test_returned_work_comes_back_to_the_phone(self, session: Session, unit, device):
@@ -197,15 +197,15 @@ class TestRf102DeltaPull:
         order = make_order(session, unit)
         order.state = WorkOrderState.RETURNED
         session.flush()
-        orders, _ = pull_work_orders(session, device)
+        orders, _, _ = pull_work_orders(session, device)
         assert [o.id for o in orders] == [order.id]
 
     def test_limit_is_honoured_and_the_cursor_advances(self, session: Session, unit, device):
         for _ in range(5):
             make_order(session, unit)
-        first, cursor = pull_work_orders(session, device, limit=2)
+        first, cursor, _ = pull_work_orders(session, device, limit=2)
         assert len(first) == 2
-        second, _ = pull_work_orders(session, device, cursor=cursor, limit=2)
+        second, _, _ = pull_work_orders(session, device, cursor=cursor, limit=2)
         assert len(second) == 2
         assert {o.id for o in first} & {o.id for o in second} == set()
 
@@ -223,7 +223,7 @@ class TestRf022CrewSharedDeviceDelivery:
         order = make_order(session, unit, user_sub=None)
         assign(session, order, crew=crew, device_id="tablet-cuadrilla-1")
 
-        orders, _ = pull_work_orders(session, tablet)
+        orders, _, _ = pull_work_orders(session, tablet)
         assert [o.id for o in orders] == [order.id]
 
     def test_a_different_devices_shared_tablet_does_not_see_it(self, session: Session, unit):
@@ -235,7 +235,7 @@ class TestRf022CrewSharedDeviceDelivery:
         order = make_order(session, unit, user_sub=None)
         assign(session, order, crew=crew, device_id="tablet-cuadrilla-1")
 
-        orders, _ = pull_work_orders(session, other_tablet)
+        orders, _, _ = pull_work_orders(session, other_tablet)
         assert orders == []
 
     def test_closing_the_custody_stops_the_delivery(self, session: Session, unit):
@@ -248,7 +248,7 @@ class TestRf022CrewSharedDeviceDelivery:
         # Reassigned away from the tablet — its custody row is now closed.
         assign(session, order, crew=crew, device_id="tablet-cuadrilla-2", reason="cambio")
 
-        orders, _ = pull_work_orders(session, tablet)
+        orders, _, _ = pull_work_orders(session, tablet)
         assert orders == []
 
 

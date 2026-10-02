@@ -70,6 +70,13 @@ class Device(Base):
     device_key: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
     user_sub: Mapped[str | None] = mapped_column(String(255))
 
+    #: The crew this phone serves when it is a crew's shared device rather than one person's
+    #: (RF-320). Set from the web by whoever organises the crews, never by the phone itself: a
+    #: device that could declare its own crew could read another crew's work.
+    crew_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("crew.id", ondelete="SET NULL")
+    )
+
     model: Mapped[str | None] = mapped_column(String(128))
     android_version: Mapped[str | None] = mapped_column(String(32))
     app_version: Mapped[str | None] = mapped_column(String(32))

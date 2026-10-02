@@ -225,9 +225,10 @@ def _attach_devices(
 ) -> None:
     """Attach each crew's devices, found through the work they currently hold.
 
-    A device belongs to a person, not to a crew, and people move between crews. Deriving the
-    link from the work actually delivered means the board shows the phone that has the work,
-    which is the one a dispatcher needs to call.
+    A personal device belongs to a person, not to a crew, and people move between crews. Deriving
+    the link from the work actually delivered means the board shows the phone that has the work,
+    which is the one a dispatcher needs to call. A crew's shared phone is the exception: it is
+    declared (`Device.crew_id`) and shown whether or not it has pulled yet.
     """
     rows = session.execute(
         select(WorkOrder.assigned_crew_id, Device.device_key, Device.last_sync_at)
@@ -240,7 +241,16 @@ def _attach_devices(
         )
         .distinct()
     ).all()
-    for crew_id, device_key, last_sync_at in rows:
+    # And the phones declared for a crew (RF-320), which belong on its row before they have pulled
+    # anything: a declared tablet that never synced is exactly what a dispatcher must see.
+    declared = session.execute(
+        select(Device.crew_id, Device.device_key, Device.last_sync_at).where(
+            Device.business_unit_id == unit.id, Device.crew_id.in_(board)
+        )
+    ).all()
+    for crew_id, device_key, last_sync_at in [*rows, *declared]:
+        if crew_id is None:
+            continue
         row = board[crew_id]
         if device_key not in row.devices:
             row.devices.append(device_key)
@@ -268,6 +278,8 @@ class DeviceReadiness:
     package_zone: str | None = None
     package_version: int | None = None
     package_current: bool = True
+    #: The crew this phone is declared for when it is a crew's shared phone (RF-320).
+    crew_code: str | None = None
 
     @property
     def blockers(self) -> list[str]:
@@ -301,6 +313,7 @@ class DeviceReadiness:
             "package_zone": self.package_zone,
             "package_version": self.package_version,
             "package_current": self.package_current,
+            "crew_code": self.crew_code,
             "blockers": self.blockers,
         }
 
@@ -332,6 +345,16 @@ def device_readiness(session: Session, unit: BusinessUnit) -> list[DeviceReadine
         )
     }
 
+    crew_codes = dict(
+        session.execute(
+            select(Crew.id, Crew.code).where(
+                Crew.id.in_({d.crew_id for d in devices if d.crew_id is not None})
+            )
+        )
+        .tuples()
+        .all()
+    )
+
     readiness: list[DeviceReadiness] = []
     for device in devices:
         counts = held.get(device.id, (0, 0))
@@ -350,6 +373,7 @@ def device_readiness(session: Session, unit: BusinessUnit) -> list[DeviceReadine
                 package_zone=zone,
                 package_version=version,
                 package_current=current,
+                crew_code=crew_codes.get(device.crew_id) if device.crew_id else None,
             )
         )
     return readiness

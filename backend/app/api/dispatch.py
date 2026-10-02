@@ -11,6 +11,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_roles, unit_scope
@@ -19,7 +20,14 @@ from app.dispatch import positions
 from app.dispatch.service import device_readiness, dispatch_board
 from app.infra.database import get_session
 from app.org.service import UnknownBusinessUnitError, get_business_unit_by_code
-from app.sync.service import build_offline_package, current_package
+from app.sync.models import Device
+from app.sync.service import (
+    CrossUnitError,
+    assign_device_to_crew,
+    build_offline_package,
+    current_package,
+)
+from app.workorders.service import UnknownCrewError, get_crew_by_code
 
 router = APIRouter(prefix="/api/v1/dispatch", tags=["dispatch"], dependencies=[Depends(unit_scope)])
 
@@ -84,6 +92,61 @@ def crew_positions(
         # la pantalla pintando «reciente» sobre lo que el servidor ya considera viejo.
         "stale_after_minutes": int(positions.STALE_AFTER.total_seconds() // 60),
         "doubtful_accuracy_m": positions.DOUBTFUL_ACCURACY_M,
+    }
+
+
+class DeviceCrewIn(BaseModel):
+    """La cuadrilla a la que sirve un teléfono compartido; nula para soltarlo (RF-320)."""
+
+    crew_code: str | None = Field(default=None, max_length=32)
+
+
+@router.put(
+    "/units/{unit_code}/devices/{device_key}/crew",
+    summary="Declarar el teléfono compartido de una cuadrilla (RF-320)",
+)
+def set_device_crew(
+    session: SessionDep,
+    unit_code: str,
+    device_key: str,
+    payload: DeviceCrewIn,
+    principal: Annotated[Any, Depends(require_roles(*DISPATCHERS))] = None,
+) -> dict[str, Any]:
+    """Desde aquí, una OT asignada solo a la cuadrilla llega a este teléfono en su próximo pull, y
+    las que tenía de la cuadrilla anterior le llegan como retiradas.
+
+    Lo fija la web y nunca el teléfono: un equipo que pudiera declarar su propia cuadrilla podría
+    leer el trabajo de otra.
+    """
+    unit = _unit(session, unit_code)
+    device = session.scalars(
+        select(Device).where(Device.device_key == device_key, Device.business_unit_id == unit.id)
+    ).first()
+    if device is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, "el dispositivo no está enrolado en esta unidad de negocio"
+        )
+    crew = None
+    if payload.crew_code is not None:
+        try:
+            crew = get_crew_by_code(session, unit, payload.crew_code)
+        except UnknownCrewError as exc:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+        if not principal.may_see(zone=crew.zone, agency=crew.agency, contractor=crew.contractor):
+            # Fuera del ámbito es «no existe» (RF-002), igual que en el resto de la plataforma.
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "la cuadrilla no existe")
+        if not crew.active:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT, "la cuadrilla está desactivada; no recibe trabajo"
+            )
+    try:
+        assign_device_to_crew(session, unit, device, crew, actor=principal.subject)
+    except CrossUnitError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    session.commit()
+    return {
+        "device_key": device.device_key,
+        "crew_code": crew.code if crew is not None else None,
     }
 
 

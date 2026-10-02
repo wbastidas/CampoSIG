@@ -37,7 +37,7 @@ from app.org.models import BusinessUnit
 from app.org.service import UnknownBusinessUnitError, get_business_unit_by_code
 from app.outages.models import OutageRequest
 from app.sync import service as sync
-from app.sync.models import Device
+from app.sync.models import SYNCABLE_STATES, Device
 from app.sync.operations import OperationRejectedError, apply_operation, order_of
 from app.workorders.models import WorkOrder
 
@@ -188,15 +188,35 @@ def pull(
     """Delta por cursor, no por «desde esta fecha»: el reloj del teléfono no manda."""
     unit = _unit(session, unit_code)
     device = _device(session, unit, principal, device_key)
-    orders, next_cursor = sync.pull_work_orders(session, device, cursor=cursor, limit=limit)
+    page = sync.pull_work_orders(session, device, cursor=cursor, limit=limit)
     session.commit()
     return {
         "server_time": datetime.now(UTC).isoformat(),
-        "work_orders": _for_device(session, orders),
+        "work_orders": _for_device(session, page.orders),
+        # Lo que este teléfono tuvo y ya no le toca (RF-023, RF-321). Va con el estado, el dueño y
+        # la versión actuales porque eso es lo que necesita el `ConflictResolver` del teléfono, y
+        # sin la geometría ni el formulario: lo que se suelta no se vuelve a dibujar.
+        "withdrawn": [_withdrawal(order) for order in page.withdrawn],
         # Nulo cuando no cambió nada: el teléfono conserva el cursor que ya tenía.
-        "next_cursor": next_cursor,
+        "next_cursor": page.next_cursor,
         "form_versions": sync.form_versions(session),
         "catalog_versions": catalog_versions(session),
+    }
+
+
+def _withdrawal(order: WorkOrder) -> dict[str, Any]:
+    """Una OT que el teléfono debe soltar, y por qué.
+
+    «reasignada» si sigue en campo pero en otras manos; «cambio_de_estado» si salió de los estados
+    de campo (cerrada, anulada, en revisión). El teléfono la suelta solo después de subir lo que
+    capturó en ella (RF-322): el motivo es para mostrarlo, no para decidir eso.
+    """
+    return {
+        "work_order_id": str(order.id),
+        "state": order.state,
+        "assigned_user_sub": order.assigned_user_sub,
+        "version": order.version,
+        "reason": "reasignada" if order.state in SYNCABLE_STATES else "cambio_de_estado",
     }
 
 
