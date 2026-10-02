@@ -63,7 +63,12 @@ class RouteIn(BaseModel):
     dependencies=[Depends(require_roles(*DISPATCHERS))],
     summary="Sugerir el orden de visita de un conjunto de OT (RF-025)",
 )
-def suggest(unit_code: str, payload: RouteIn, session: SessionDep) -> dict[str, Any]:
+def suggest(
+    unit_code: str,
+    payload: RouteIn,
+    session: SessionDep,
+    principal: Annotated[Any, Depends(unit_scope)] = None,
+) -> dict[str, Any]:
     unit = _unit(session, unit_code)
     start: tuple[float, float] | None = None
     if payload.start_latitude is not None and payload.start_longitude is not None:
@@ -74,7 +79,9 @@ def suggest(unit_code: str, payload: RouteIn, session: SessionDep) -> dict[str, 
         except routing.RoutingError as exc:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     try:
-        suggestion = routing.suggest_route(session, unit, payload.work_order_ids, start=start)
+        suggestion = routing.suggest_route(
+            session, unit, payload.work_order_ids, start=start, principal=principal
+        )
     except routing.RoutingError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     return suggestion.as_dict()

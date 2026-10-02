@@ -24,7 +24,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.auth.principal import Principal
-from app.forms.catalog import load_definitions
+from app.forms.catalog import area_of_form_code, load_definitions
 from app.workorders.models import Crew, WorkOrder
 
 
@@ -70,3 +70,24 @@ def crew_scope(principal: Principal) -> ColumnElement[bool] | None:
     if principal.contractor is not None:
         clauses.append(Crew.contractor == principal.contractor)
     return and_(*clauses) if clauses else None
+
+
+def may_see_order(principal: Principal | None, order: WorkOrder) -> bool:
+    """`Principal.may_see` for one work order — the single-object counterpart of
+    `work_order_scope`, for endpoints that take an id. `None` (no principal, a service call)
+    narrows nothing, the same as the listing helpers do."""
+    if principal is None:
+        return True
+    return principal.may_see(
+        area=area_of_form_code(order.form_code),
+        zone=order.zone,
+        agency=order.agency,
+        contractor=order.crew.contractor if order.crew is not None else None,
+    )
+
+
+def may_see_crew(principal: Principal | None, crew: Crew) -> bool:
+    """The same for one crew: `crew_scope` for an id."""
+    if principal is None:
+        return True
+    return principal.may_see(zone=crew.zone, agency=crew.agency, contractor=crew.contractor)

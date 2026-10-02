@@ -94,8 +94,9 @@ def operational(
     session: SessionDep,
     since: Annotated[datetime | None, Query()] = None,
     until: Annotated[datetime | None, Query()] = None,
+    principal: Annotated[Any, Depends(unit_scope)] = None,
 ) -> dict[str, Any]:
-    """RF-130, computed live on every call.
+    """RF-130, computed live on every call, within the caller's ámbito (RF-002).
 
     Live and not cached: the acceptance criterion is that the data is no more than five minutes
     old, and the way to guarantee that is for the screen to ask again every five minutes. A cache
@@ -104,7 +105,9 @@ def operational(
     """
     unit = _unit(session, unit_code)
     _period_or_422(since, until)
-    return operations.build(session, unit.id, since=since, until=until).as_dict()
+    return operations.build(
+        session, unit.id, since=since, until=until, principal=principal
+    ).as_dict()
 
 
 #: How far back the APG board looks when nobody says. A month: the regulator reports monthly, and a
@@ -241,6 +244,7 @@ def maintenance_board(
     since: Annotated[datetime | None, Query()] = None,
     until: Annotated[datetime | None, Query()] = None,
     defect_code: Annotated[str | None, Query()] = None,
+    principal: Annotated[Any, Depends(unit_scope)] = None,
 ) -> dict[str, Any]:
     """RF-133, with the period and defect-type filters the requirement asks for.
 
@@ -251,5 +255,5 @@ def maintenance_board(
     unit = _unit(session, unit_code)
     start, end = _apg_period(since, until)
     return maintenance.build(
-        session, unit.id, since=start, until=end, defect_code=defect_code
+        session, unit.id, since=start, until=end, defect_code=defect_code, principal=principal
     ).as_dict()

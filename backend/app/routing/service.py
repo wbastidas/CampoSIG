@@ -52,6 +52,8 @@ from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.auth.principal import Principal
+from app.auth.scope import work_order_scope
 from app.dispatch.models import DevicePosition
 from app.org.models import BusinessUnit
 from app.sync.models import Device
@@ -171,24 +173,29 @@ def suggest_route(
     order_ids: list[uuid.UUID],
     *,
     start: tuple[float, float] | None = None,
+    principal: Principal | None = None,
 ) -> RouteSuggestion:
     """Sugerir el orden de visita que menos distancia recta suma (RF-025).
 
     :param start: (longitud, latitud) desde donde empieza la cuadrilla. Si no se da, el problema es
         de inicio y fin libres.
-    :raises RoutingError: menos de dos OT, más del máximo, alguna fuera de la unidad (ADR-009), o
-        alguna sin ubicación registrada.
+    :param principal: quien pide la ruta. Una OT fuera de su ámbito (RF-002) cuenta como una que
+        no existe: la ruta lleva sus coordenadas, y una ruta no es una vía para leerlas.
+    :raises RoutingError: menos de dos OT, más del máximo, alguna fuera de la unidad (ADR-009) o
+        del ámbito, o alguna sin ubicación registrada.
     """
     if len(order_ids) < MIN_STOPS:
         raise RoutingError("una ruta necesita al menos dos OT")
     if len(order_ids) > MAX_STOPS:
         raise RoutingError(f"como mucho {MAX_STOPS} OT por ruta sugerida")
 
-    rows = session.execute(
-        select(
-            WorkOrder.id, WorkOrder.code, ST_X(WorkOrder.location), ST_Y(WorkOrder.location)
-        ).where(WorkOrder.business_unit_id == unit.id, WorkOrder.id.in_(order_ids))
-    ).all()
+    statement = select(
+        WorkOrder.id, WorkOrder.code, ST_X(WorkOrder.location), ST_Y(WorkOrder.location)
+    ).where(WorkOrder.business_unit_id == unit.id, WorkOrder.id.in_(order_ids))
+    scope = work_order_scope(principal) if principal is not None else None
+    if scope is not None:
+        statement = statement.where(scope)
+    rows = session.execute(statement).all()
     found = {row[0]: row for row in rows}
     missing = [str(oid) for oid in order_ids if oid not in found]
     if missing:

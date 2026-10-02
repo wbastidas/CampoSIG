@@ -31,6 +31,8 @@ from sqlalchemy.orm import Session
 
 from app.audit.models import EventKind
 from app.audit.service import record
+from app.auth.principal import Principal
+from app.auth.scope import work_order_scope
 from app.org.models import BusinessUnit
 from app.workorders.models import WorkOrder, WorkOrderState
 
@@ -255,8 +257,11 @@ def blocking_fronts(session: Session, order: WorkOrder, target: str) -> list[str
     return [child.code or str(child.id) for child in open_fronts(session, order)]
 
 
-def parents_with_fronts(session: Session, unit: BusinessUnit) -> list[tuple[WorkOrder, Progress]]:
-    """Every work that has fronts in this unit, with its aggregate."""
+def parents_with_fronts(
+    session: Session, unit: BusinessUnit, *, principal: Principal | None = None
+) -> list[tuple[WorkOrder, Progress]]:
+    """Every work that has fronts in this unit, with its aggregate — the works inside the
+    principal's ámbito (RF-002) when one is given."""
     parent_ids = set(
         session.execute(
             select(WorkOrder.parent_id).where(
@@ -268,11 +273,13 @@ def parents_with_fronts(session: Session, unit: BusinessUnit) -> list[tuple[Work
     )
     if not parent_ids:
         return []
+    statement = select(WorkOrder).where(WorkOrder.id.in_(parent_ids))
+    scope = work_order_scope(principal) if principal is not None else None
+    if scope is not None:
+        statement = statement.where(scope)
     parents = list(
         session.execute(
-            select(WorkOrder)
-            .where(WorkOrder.id.in_(parent_ids))
-            .order_by(WorkOrder.code.nulls_last(), WorkOrder.created_at, WorkOrder.id)
+            statement.order_by(WorkOrder.code.nulls_last(), WorkOrder.created_at, WorkOrder.id)
         ).scalars()
     )
     return [(parent, progress_of(session, parent)) for parent in parents]

@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_roles, unit_scope
 from app.auth.principal import Role
+from app.auth.scope import may_see_order
 from app.infra.database import get_session
 from app.org.models import BusinessUnit
 from app.org.service import UnknownBusinessUnitError, get_business_unit_by_code
@@ -115,13 +116,17 @@ def detail(
     unit_code: str,
     request_id: uuid.UUID,
     session: SessionDep,
-    _: Annotated[Any, Depends(require_roles(*READERS))] = None,
+    principal: Annotated[Any, Depends(require_roles(*READERS))] = None,
 ) -> dict[str, Any]:
+    """La consignación es de la unidad —una línea desenergizada no tiene zona de planificador—,
+    pero sus OT se nombran solo si están en el ámbito de quien mira (RF-002). El conteo es el de
+    todas: cuántas OT trabajan bajo la consignación es un hecho de la línea, no de quien mira."""
     unit = _unit(session, unit_code)
     row = _request(session, unit, request_id)
-    orders = outages.orders_under(session, row)
+    every = outages.orders_under(session, row)
+    orders = [order for order in every if may_see_order(principal, order)]
     return {
-        **outages.as_dict(row, orders=len(orders)),
+        **outages.as_dict(row, orders=len(every)),
         "work_orders": [
             {
                 "work_order_id": str(order.id),
@@ -262,7 +267,7 @@ def link_order(
     unit = _unit(session, unit_code)
     row = _request(session, unit, request_id)
     order = session.get(WorkOrder, payload.work_order_id)
-    if order is None or order.business_unit_id != unit.id:
+    if order is None or order.business_unit_id != unit.id or not may_see_order(principal, order):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "la OT no existe en esta unidad de negocio")
     try:
         outages.link(session, unit, order, row, actor=principal.subject)
@@ -285,7 +290,7 @@ def unlink_order(
 ) -> dict[str, Any]:
     unit = _unit(session, unit_code)
     order = session.get(WorkOrder, work_order_id)
-    if order is None or order.business_unit_id != unit.id:
+    if order is None or order.business_unit_id != unit.id or not may_see_order(principal, order):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "la OT no existe en esta unidad de negocio")
     try:
         outages.unlink(session, unit, order, actor=principal.subject)

@@ -35,6 +35,8 @@ from geoalchemy2 import Geography
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.auth.principal import Principal
+from app.auth.scope import crew_scope
 from app.dispatch.positions import crew_positions
 from app.forms.catalog import load_definitions
 from app.org.models import BusinessUnit
@@ -390,8 +392,12 @@ def suggest_crews(
     *,
     top: int = TOP_N,
     now: datetime | None = None,
+    principal: Principal | None = None,
 ) -> Suggestion:
     """Rank the crews that may take this order, with the reason for every point.
+
+    Only crews inside the principal's ámbito (RF-002) are ranked: suggesting a crew the planner
+    cannot assign is a suggestion that ends in a 404.
 
     The ranking is deterministic: two runs over the same data return the same order, because a
     suggestion that reshuffles on refresh is one a planner stops trusting. That holds twice over —
@@ -422,13 +428,11 @@ def suggest_crews(
     point = _order_point(session, order)
     loads = _workloads(session, unit, order, now=moment, point=point)
 
-    crews = list(
-        session.execute(
-            select(Crew)
-            .where(Crew.business_unit_id == unit.id, Crew.active.is_(True))
-            .order_by(Crew.code)
-        ).scalars()
-    )
+    statement = select(Crew).where(Crew.business_unit_id == unit.id, Crew.active.is_(True))
+    scope = crew_scope(principal) if principal is not None else None
+    if scope is not None:
+        statement = statement.where(scope)
+    crews = list(session.execute(statement.order_by(Crew.code)).scalars())
     if not crews:
         result.caveats.append("esta unidad no tiene cuadrillas activas")
         return result

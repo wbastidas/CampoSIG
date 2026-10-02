@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from app.audit.service import as_dict as audit_as_dict
 from app.auth.dependencies import require_roles, unit_scope
 from app.auth.principal import Role
+from app.auth.scope import may_see_crew
 from app.infra.database import get_session
 from app.org.models import BusinessUnit
 from app.org.service import UnknownBusinessUnitError, get_business_unit_by_code
@@ -52,6 +53,19 @@ def _unit(session: Session, code: str) -> BusinessUnit:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
 
 
+def _crew(session: Session, unit: BusinessUnit, code: str, principal: Any) -> Any:
+    """The crew by code, or 404 — also outside the principal's ámbito (RF-002)."""
+    try:
+        crew = get_crew_by_code(session, unit, code)
+    except UnknownCrewError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    if not may_see_crew(principal, crew):
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, f"la cuadrilla «{code}» no existe en esta unidad de negocio"
+        )
+    return crew
+
+
 class CrewIn(BaseModel):
     """One crew's roster, as the administration screen edits it."""
 
@@ -74,10 +88,10 @@ def index(
     unit_code: str,
     session: SessionDep,
     include_inactive: Annotated[bool, Query()] = False,
-    _: Annotated[Any, Depends(require_roles(*READERS))] = None,
+    principal: Annotated[Any, Depends(require_roles(*READERS))] = None,
 ) -> list[dict[str, Any]]:
     unit = _unit(session, unit_code)
-    rows = list_crews(session, unit, include_inactive=include_inactive)
+    rows = list_crews(session, unit, include_inactive=include_inactive, principal=principal)
     return [as_crew_dict(crew) for crew in rows]
 
 
@@ -130,10 +144,7 @@ def set_active(
     """Deactivated, never deleted: a crew that carried a year of closed work orders is part of
     their history (the same reasoning the zone administration screen already relies on)."""
     unit = _unit(session, unit_code)
-    try:
-        crew = get_crew_by_code(session, unit, code)
-    except UnknownCrewError as exc:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    crew = _crew(session, unit, code, principal)
     crew = set_crew_active(session, unit, crew, active=payload.active, actor=principal.subject)
     session.commit()
     return as_crew_dict(crew)
@@ -144,12 +155,14 @@ def set_active(
     dependencies=[Depends(require_roles(*READERS))],
     summary="Historial de cambios de una cuadrilla (RF-005)",
 )
-def history(unit_code: str, code: str, session: SessionDep) -> list[dict[str, Any]]:
+def history(
+    unit_code: str,
+    code: str,
+    session: SessionDep,
+    principal: Annotated[Any, Depends(unit_scope)] = None,
+) -> list[dict[str, Any]]:
     unit = _unit(session, unit_code)
-    try:
-        crew = get_crew_by_code(session, unit, code)
-    except UnknownCrewError as exc:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    crew = _crew(session, unit, code, principal)
     return [audit_as_dict(event) for event in crew_history(session, unit, crew)]
 
 

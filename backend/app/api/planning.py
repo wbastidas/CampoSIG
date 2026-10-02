@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from app.assignment.suggest import TOP_N, suggest_crews
 from app.auth.dependencies import require_roles, unit_scope_query
 from app.auth.principal import Role
-from app.forms.catalog import area_of_form_code
+from app.auth.scope import may_see_crew, may_see_order
 from app.infra.database import get_session
 from app.org.service import UnknownBusinessUnitError, get_business_unit_by_code
 from app.workorders import fronts
@@ -196,9 +196,13 @@ def work_orders_geojson(
 
 
 @router.get("/crews", summary="Cuadrillas de la unidad con su carga abierta")
-def crews_with_workload(session: SessionDep, business_unit: str) -> list[dict[str, Any]]:
-    """The shared board several planners work against (RF-313)."""
-    return crew_workload(session, _unit(session, business_unit))
+def crews_with_workload(
+    session: SessionDep,
+    business_unit: str,
+    principal: Annotated[Any, Depends(unit_scope_query)] = None,
+) -> list[dict[str, Any]]:
+    """The shared board several planners work against (RF-313), within the ámbito (RF-002)."""
+    return crew_workload(session, _unit(session, business_unit), principal=principal)
 
 
 @router.get(
@@ -211,6 +215,7 @@ def suggested_crews(
     order_id: uuid.UUID,
     business_unit: str,
     top: Annotated[int, Query(ge=1, le=10)] = TOP_N,
+    principal: Annotated[Any, Depends(unit_scope_query)] = None,
 ) -> dict[str, Any]:
     """A suggestion, not an assignment: the planner still clicks.
 
@@ -218,10 +223,8 @@ def suggested_crews(
     either follow blindly or ignore, and both are worse than no suggestion at all.
     """
     unit = _unit(session, business_unit)
-    order = session.get(WorkOrder, order_id)
-    if order is None or order.business_unit_id != unit.id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "la OT no existe en esta unidad de negocio")
-    return suggest_crews(session, unit, order, top=top).as_dict()
+    order = _order(session, unit.id, order_id, principal)
+    return suggest_crews(session, unit, order, top=top, principal=principal).as_dict()
 
 
 @router.post(
@@ -231,17 +234,23 @@ def suggested_crews(
     summary="Asignar una selección del mapa a una cuadrilla",
 )
 def assign_selection(
-    payload: AssignSelectionIn, session: SessionDep, business_unit: str
+    payload: AssignSelectionIn,
+    session: SessionDep,
+    business_unit: str,
+    principal: Annotated[Any, Depends(unit_scope_query)] = None,
 ) -> AssignSelectionOut:
+    """«No se asigna lo que no se ve» (RF-002): the crew must be inside the planner's ámbito, and
+    an order outside it fails as «no existe», the same as an id from another unit."""
     unit = _unit(session, business_unit)
-    crew = session.get(Crew, payload.crew_id)
-    if crew is None or crew.business_unit_id != unit.id:
-        raise HTTPException(
-            status.HTTP_404_NOT_FOUND, "la cuadrilla no existe en esta unidad de negocio"
-        )
+    crew = _crew(session, unit.id, payload.crew_id, principal)
     try:
         assigned, failures = assign_many(
-            session, unit, payload.work_order_ids, crew=crew, reason=payload.reason
+            session,
+            unit,
+            payload.work_order_ids,
+            crew=crew,
+            reason=payload.reason,
+            principal=principal,
         )
     except CrossUnitError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
@@ -259,17 +268,15 @@ def assign_selection(
     dependencies=[Depends(require_roles(Role.PLANNER, Role.SUPERVISOR))],
 )
 def assign_one(
-    work_order_id: uuid.UUID, payload: AssignOneIn, session: SessionDep, business_unit: str
+    work_order_id: uuid.UUID,
+    payload: AssignOneIn,
+    session: SessionDep,
+    business_unit: str,
+    principal: Annotated[Any, Depends(unit_scope_query)] = None,
 ) -> dict[str, Any]:
     unit = _unit(session, business_unit)
-    order = session.get(WorkOrder, work_order_id)
-    if order is None or order.business_unit_id != unit.id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "la OT no existe en esta unidad")
-    crew = session.get(Crew, payload.crew_id)
-    if crew is None or crew.business_unit_id != unit.id:
-        raise HTTPException(
-            status.HTTP_404_NOT_FOUND, "la cuadrilla no existe en esta unidad de negocio"
-        )
+    order = _order(session, unit.id, work_order_id, principal)
+    crew = _crew(session, unit.id, payload.crew_id, principal)
     try:
         assign(
             session,
@@ -303,18 +310,7 @@ def get_custody(
 ) -> list[CustodyEntry]:
     """RF-324: who held it, on which device, since when and why."""
     unit = _unit(session, business_unit)
-    order = session.get(WorkOrder, work_order_id)
-    if order is None or order.business_unit_id != unit.id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "la OT no existe en esta unidad")
-    if not principal.may_see(
-        area=area_of_form_code(order.form_code),
-        zone=order.zone,
-        agency=order.agency,
-        contractor=order.crew.contractor if order.crew else None,
-    ):
-        # Mismo ámbito que el mapa y la revisión (RF-002): un id directo no es una vía para
-        # esquivar lo que una lista ya no muestra.
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "la OT no existe en esta unidad")
+    order = _order(session, unit.id, work_order_id, principal)
     return [
         CustodyEntry(
             device_id=entry.device_id,
@@ -343,21 +339,44 @@ class AttachFrontIn(BaseModel):
     work_order_id: uuid.UUID
 
 
-def _order(session: Session, unit_id: uuid.UUID, work_order_id: uuid.UUID) -> WorkOrder:
+def _order(
+    session: Session, unit_id: uuid.UUID, work_order_id: uuid.UUID, principal: Any
+) -> WorkOrder:
+    """The order by id, or 404 — also when it is outside the principal's ámbito (RF-002): an id
+    typed by hand is not a way around what the map and the lists no longer show."""
     order = session.get(WorkOrder, work_order_id)
-    if order is None or order.business_unit_id != unit_id:
+    if order is None or order.business_unit_id != unit_id or not may_see_order(principal, order):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "la OT no existe en esta unidad")
     return order
+
+
+def _crew(session: Session, unit_id: uuid.UUID, crew_id: uuid.UUID, principal: Any) -> Crew:
+    """The crew by id, or 404 on the same terms as `_order`."""
+    crew = session.get(Crew, crew_id)
+    if crew is None or crew.business_unit_id != unit_id or not may_see_crew(principal, crew):
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, "la cuadrilla no existe en esta unidad de negocio"
+        )
+    return crew
 
 
 @router.get(
     "/work-orders/{work_order_id}/fronts",
     summary="Los frentes de una obra y su avance agregado (RF-015)",
 )
-def fronts_of(work_order_id: uuid.UUID, session: SessionDep, business_unit: str) -> dict[str, Any]:
-    """«Una OT padre muestra el avance agregado de sus hijas», con su denominador."""
+def fronts_of(
+    work_order_id: uuid.UUID,
+    session: SessionDep,
+    business_unit: str,
+    principal: Annotated[Any, Depends(unit_scope_query)] = None,
+) -> dict[str, Any]:
+    """«Una OT padre muestra el avance agregado de sus hijas», con su denominador.
+
+    The aggregate counts every front, in ámbito or not: it is the work's progress, and a percentage
+    that changed with who was looking would be two different works. The list only names the fronts
+    the principal may see (RF-002)."""
     unit = _unit(session, business_unit)
-    parent = _order(session, unit.id, work_order_id)
+    parent = _order(session, unit.id, work_order_id, principal)
     children = fronts.children_of(session, parent)
     return {
         "work_order_id": str(parent.id),
@@ -374,12 +393,17 @@ def fronts_of(work_order_id: uuid.UUID, session: SessionDep, business_unit: str)
                 "assigned_crew_id": str(child.assigned_crew_id) if child.assigned_crew_id else None,
             }
             for child in children
+            if may_see_order(principal, child)
         ],
     }
 
 
 @router.get("/works", summary="Las obras de la unidad con su avance (RF-015)")
-def works_with_fronts(session: SessionDep, business_unit: str) -> list[dict[str, Any]]:
+def works_with_fronts(
+    session: SessionDep,
+    business_unit: str,
+    principal: Annotated[Any, Depends(unit_scope_query)] = None,
+) -> list[dict[str, Any]]:
     unit = _unit(session, business_unit)
     return [
         {
@@ -389,7 +413,7 @@ def works_with_fronts(session: SessionDep, business_unit: str) -> list[dict[str,
             "state": parent.state,
             "progress": progress.as_dict(),
         }
-        for parent, progress in fronts.parents_with_fronts(session, unit)
+        for parent, progress in fronts.parents_with_fronts(session, unit, principal=principal)
     ]
 
 
@@ -406,8 +430,8 @@ def attach_front(
     principal: Annotated[Any, Depends(require_roles(Role.PLANNER, Role.SUPERVISOR))] = None,
 ) -> dict[str, Any]:
     unit = _unit(session, business_unit)
-    parent = _order(session, unit.id, work_order_id)
-    child = _order(session, unit.id, payload.work_order_id)
+    parent = _order(session, unit.id, work_order_id, principal)
+    child = _order(session, unit.id, payload.work_order_id, principal)
     try:
         fronts.attach(session, unit, parent, child, actor=principal.subject)
     except fronts.FrontError as exc:
@@ -433,8 +457,8 @@ def detach_front(
 ) -> dict[str, Any]:
     """Separar, no anular: el frente sigue siendo trabajo y conserva lo que ya capturó."""
     unit = _unit(session, business_unit)
-    parent = _order(session, unit.id, work_order_id)
-    child = _order(session, unit.id, front_id)
+    parent = _order(session, unit.id, work_order_id, principal)
+    child = _order(session, unit.id, front_id, principal)
     if child.parent_id != parent.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "esa OT no es frente de esta obra")
     try:

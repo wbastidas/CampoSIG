@@ -29,10 +29,12 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import ColumnElement, Select, func, select
 from sqlalchemy.orm import Session
 
 from app.audit.models import AuditEvent
+from app.auth.principal import Principal
+from app.auth.scope import crew_scope, work_order_scope
 from app.workorders.models import Crew, WorkOrder, WorkOrderState
 
 #: Below this many finished jobs, a duration is reported as a count and not as a median. Small
@@ -185,13 +187,20 @@ class Board:
 
 
 def _in_period(
-    statement: Select[Any], unit_id: uuid.UUID, since: datetime, until: datetime
+    statement: Select[Any],
+    unit_id: uuid.UUID,
+    since: datetime,
+    until: datetime,
+    scope: ColumnElement[bool] | None = None,
 ) -> Select[Any]:
-    return statement.where(
+    statement = statement.where(
         WorkOrder.business_unit_id == unit_id,
         WorkOrder.created_at >= since,
         WorkOrder.created_at <= until,
     )
+    # The ámbito (RF-002) rides the one filter every number on the board already shares, so no
+    # tile can be computed over a different population than the one beside it.
+    return statement.where(scope) if scope is not None else statement
 
 
 def build(
@@ -201,9 +210,15 @@ def build(
     since: datetime | None = None,
     until: datetime | None = None,
     now: datetime | None = None,
+    principal: Principal | None = None,
 ) -> Board:
-    """The whole board. Computed live, so «cada 5 min» is a refresh and never a stale cache."""
+    """The whole board. Computed live, so «cada 5 min» is a refresh and never a stale cache.
+
+    Within the principal's ámbito (RF-002): a zone supervisor's board is their zone's.
+    """
     moment = now or datetime.now(UTC)
+    scope = work_order_scope(principal) if principal is not None else None
+    crews_scope = crew_scope(principal) if principal is not None else None
     start = since or (moment - timedelta(days=30))
     end = until or moment
 
@@ -214,6 +229,7 @@ def build(
                 unit_id,
                 start,
                 end,
+                scope,
             )
         )
         .tuples()
@@ -224,11 +240,13 @@ def build(
         computed_at=moment,
         since=start,
         by_state=by_state,
-        overdue=_sla_count(session, unit_id, start, end, before=moment),
-        due_soon=_sla_count(session, unit_id, start, end, after=moment, before=moment + DUE_SOON),
-        without_sla=_without_sla(session, unit_id, start, end),
-        legs=_legs(session, unit_id, start, end),
-        crews=_crews(session, unit_id, start, end),
+        overdue=_sla_count(session, unit_id, start, end, before=moment, scope=scope),
+        due_soon=_sla_count(
+            session, unit_id, start, end, after=moment, before=moment + DUE_SOON, scope=scope
+        ),
+        without_sla=_without_sla(session, unit_id, start, end, scope),
+        legs=_legs(session, unit_id, start, end, scope),
+        crews=_crews(session, unit_id, start, end, scope, crews_scope),
     )
 
 
@@ -245,8 +263,9 @@ def _sla_count(
     *,
     before: datetime,
     after: datetime | None = None,
+    scope: ColumnElement[bool] | None = None,
 ) -> int:
-    statement = _in_period(select(func.count(WorkOrder.id)), unit_id, since, until).where(
+    statement = _in_period(select(func.count(WorkOrder.id)), unit_id, since, until, scope).where(
         WorkOrder.sla_due_at.is_not(None),
         WorkOrder.sla_due_at < before,
         _open_orders(),
@@ -256,10 +275,16 @@ def _sla_count(
     return int(session.scalar(statement) or 0)
 
 
-def _without_sla(session: Session, unit_id: uuid.UUID, since: datetime, until: datetime) -> int:
+def _without_sla(
+    session: Session,
+    unit_id: uuid.UUID,
+    since: datetime,
+    until: datetime,
+    scope: ColumnElement[bool] | None = None,
+) -> int:
     return int(
         session.scalar(
-            _in_period(select(func.count(WorkOrder.id)), unit_id, since, until).where(
+            _in_period(select(func.count(WorkOrder.id)), unit_id, since, until, scope).where(
                 WorkOrder.sla_due_at.is_(None), _open_orders()
             )
         )
@@ -301,10 +326,18 @@ def _milestones(
     return found
 
 
-def _legs(session: Session, unit_id: uuid.UUID, since: datetime, until: datetime) -> list[Leg]:
+def _legs(
+    session: Session,
+    unit_id: uuid.UUID,
+    since: datetime,
+    until: datetime,
+    scope: ColumnElement[bool] | None = None,
+) -> list[Leg]:
     milestones = _milestones(session, unit_id, since, until)
     states: dict[uuid.UUID, str] = dict(
-        session.execute(_in_period(select(WorkOrder.id, WorkOrder.state), unit_id, since, until))
+        session.execute(
+            _in_period(select(WorkOrder.id, WorkOrder.state), unit_id, since, until, scope)
+        )
         .tuples()
         .all()
     )
@@ -336,7 +369,12 @@ def _legs(session: Session, unit_id: uuid.UUID, since: datetime, until: datetime
 
 
 def _crews(
-    session: Session, unit_id: uuid.UUID, since: datetime, until: datetime
+    session: Session,
+    unit_id: uuid.UUID,
+    since: datetime,
+    until: datetime,
+    scope: ColumnElement[bool] | None = None,
+    crews_scope: ColumnElement[bool] | None = None,
 ) -> list[CrewProductivity]:
     """What each crew finished, and what it is carrying now.
 
@@ -344,7 +382,10 @@ def _crews(
     review is the office's work, and counting it here would make a crew's number move because
     somebody else was on holiday.
     """
-    crews = list(session.scalars(select(Crew).where(Crew.business_unit_id == unit_id)))
+    crew_query = select(Crew).where(Crew.business_unit_id == unit_id)
+    if crews_scope is not None:
+        crew_query = crew_query.where(crews_scope)
+    crews = list(session.scalars(crew_query))
     if not crews:
         return []
 
@@ -355,6 +396,7 @@ def _crews(
             unit_id,
             since,
             until,
+            scope,
         )
     ).all()
 

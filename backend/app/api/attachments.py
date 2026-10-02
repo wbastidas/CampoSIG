@@ -22,6 +22,7 @@ from app.attachments import service as attachments
 from app.attachments.models import AttachmentKind, WorkOrderAttachment
 from app.auth.dependencies import require_roles, unit_scope
 from app.auth.principal import Role
+from app.auth.scope import may_see_order
 from app.infra.database import get_session
 from app.org.models import BusinessUnit
 from app.org.service import UnknownBusinessUnitError, get_business_unit_by_code
@@ -47,18 +48,27 @@ def _unit(session: Session, code: str) -> BusinessUnit:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
 
 
-def _order(session: Session, unit: BusinessUnit, work_order_id: uuid.UUID) -> WorkOrder:
+def _order(
+    session: Session, unit: BusinessUnit, work_order_id: uuid.UUID, principal: Any
+) -> WorkOrder:
+    """The order by id, or 404 — also outside the principal's ámbito (RF-002)."""
     order = session.get(WorkOrder, work_order_id)
-    if order is None or order.business_unit_id != unit.id:
+    if order is None or order.business_unit_id != unit.id or not may_see_order(principal, order):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "la OT no existe en esta unidad de negocio")
     return order
 
 
 def _attachment(
-    session: Session, unit: BusinessUnit, attachment_id: uuid.UUID
+    session: Session, unit: BusinessUnit, attachment_id: uuid.UUID, principal: Any
 ) -> WorkOrderAttachment:
+    """The attachment by id, or 404 — also when its order is outside the ámbito (RF-002)."""
     row = session.get(WorkOrderAttachment, attachment_id)
-    if row is None or row.business_unit_id != unit.id:
+    order = session.get(WorkOrder, row.work_order_id) if row is not None else None
+    if (
+        row is None
+        or row.business_unit_id != unit.id
+        or (order is not None and not may_see_order(principal, order))
+    ):
         raise HTTPException(
             status.HTTP_404_NOT_FOUND, "el adjunto no existe en esta unidad de negocio"
         )
@@ -99,10 +109,10 @@ def index(
     work_order_id: uuid.UUID,
     session: SessionDep,
     include_withdrawn: Annotated[bool, Query()] = False,
-    _: Annotated[Any, Depends(require_roles(*READERS))] = None,
+    principal: Annotated[Any, Depends(require_roles(*READERS))] = None,
 ) -> dict[str, Any]:
     unit = _unit(session, unit_code)
-    order = _order(session, unit, work_order_id)
+    order = _order(session, unit, work_order_id, principal)
     rows = attachments.attachments_of(session, order, include_withdrawn=include_withdrawn)
     return {
         "work_order_id": str(order.id),
@@ -128,7 +138,7 @@ def attach(
 ) -> dict[str, Any]:
     """El archivo ya está en el almacenamiento; esto registra qué es y con qué hash."""
     unit = _unit(session, unit_code)
-    order = _order(session, unit, work_order_id)
+    order = _order(session, unit, work_order_id, principal)
     try:
         row = attachments.attach(
             session,
@@ -171,7 +181,7 @@ def withdraw(
 ) -> dict[str, Any]:
     """Retirado, nunca borrado: la cuadrilla pudo ejecutar el trabajo con el plano viejo."""
     unit = _unit(session, unit_code)
-    row = _attachment(session, unit, attachment_id)
+    row = _attachment(session, unit, attachment_id, principal)
     try:
         attachments.withdraw(session, unit, row, actor=principal.subject, reason=payload.reason)
     except attachments.AttachmentError as exc:

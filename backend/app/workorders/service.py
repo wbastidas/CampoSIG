@@ -21,7 +21,7 @@ from sqlalchemy.sql.elements import Case
 from app.audit import service as audit
 from app.audit.models import ActorKind, EventKind
 from app.auth.principal import Principal
-from app.auth.scope import work_order_scope
+from app.auth.scope import crew_scope, work_order_scope
 from app.forms import registry as form_registry
 from app.forms.catalog import codes_for_area, get_definition
 from app.org.models import BusinessUnit
@@ -577,6 +577,7 @@ def assign_many(
     crew: Crew,
     reason: str | None = None,
     granted_by: str | None = None,
+    principal: Principal | None = None,
 ) -> tuple[list[WorkOrder], list[tuple[uuid.UUID, str]]]:
     """Assign a lasso selection to one crew.
 
@@ -584,14 +585,22 @@ def assign_many(
     the planner the other nineteen. Failures come back with their reason so the map can
     show exactly which pins were refused and why.
 
+    An order outside the principal's ámbito (RF-002) fails exactly like one that does not exist:
+    the lasso is drawn on a map that never showed it, so an id that reaches here anyway came from
+    somewhere else, and «no se asigna lo que no se ve».
+
     :returns: (assigned, failures) where each failure is (order_id, message).
     """
     if crew.business_unit_id != unit.id:
         raise CrossUnitError("la cuadrilla no pertenece a esta unidad de negocio")
 
-    orders = session.scalars(
-        select(WorkOrder).where(WorkOrder.business_unit_id == unit.id, WorkOrder.id.in_(order_ids))
-    ).all()
+    statement = select(WorkOrder).where(
+        WorkOrder.business_unit_id == unit.id, WorkOrder.id.in_(order_ids)
+    )
+    scope = work_order_scope(principal) if principal is not None else None
+    if scope is not None:
+        statement = statement.where(scope)
+    orders = session.scalars(statement).all()
     found = {order.id for order in orders}
 
     assigned: list[WorkOrder] = []
@@ -609,8 +618,12 @@ def assign_many(
     return assigned, failures
 
 
-def crew_workload(session: Session, unit: BusinessUnit) -> list[dict[str, Any]]:
-    """Open work per crew — the shared board several planners work against (RF-313)."""
+def crew_workload(
+    session: Session, unit: BusinessUnit, *, principal: Principal | None = None
+) -> list[dict[str, Any]]:
+    """Open work per crew — the shared board several planners work against (RF-313).
+
+    Only the crews inside the principal's ámbito (RF-002)."""
     open_states = [
         WorkOrderState.ASSIGNED,
         WorkOrderState.DOWNLOADED,
@@ -619,15 +632,19 @@ def crew_workload(session: Session, unit: BusinessUnit) -> list[dict[str, Any]]:
         WorkOrderState.IN_EXECUTION,
         WorkOrderState.SUSPENDED,
     ]
-    rows = session.execute(
+    statement = (
         select(Crew.id, Crew.code, Crew.name, func.count(WorkOrder.id))
         .outerjoin(
             WorkOrder,
             (WorkOrder.assigned_crew_id == Crew.id) & WorkOrder.state.in_(open_states),
         )
         .where(Crew.business_unit_id == unit.id, Crew.active.is_(True))
-        .group_by(Crew.id, Crew.code, Crew.name)
-        .order_by(Crew.code)
+    )
+    scope = crew_scope(principal) if principal is not None else None
+    if scope is not None:
+        statement = statement.where(scope)
+    rows = session.execute(
+        statement.group_by(Crew.id, Crew.code, Crew.name).order_by(Crew.code)
     ).all()
     return [
         {"crew_id": row[0], "code": row[1], "name": row[2], "open_work_orders": row[3]}
@@ -636,12 +653,19 @@ def crew_workload(session: Session, unit: BusinessUnit) -> list[dict[str, Any]]:
 
 
 def list_crews(
-    session: Session, unit: BusinessUnit, *, include_inactive: bool = False
+    session: Session,
+    unit: BusinessUnit,
+    *,
+    include_inactive: bool = False,
+    principal: Principal | None = None,
 ) -> list[Crew]:
-    """A unit's crews (RF-005)."""
+    """A unit's crews (RF-005), narrowed to the principal's ámbito when one is given (RF-002)."""
     statement = select(Crew).where(Crew.business_unit_id == unit.id)
     if not include_inactive:
         statement = statement.where(Crew.active.is_(True))
+    scope = crew_scope(principal) if principal is not None else None
+    if scope is not None:
+        statement = statement.where(scope)
     return list(session.scalars(statement.order_by(Crew.code)))
 
 

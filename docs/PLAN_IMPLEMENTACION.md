@@ -1253,14 +1253,43 @@ tanda dejó pasar una (quitar el filtro de contratista de `crew_scope` sobrevivi
 ninguna prueba del tablero de despacho con ámbito de contratista, solo con zona); se escribió la
 prueba que faltaba y la mutación quedó atrapada.
 
-**Lo que queda fuera, a propósito, documentado y no silenciado.** La escritura — asignar una OT
-(`assign_one`, `assign_selection`) — no quedó gateada por ámbito: si un planificador con área
-APG puede asignar una OT de Mantenimiento es una decisión de producto, no una que este incremento
-deba tomar por su cuenta. Tampoco quedaron gateados los adjuntos, las URLs firmadas, los
-descargos ni las rutas sugeridas, que leen una OT por id con su propio `_order()` o equivalente;
-cerrarlos es mecánico una vez se decide la pregunta de la escritura, y se deja para cuando esa
-pregunta tenga respuesta. El tablero operativo y los demás paneles de analítica (RF-130 a RF-134)
-tampoco filtran por ámbito todavía.
+**Lo que quedó fuera en la primera tanda, y cómo se cerró.** La primera tanda dejó la escritura y
+los accesos por id sin ámbito. Se cerraron con la regla por defecto **«no se asigna lo que no se
+ve»**: lo que una persona no ve en el mapa ni en las listas tampoco lo toca por id, y fuera del
+ámbito responde exactamente como «no existe» (404, o el fallo «no existe en esta unidad de
+negocio» de un lazo) — nunca 403, que confirmaría que el id es real. Dos ayudantes nuevos en
+`auth.scope`, `may_see_order` y `may_see_crew`, son la versión para un objeto de las cláusulas SQL,
+y cada endpoint los usa en su `_order()`/`_crew()`:
+
+- **Planificación:** `assign_one` (la OT y la cuadrilla), `assign_selection` (la cuadrilla; cada OT
+  fuera del ámbito vuelve como «no existe» y el resto del lazo se asigna), cuadrillas sugeridas
+  (solo se puntúan cuadrillas del ámbito), carga por cuadrilla, custodia, y obras con frentes: la
+  lista de frentes nombra solo los del ámbito, pero **el avance agregado cuenta todos** — es el
+  avance de la obra, y un porcentaje que cambiara según quién mira serían dos obras distintas.
+- **Adjuntos** (leer, adjuntar, retirar), **consignaciones** (vincular, desvincular; el detalle
+  nombra solo las OT del ámbito y cuenta todas, porque cuántas OT trabajan bajo una línea
+  desenergizada es un hecho de la línea) y **rutas sugeridas** (una OT fuera del ámbito es una OT
+  que no existe: la ruta lleva sus coordenadas).
+- **Cuadrillas:** la lista y el historial. Editarlas es del administrador funcional, un rol
+  corporativo que atraviesa todo ámbito (`Principal.is_corporate`), así que ahí no hay nada que
+  estrechar.
+- **Tableros:** el operativo (RF-130) y el de mantenimiento (RF-133) cuentan solo el ámbito de
+  quien mira — el tablero de un supervisor de zona es el de su zona. En mantenimiento se estrechan
+  los hallazgos, **no** la consulta de «atendido desde entonces»: un hallazgo que cerró la cuadrilla
+  de otra zona está cerrado, y mostrarlo abierto sería pendiente que ese supervisor no puede
+  resolver.
+
+**Lo que sigue sin ámbito, por diseño.** La firma de subidas (`storage/presign`) no recibe una OT:
+firma una subida dentro de la unidad, y el vínculo con la OT ocurre después, en adjuntos o en el
+push, que sí están gateados. Las bases regulatorias — APG (RF-131) e interrupciones para FMIK/TTIK
+(RF-132) — se reportan por distribuidora: una base parcial por zona sería un número que no se
+puede enviar al regulador, así que siguen siendo de unidad. El tablero de IA (RF-134) es del
+analista de ML. La consignación en sí no tiene zona — es una operación sobre la red — y su lista
+sigue siendo de unidad. Si alguna de estas decisiones no es la correcta para CNEL, se cambia en un
+solo sitio por tablero.
+
+Veinticuatro mutaciones sembradas en la regla para un objeto, cada endpoint y cada tablero, las
+veinticuatro atrapadas.
 
 ---
 

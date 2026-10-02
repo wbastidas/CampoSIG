@@ -24,10 +24,12 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.orm import Session
 
 from app.audit.models import AuditEvent
+from app.auth.principal import Principal
+from app.auth.scope import work_order_scope
 from app.responses.models import FormResponse
 from app.workorders.models import WorkOrder, WorkOrderState
 
@@ -169,9 +171,13 @@ class MaintenanceBoard:
 
 
 def _captures(
-    session: Session, unit_id: uuid.UUID, since: datetime, until: datetime
+    session: Session,
+    unit_id: uuid.UUID,
+    since: datetime,
+    until: datetime,
+    scope: ColumnElement[bool] | None = None,
 ) -> list[tuple[WorkOrder, FormResponse]]:
-    rows = session.execute(
+    statement = (
         select(WorkOrder, FormResponse)
         .join(FormResponse, FormResponse.work_order_id == WorkOrder.id)
         .where(
@@ -180,8 +186,10 @@ def _captures(
             FormResponse.submitted_at >= since,
             FormResponse.submitted_at <= until,
         )
-        .order_by(FormResponse.submitted_at)
     )
+    if scope is not None:
+        statement = statement.where(scope)
+    rows = session.execute(statement.order_by(FormResponse.submitted_at))
     return [(order, response) for order, response in rows]
 
 
@@ -296,12 +304,19 @@ def build(
     since: datetime,
     until: datetime,
     defect_code: str | None = None,
+    principal: Principal | None = None,
 ) -> MaintenanceBoard:
-    """The whole board, over the findings of the period."""
+    """The whole board, over the findings of the period.
+
+    The findings are the ones inside the principal's ámbito (RF-002). Whether an asset was attended
+    since is **not** narrowed: a finding closed by another zone's crew is closed, and narrowing that
+    lookup would show it as an open backlog item to a supervisor who cannot do anything about it.
+    """
     board = MaintenanceBoard(since=since, until=until, defect_filter=defect_code)
+    scope = work_order_scope(principal) if principal is not None else None
 
     findings: list[Finding] = []
-    for order, response in _captures(session, unit_id, since, until):
+    for order, response in _captures(session, unit_id, since, until, scope):
         findings.extend(_findings_of(order, response))
     if defect_code is not None:
         findings = [item for item in findings if item.defect_code == defect_code]
