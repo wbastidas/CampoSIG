@@ -1313,6 +1313,20 @@ decisiones** de la app como Kotlin/JVM puro, probado en CI sin SDK, emulador ni 
 - **RF-023/321/322, retiradas.** La lista `withdrawn` del pull pasa por `ConflictResolver`: se libera
   ya, se retiene hasta entregar lo capturado, o va al supervisor si se trabajó y se anuló.
 
+- **RF-076, política de envío.** La bandeja retenía toda foto completa en cualquier red medida, sin
+  leer el parámetro. `SendPolicy` lo lee: miniatura siempre y ya; completa por datos móviles solo si
+  el área lo permite (`upload_on_metered`) y bajo su tope diario; reducida a 1280 px fuera de Wi-Fi
+  si así lo pide; los datos de entrenamiento nunca gastan datos móviles. Entra a la bandeja como una
+  regla de admisión (`nextBatch(admits = …)`), y sin red no sale nada aunque la regla diga que sí.
+- **RF-104, subida reanudable.** El servidor abre una subida por partes en el almacenamiento
+  (`/storage/units/{u}/multipart`, partes de 5 MiB), firma solo las partes que se le piden y, tras
+  un corte, responde **qué partes tiene el almacenamiento** — no lo que el teléfono cree haber
+  subido. `ResumableUpload` calcula desde ahí qué bytes faltan. El backend sigue sin transportar un
+  solo byte, y una clave de otra unidad es «no existe».
+- **RF-106, indicador de sincronización.** Una sola insignia para todas las pantallas (errores
+  primero, luego sin red, luego atrasado, luego pendiente) y «forzar sync», que salta la espera de
+  reintento pero no toca lo aparcado: eso lo tiene que mirar una persona.
+
 El estado de cada RF, con su prueba, está en `docs/TRAZABILIDAD.md`.
 
 La bandeja de salida gana tres tipos (`TIME_CORRECTION`, `FIELD_FINDING`, `EVIDENCE_UPLOADED`) con su

@@ -289,4 +289,11 @@ class OutboxTest {
         assertEquals(1, outbox.countByState(OperationState.IN_FLIGHT))
         assertEquals(1, outbox.countByState(OperationState.PARKED))
     }
+
+    @Test
+    fun `rf 076 a policy rule never sends anything without a network`() {
+        val outbox = Outbox.empty().enqueue(op("form", OperationKind.FORM_RESPONSE))
+        val batch = outbox.nextBatch(now, NetworkQuality.NONE, admits = { true })
+        assertTrue(batch.operations.isEmpty())
+    }
 }

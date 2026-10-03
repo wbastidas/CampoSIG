@@ -274,12 +274,23 @@ public class Outbox private constructor(
         network: NetworkQuality,
         maxOperations: Int = 50,
         maxBytes: Long = 8L * 1024 * 1024,
+        /**
+         * Which operations this connection may carry. By default the network's own rule
+         * ([NetworkQuality.allows]); the capture policy replaces it when an area allows full
+         * photographs over mobile data (RF-076) — a decision that belongs to the area, not here.
+         */
+        admits: (SyncOperation) -> Boolean = { network.allows(it.priority) },
     ): SyncBatch {
         require(maxOperations > 0) { "maxOperations debe ser positivo" }
         require(maxBytes > 0) { "maxBytes debe ser positivo" }
 
         val ready = entries.values
-            .filter { it.isReady(nowMillis, network) }
+            .filter {
+                it.state == OperationState.PENDING &&
+                    nowMillis >= it.notBeforeMillis &&
+                    network != NetworkQuality.NONE &&
+                    admits(it)
+            }
             .sortedWith(compareBy({ it.priority.rank }, { it.createdAtMillis }, { it.id }))
 
         if (ready.isEmpty()) return SyncBatch(emptyList(), BatchReason.NOTHING_READY)
@@ -348,6 +359,17 @@ public class Outbox private constructor(
      */
     public fun park(ids: Collection<String>, error: String): Outbox =
         update(ids) { it.copy(state = OperationState.PARKED, lastError = error) }
+
+    /**
+     * «Forzar sync» (RF-106): pending operations waiting out a backoff become ready now. Parked ones
+     * stay parked — a person has to look at those, and forcing them would only fail them again.
+     */
+    public fun expedite(): Outbox = Outbox(
+        entries.mapValues { (_, operation) ->
+            if (operation.state == OperationState.PENDING) operation.copy(notBeforeMillis = 0) else operation
+        },
+        policy,
+    )
 
     /** Return parked operations to the queue, after a human fixed whatever was wrong. */
     public fun requeue(ids: Collection<String>): Outbox =

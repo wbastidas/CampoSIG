@@ -17,8 +17,9 @@ Tres decisiones:
   según el tipo (`EvidenceKind`), porque una firma no pesa como un audio.
 * **La URL pública no es la interna.** La firma de una URL de S3 incluye el host: el que va a
   resolver el cliente que sube, no el nombre de servicio que solo el backend conoce dentro de
-  Docker. `settings.s3_public_url` es ese host; `settings.s3_endpoint_url` queda para cuando el
-  propio backend necesite hablar con el almacenamiento (hoy, nunca — firmar no requiere alcanzarlo).
+  Docker. `settings.s3_public_url` es ese host; `settings.s3_endpoint_url` es para cuando el propio
+  backend habla con el almacenamiento: verificar el hash de una evidencia (RF-073) y abrir, listar y
+  cerrar una subida por partes (RF-104). Firmar no requiere alcanzarlo.
 """
 
 from __future__ import annotations
@@ -102,16 +103,8 @@ def read_object(storage_key: str) -> bytes:
     :raises StorageError: si el objeto no está, que es lo normal mientras la subida no termina.
     """
     settings = get_settings()
-    client = boto3.client(
-        "s3",
-        endpoint_url=settings.s3_endpoint_url,
-        aws_access_key_id=settings.s3_access_key,
-        aws_secret_access_key=settings.s3_secret_key,
-        config=BotoConfig(signature_version="s3v4", s3={"addressing_style": "path"}),
-        region_name="us-east-1",
-    )
     try:
-        response = client.get_object(Bucket=settings.s3_bucket, Key=storage_key)
+        response = _internal_client().get_object(Bucket=settings.s3_bucket, Key=storage_key)
     except Exception as exc:  # botocore lanza varias clases; todas significan «no se pudo leer»
         raise StorageError(f"el archivo «{storage_key}» no está en el almacenamiento") from exc
     body: bytes = response["Body"].read()
@@ -149,6 +142,26 @@ def presign_upload(
         `app.attachments.service`) pero igual entra en la clave, para que el bucket se lea solo.
     :raises StorageError: propósito desconocido, tipo no admitido, o peso fuera de rango.
     """
+    _check(purpose=purpose, kind=kind, content_type=content_type, size_bytes=size_bytes)
+
+    settings = get_settings()
+    key = storage_key_for(unit, purpose=purpose, kind=kind, filename=filename)
+    url = _client().generate_presigned_url(
+        "put_object",
+        Params={"Bucket": settings.s3_bucket, "Key": key, "ContentType": content_type},
+        ExpiresIn=settings.s3_presign_expires_seconds,
+    )
+    return PresignedUpload(
+        url=url,
+        storage_key=key,
+        method="PUT",
+        expires_in=settings.s3_presign_expires_seconds,
+        headers={"Content-Type": content_type},
+    )
+
+
+def _check(*, purpose: str, kind: str, content_type: str, size_bytes: int) -> None:
+    """Lo que se admite, por propósito y tipo. Lo mismo para una subida entera y una por partes."""
     limits = _ATTACHMENT_LIMITS if purpose == "adjunto" else _EVIDENCE_LIMITS
     allowed = limits.get(kind if purpose == "evidencia" else purpose)
     if allowed is None:
@@ -167,19 +180,157 @@ def presign_upload(
             f"{_megabytes(max_bytes)} MB"
         )
 
+
+# --- subida por partes, reanudable (RF-104) ----------------------------------------------------
+#: El tamaño de cada parte. Cinco MiB es el mínimo que S3 (y SeaweedFS) aceptan para toda parte
+#: salvo la última, y es también lo que se puede perder en un corte: en un enlace rural de 256 kbps
+#: son dos minutos y medio, no la foto entera.
+PART_SIZE = 5 * 1024 * 1024
+
+
+@dataclass(frozen=True)
+class MultipartUpload:
+    storage_key: str
+    upload_id: str
+    part_size: int
+    part_count: int
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "storage_key": self.storage_key,
+            "upload_id": self.upload_id,
+            "part_size": self.part_size,
+            "part_count": self.part_count,
+        }
+
+
+def part_count(size_bytes: int, part_size: int = PART_SIZE) -> int:
+    return max(1, -(-size_bytes // part_size))
+
+
+def _internal_client() -> Any:
+    settings = get_settings()
+    return boto3.client(
+        "s3",
+        endpoint_url=settings.s3_endpoint_url,
+        aws_access_key_id=settings.s3_access_key,
+        aws_secret_access_key=settings.s3_secret_key,
+        config=BotoConfig(signature_version="s3v4", s3={"addressing_style": "path"}),
+        region_name="us-east-1",
+    )
+
+
+def belongs_to(unit: BusinessUnit, storage_key: str) -> bool:
+    """Si la clave es de esta unidad (ADR-009): toda clave empieza por el código de su unidad."""
+    return storage_key.startswith(f"{unit.code}/")
+
+
+def start_multipart(
+    unit: BusinessUnit,
+    *,
+    purpose: str,
+    kind: str,
+    filename: str,
+    content_type: str,
+    size_bytes: int,
+) -> MultipartUpload:
+    """Abrir una subida por partes (RF-104), con los mismos límites que una entera."""
+    _check(purpose=purpose, kind=kind, content_type=content_type, size_bytes=size_bytes)
     settings = get_settings()
     key = storage_key_for(unit, purpose=purpose, kind=kind, filename=filename)
-    url = _client().generate_presigned_url(
-        "put_object",
-        Params={"Bucket": settings.s3_bucket, "Key": key, "ContentType": content_type},
-        ExpiresIn=settings.s3_presign_expires_seconds,
+    created = _internal_client().create_multipart_upload(
+        Bucket=settings.s3_bucket, Key=key, ContentType=content_type
     )
-    return PresignedUpload(
-        url=url,
+    return MultipartUpload(
         storage_key=key,
-        method="PUT",
-        expires_in=settings.s3_presign_expires_seconds,
-        headers={"Content-Type": content_type},
+        upload_id=str(created["UploadId"]),
+        part_size=PART_SIZE,
+        part_count=part_count(size_bytes),
+    )
+
+
+def presign_parts(storage_key: str, upload_id: str, part_numbers: list[int]) -> dict[int, str]:
+    """URLs firmadas para las partes pedidas. Se piden de nuevo al reanudar: las viejas vencen."""
+    if not part_numbers or any(n < 1 or n > 10_000 for n in part_numbers):
+        raise StorageError("las partes van de 1 a 10 000")
+    settings = get_settings()
+    client = _client()
+    return {
+        number: client.generate_presigned_url(
+            "upload_part",
+            Params={
+                "Bucket": settings.s3_bucket,
+                "Key": storage_key,
+                "UploadId": upload_id,
+                "PartNumber": number,
+            },
+            ExpiresIn=settings.s3_presign_expires_seconds,
+        )
+        for number in sorted(set(part_numbers))
+    }
+
+
+def uploaded_parts(storage_key: str, upload_id: str) -> list[dict[str, Any]]:
+    """Las partes que ya llegaron, según el almacenamiento y no según el teléfono.
+
+    Es la respuesta a «¿desde dónde sigo?» después de un corte: el teléfono puede creer que una
+    parte se subió cuando la respuesta se perdió en el camino, y al revés.
+    """
+    settings = get_settings()
+    client = _internal_client()
+    parts: list[dict[str, Any]] = []
+    marker = 0
+    while True:
+        try:
+            page = client.list_parts(
+                Bucket=settings.s3_bucket,
+                Key=storage_key,
+                UploadId=upload_id,
+                PartNumberMarker=marker,
+            )
+        except Exception as exc:  # botocore: la subida no existe, venció o ya se cerró
+            raise StorageError("la subida por partes no existe o ya se cerró") from exc
+        for part in page.get("Parts", []):
+            parts.append(
+                {
+                    "part_number": int(part["PartNumber"]),
+                    "etag": str(part["ETag"]),
+                    "size": int(part.get("Size", 0)),
+                }
+            )
+        if not page.get("IsTruncated"):
+            return parts
+        marker = int(page["NextPartNumberMarker"])
+
+
+def complete_multipart(storage_key: str, upload_id: str, parts: list[dict[str, Any]]) -> None:
+    """Cerrar la subida con sus partes, en orden. Desde aquí el objeto existe entero."""
+    if not parts:
+        raise StorageError("no se puede cerrar una subida sin partes")
+    numbers = [int(part["part_number"]) for part in parts]
+    if len(numbers) != len(set(numbers)):
+        raise StorageError("hay partes repetidas")
+    settings = get_settings()
+    try:
+        _internal_client().complete_multipart_upload(
+            Bucket=settings.s3_bucket,
+            Key=storage_key,
+            UploadId=upload_id,
+            MultipartUpload={
+                "Parts": [
+                    {"PartNumber": int(part["part_number"]), "ETag": str(part["etag"])}
+                    for part in sorted(parts, key=lambda item: int(item["part_number"]))
+                ]
+            },
+        )
+    except Exception as exc:
+        raise StorageError(f"el almacenamiento no aceptó cerrar la subida: {exc}") from exc
+
+
+def abort_multipart(storage_key: str, upload_id: str) -> None:
+    settings = get_settings()
+    _internal_client().abort_multipart_upload(
+        Bucket=settings.s3_bucket, Key=storage_key, UploadId=upload_id
     )
 
 
