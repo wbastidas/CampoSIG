@@ -1275,6 +1275,54 @@ con una sola evidencia en la OT) quedaron atrapadas con una prueba de dos fotos 
 Diecisiete mutaciones; dieciséis atrapadas y una equivalente (quitar el rol del decorador, cuando el
 parámetro del manejador exige el mismo rol).
 
+### El núcleo móvil sin SDK: `core:field` (RF-003, 040, 044, 046, 047, 049, 071–075, 107, 023)
+
+El SDK de Android no se puede instalar en este entorno: la política de red niega `dl.google.com`, de
+donde sale la plataforma. Lo que sí se puede es lo que `core:sync` ya hacía: escribir **las
+decisiones** de la app como Kotlin/JVM puro, probado en CI sin SDK, emulador ni dispositivo
+(ADR-010), y dejar a la capa Android solo dibujar y persistir. `core:field` es ese módulo:
+
+- **RF-003, sesión offline.** Tras un login en línea, PIN o huella valen `N` días (parámetro, 7 por
+  omisión); al octavo, ni el PIN correcto abre. El PIN se guarda como PBKDF2 con sal (`javax.crypto`,
+  del JDK y de Android: nada entra al APK), sin PIN triviales, con bloqueo tras intentos fallidos
+  que solo levanta un login en línea. **El reloj**: la sesión guarda la hora más alta que vio y
+  rechaza un retroceso mayor que un cambio de zona horaria — atrasar la fecha una semana no estira
+  la sesión.
+- **RF-040, bandeja.** Prioridad, luego vencidas, luego distancia (haversine), luego el código, para
+  que la lista no se reordene bajo el dedo; el contador de pendientes sale de la bandeja de salida.
+- **RF-044, flujo guiado.** Seis pasos con su porcentaje; cerrar se bloquea con «Falta «X» en el paso
+  Y». Qué campo va en qué paso son datos del formulario; los mínimos de fotos cuentan solo las de
+  cámara no alteradas, igual que el servidor.
+- **RF-047, tiempos.** Una vez por hito, con la hora del teléfono; la corrección se queda al lado
+  del original y se rechaza en los mismos casos que el servidor.
+- **RF-071 a RF-075, evidencia.** SHA-256 del original en streaming; galería prohibida para
+  ANTES/DESPUÉS; calidad por varianza del Laplaciano (borrosa), luminancia media y píxeles quemados;
+  EXIF en las formas de texto de `ExifInterface` (GPS en racionales, hora de Ecuador); marca de agua
+  con N.º OT, fecha, coordenadas y usuario, blanca con contorno sobre una caja cuya opacidad sube con
+  el brillo del fondo — legible sobre cielo y sobre poste.
+- **RF-046, cédula.** Diez dígitos, provincia 01–24 o 30, tercer dígito menor que 6 y verificador
+  módulo 10: **un corpus** (`forms/contract/identification-cases.json`) que ejecutan el servidor, la
+  web y el teléfono. El bloque B12 declara `format: ec-cedula` en sus datos y el servidor lo hace
+  cumplir al enviar — solo ese formato: encender todo el catálogo de jsonschema de golpe empezaría a
+  rechazar capturas que ayer eran válidas. La firma ya era una evidencia de tipo `firma` con su hash.
+- **RF-049, hallazgo espontáneo.** El borrador se valida sin red con las mismas tres reglas que el
+  servidor (defecto, GPS válido, una foto con hash) y produce el payload de `field_finding`.
+- **RF-107, posición.** Consentimiento, jornada e intervalo, en el mismo orden en que el servidor
+  rechaza; la jornada usa **un corpus compartido con el servidor** (`workday-cases.json`), porque un
+  teléfono que reporta lo que el servidor descarta gasta batería y datos para nada.
+- **RF-023/321/322, retiradas.** La lista `withdrawn` del pull pasa por `ConflictResolver`: se libera
+  ya, se retiene hasta entregar lo capturado, o va al supervisor si se trabajó y se anuló.
+
+El estado de cada RF, con su prueba, está en `docs/TRAZABILIDAD.md`.
+
+La bandeja de salida gana tres tipos (`TIME_CORRECTION`, `FIELD_FINDING`, `EVIDENCE_UPLOADED`) con su
+prioridad. El CI corre ahora `:core:sync:test :core:field:test`.
+
+**Lo que sigue necesitando el SDK** (y por eso no está): las pantallas en Compose, CameraX y la
+escritura real del EXIF, `BiometricPrompt`, Room + SQLCipher (RF-100), el mapa offline (RF-042), el
+temporizador con WorkManager y el traspaso entre teléfonos por QR (RF-323). Todo eso llama a lo de
+arriba; nada de eso decide.
+
 ### RF-005: la gestión de cuadrillas que el modelo ya prometía y la API no tenía
 
 El modelo `Crew` decía en su propio docstring «sus integrantes, su jefe...», y no tenía columna de

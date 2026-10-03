@@ -1,0 +1,25 @@
+{
+  "description": "Cédula ecuatoriana (RF-046): un corpus, tres implementaciones. Lo ejecutan backend/tests/unit/test_rf046_cedula_contract.py, web/src/forms/identification.test.ts y android/core/sync/.../CedulaTest.kt. La regla: diez dígitos ASCII; provincia 01 a 24, o 30 para ecuatorianos registrados en el exterior; tercer dígito menor que 6 (persona natural); dígito verificador por módulo 10 con coeficientes 2,1,2,1,2,1,2,1,2 (un producto mayor que 9 resta 9). Sin normalizar: espacios y guiones los quita la pantalla, no el validador, para que las tres plataformas no discrepen en qué limpiar.",
+  "cases": [
+    {"id": "valida-guayas", "value": "0912345675", "valid": true},
+    {"id": "valida-pichincha", "value": "1700000001", "valid": true},
+    {"id": "valida-azuay", "value": "0102030400", "valid": true},
+    {"id": "valida-provincia-24", "value": "2400000010", "valid": true},
+    {"id": "valida-exterior-30", "value": "3000000004", "valid": true},
+    {"id": "valida-verificador-cero", "value": "1234567897", "valid": true, "why": "el verificador es 7: suma 23, (10 - 3) mod 10"},
+    {"id": "valida-otra", "value": "1712345675", "valid": true},
+    {"id": "verificador-errado", "value": "0912345676", "valid": false},
+    {"id": "provincia-25-no-existe", "value": "2500000001", "valid": false, "why": "el verificador cuadra; la provincia no"},
+    {"id": "provincia-00", "value": "0099999997", "valid": false},
+    {"id": "provincia-31", "value": "3123456786", "valid": false},
+    {"id": "tercer-digito-6-es-publica", "value": "0962345674", "valid": false, "why": "6 y 9 son RUC de entidades, no cédulas"},
+    {"id": "nueve-digitos", "value": "091234567", "valid": false},
+    {"id": "once-digitos", "value": "09123456750", "valid": false},
+    {"id": "trece-digitos-ruc", "value": "0912345675001", "valid": false, "why": "un RUC no es una cédula"},
+    {"id": "con-letra", "value": "09123A5675", "valid": false},
+    {"id": "con-guion", "value": "091234567-5", "valid": false},
+    {"id": "con-espacio", "value": " 0912345675", "valid": false},
+    {"id": "vacia", "value": "", "valid": false},
+    {"id": "digitos-no-ascii", "value": "٠٩١٢٣٤٥٦٧٥", "valid": false, "why": "dígitos arábigo-índicos: `isdigit` de Python y `\\d` de Kotlin los aceptan"}
+  ]
+}

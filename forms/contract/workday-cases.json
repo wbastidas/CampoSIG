@@ -1,0 +1,20 @@
+{
+  "description": "La jornada de RF-107: un corpus, dos implementaciones. Lo ejecutan backend/tests/unit/test_rf107_workday_contract.py (policy.service.within_workday) y android/core/field/.../PositionScheduleTest.kt (WorkdayRule). Hora de Ecuador (America/Guayaquil, UTC-5 todo el año); inicio incluido, fin excluido; un fin anterior al inicio es un turno nocturno que pertenece al día en que empezó; 24:00 cierra el día.",
+  "cases": [
+    {"id": "jueves-10h", "start": "07:00", "end": "17:00", "days": "1,2,3,4,5", "at": "2026-09-24T15:00:00Z", "inside": true},
+    {"id": "jueves-20h-es-viernes-en-utc", "start": "07:00", "end": "17:00", "days": "1,2,3,4,5", "at": "2026-09-25T01:00:00Z", "inside": false},
+    {"id": "sabado-10h", "start": "07:00", "end": "17:00", "days": "1,2,3,4,5", "at": "2026-09-26T15:00:00Z", "inside": false},
+    {"id": "inicio-incluido", "start": "07:00", "end": "17:00", "days": "1,2,3,4,5", "at": "2026-09-24T12:00:00Z", "inside": true},
+    {"id": "un-minuto-antes", "start": "07:00", "end": "17:00", "days": "1,2,3,4,5", "at": "2026-09-24T11:59:00Z", "inside": false},
+    {"id": "fin-excluido", "start": "07:00", "end": "17:00", "days": "1,2,3,4,5", "at": "2026-09-24T22:00:00Z", "inside": false},
+    {"id": "un-minuto-antes-del-fin", "start": "07:00", "end": "17:00", "days": "1,2,3,4,5", "at": "2026-09-24T21:59:00Z", "inside": true},
+    {"id": "nocturno-viernes-23h", "start": "22:00", "end": "06:00", "days": "5", "at": "2026-09-26T04:00:00Z", "inside": true},
+    {"id": "nocturno-madrugada-del-sabado", "start": "22:00", "end": "06:00", "days": "5", "at": "2026-09-26T08:00:00Z", "inside": true},
+    {"id": "nocturno-sabado-23h", "start": "22:00", "end": "06:00", "days": "5", "at": "2026-09-27T04:00:00Z", "inside": false},
+    {"id": "nocturno-madrugada-del-jueves", "start": "22:00", "end": "06:00", "days": "5", "at": "2026-09-24T08:00:00Z", "inside": false},
+    {"id": "nocturno-entre-turnos", "start": "22:00", "end": "06:00", "days": "5", "at": "2026-09-25T17:00:00Z", "inside": false},
+    {"id": "todo-el-dia", "start": "00:00", "end": "24:00", "days": "1,2,3,4,5,6,7", "at": "2026-09-27T04:59:00Z", "inside": true},
+    {"id": "domingo-con-sabado-y-domingo", "start": "08:00", "end": "12:00", "days": "6,7", "at": "2026-09-27T14:00:00Z", "inside": true},
+    {"id": "dias-con-espacios", "start": "07:00", "end": "17:00", "days": "1, 2,3", "at": "2026-09-22T15:00:00Z", "inside": true}
+  ]
+}

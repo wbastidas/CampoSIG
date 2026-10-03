@@ -104,7 +104,7 @@ def filled(session: Session, unit: BusinessUnit, order):
             "final_state": "resuelto",
             # B04: el formulario exige ATS, así que la referencia es obligatoria.
             "ats_reference": "ATS-2026-0001",
-            "customer_id": "0912345678",
+            "customer_id": "0912345675",
         },
         submit=True,
     )

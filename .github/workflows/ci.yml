@@ -158,7 +158,7 @@ jobs:
           path: web/playwright-report
 
   android-core:
-    name: Móvil — core:sync (Kotlin/JVM, sin SDK de Android)
+    name: Móvil — core:sync y core:field (Kotlin/JVM, sin SDK de Android)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -170,17 +170,20 @@ jobs:
           distribution: temurin
           java-version: "21"
       - uses: gradle/actions/setup-gradle@v4
-      # core:sync is deliberately free of Android dependencies (ADR-010), so the highest-risk
-      # logic in the platform is tested here without an SDK, an emulator or a device.
-      - name: Tests del motor de sincronización
-        run: gradle :core:sync:test
+      # core:sync and core:field are deliberately free of Android dependencies (ADR-010), so the
+      # highest-risk logic in the platform — sync, session, inbox, guided flow, times, evidence,
+      # position — is tested here without an SDK, an emulator or a device.
+      - name: Tests del núcleo móvil
+        run: gradle :core:sync:test :core:field:test
       - name: Publicar informe de tests
         if: always()
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: android-core-sync-tests
-          path: android/core/sync/build/reports/tests/test
+          name: android-core-tests
+          path: |
+            android/core/sync/build/reports/tests/test
+            android/core/field/build/reports/tests/test
 
   gis-agent:
     name: Agente arcpy (Python 2.7, sin ArcMap)

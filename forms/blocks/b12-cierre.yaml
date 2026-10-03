@@ -20,7 +20,9 @@ fields:
     {type: string, format: uri, title: Firma del jefe de cuadrilla, x-signature: jefe_cuadrilla}
   customer_signature:
     {type: string, format: uri, title: Firma del cliente, x-signature: cliente}
-  customer_id: {type: string, title: Cédula del cliente, x-voice: true}
+  # `format: ec-cedula`: diez dígitos con su verificador (RF-046). Lo comprueban el servidor, la web
+  # y el teléfono contra un mismo corpus (forms/contract/identification-cases.json).
+  customer_id: {type: string, format: ec-cedula, title: Cédula del cliente, x-voice: true}
 rules:
   # JSON Logic, misma semántica en backend, web y móvil (SRS stack 7.2).
   - when: {"in": [{"var": "final_state"}, ["parcial", "no_resuelto"]]}

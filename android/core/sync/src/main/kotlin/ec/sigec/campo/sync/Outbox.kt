@@ -37,6 +37,21 @@ public enum class OperationKind {
 
     /** Corrections that feed model training. Valuable, never urgent. */
     TRAINING_SAMPLE,
+
+    /** A milestone time corrected with its reason (RF-047). As urgent as the transition it fixes. */
+    TIME_CORRECTION,
+
+    /**
+     * A finding reported with no work order behind it (RF-049). Its `workOrderId` is the local
+     * finding id, since there is no order yet: the outbox needs a key to group by, not a server id.
+     */
+    FIELD_FINDING,
+
+    /**
+     * «The file finished uploading, hash it» (RF-073). Rides with the full photographs: it is only
+     * meaningful after the one it confirms, and the outbox keeps creation order within a rank.
+     */
+    EVIDENCE_UPLOADED,
 }
 
 /**
@@ -56,9 +71,13 @@ public enum class UploadPriority(public val rank: Int) {
 
     public companion object {
         public fun of(kind: OperationKind): UploadPriority = when (kind) {
-            OperationKind.WORK_ORDER_TRANSITION, OperationKind.FORM_RESPONSE -> STATE_AND_DATA
+            OperationKind.WORK_ORDER_TRANSITION,
+            OperationKind.FORM_RESPONSE,
+            OperationKind.TIME_CORRECTION,
+            OperationKind.FIELD_FINDING,
+            -> STATE_AND_DATA
             OperationKind.PHOTO_THUMBNAIL -> THUMBNAILS
-            OperationKind.PHOTO_FULL -> FULL_PHOTOS
+            OperationKind.PHOTO_FULL, OperationKind.EVIDENCE_UPLOADED -> FULL_PHOTOS
             OperationKind.AUDIO -> AUDIO
             OperationKind.TRAINING_SAMPLE -> TRAINING_DATA
         }

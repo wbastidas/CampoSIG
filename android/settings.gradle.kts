@@ -23,3 +23,4 @@ dependencyResolutionManagement {
 rootProject.name = "sigec-campo"
 
 include(":core:sync")
+include(":core:field")

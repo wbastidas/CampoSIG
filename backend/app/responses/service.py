@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.audit import service as audit
 from app.audit.models import ActorKind, EventKind
 from app.forms.composer import ComposedForm, FormComposer
+from app.forms.identification import CEDULA_FORMAT, is_valid_cedula
 from app.forms.registry import resolve_for_order
 from app.forms.rules import missing_requirements
 from app.org.models import BusinessUnit
@@ -116,6 +117,23 @@ def compose_for(session: Session, unit: BusinessUnit, order: WorkOrder) -> Compo
 
 
 # --- validation --------------------------------------------------------------------
+#: Only the formats the platform defines, not jsonschema's whole catalogue: switching every standard
+#: format on at once would start refusing captures that were valid yesterday (`format: uri` on a
+#: signature, for one), and that is a change to make field by field, not as a side effect.
+_FORMATS = jsonschema.FormatChecker(formats=())
+
+
+def _is_cedula(value: object) -> bool:
+    # Only answered text is judged: an empty optional field is unanswered, not a wrong cédula, and
+    # a non-string is the `type` keyword's to refuse.
+    if not isinstance(value, str) or value == "":
+        return True
+    return is_valid_cedula(value)
+
+
+_FORMATS.checks(CEDULA_FORMAT)(_is_cedula)
+
+
 def validate_answers(form: ComposedForm, answers: dict[str, Any]) -> list[str]:
     """Check answers against the composed schema and the form's rules.
 
@@ -124,9 +142,14 @@ def validate_answers(form: ComposedForm, answers: dict[str, Any]) -> list[str]:
     """
     problems: list[str] = []
 
-    validator = jsonschema.Draft202012Validator(form.schema)
+    validator = jsonschema.Draft202012Validator(form.schema, format_checker=_FORMATS)
     for error in sorted(validator.iter_errors(answers), key=lambda e: list(e.path)):
         location = ".".join(str(part) for part in error.path) or "(raíz)"
+        if error.validator == "format" and error.validator_value == CEDULA_FORMAT:
+            problems.append(
+                f"{location}: «{error.instance}» no es una cédula válida; revise los diez dígitos"
+            )
+            continue
         problems.append(f"{location}: {error.message}")
 
     problems.extend(_evaluate_rules(form, answers))
