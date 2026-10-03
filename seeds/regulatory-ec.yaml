@@ -1,0 +1,109 @@
+# Parámetros regulatorios del Ecuador (SRS 1.4, ADR-007).
+#
+# ============================ LEER ANTES DE USAR ============================
+# Los valores de este archivo están marcados `verified: false` **a propósito**. Son la
+# estructura y la referencia a la norma, no la cifra confirmada. Nadie de este equipo ha
+# leído el texto oficial vigente, y una cifra inventada que se convierte en un veredicto de
+# cumplimiento es peor que no tener la regla: la regla ausente se nota, la cifra equivocada
+# no.
+#
+# Para poner esto en producción hay que, por cada parámetro:
+#   1. abrir la resolución de la ARCONEL / ARCERNNR que se cita,
+#   2. confirmar el valor y el numeral exacto,
+#   3. cargarlo desde `backend/` con:
+#        uv run python -m app.regulatory.cli --verified-by "nombre.apellido"
+#      y, antes, con `--dry-run` para ver qué haría sin escribir nada. El archivo decide qué
+#      cuenta como verificado: `--verified-by` no certifica nada que aquí no diga
+#      `verified: true`, para que un descuido no certifique siete cifras que nadie leyó.
+#
+# Mientras `verified` sea falso, las reglas siguen comparando —es información útil— pero el
+# hallazgo sale marcado como no verificado y nadie puede citarlo como si viniera del texto
+# oficial. Los parámetros `strict: true` no se evalúan en absoluto sin verificación, porque
+# su incumplimiento tiene consecuencia legal.
+# ============================================================================
+
+version: 1
+jurisdiction: EC
+
+parameters:
+  # --- Alumbrado público general (APG) ---------------------------------------------
+  - code: apg.max_restoration_hours.urbano
+    value: 48
+    unit: h
+    description: >-
+      Plazo máximo para reponer una luminaria en falla reportada, en zona urbana, contado
+      desde el reclamo.
+    norm_ref: "Regulación de alumbrado público general — ARCONEL"
+    article_ref: null
+    effective_from: 2026-01-01
+    verified: false
+    strict: false
+
+  - code: apg.max_restoration_hours.rural
+    value: 96
+    unit: h
+    description: Plazo máximo de reposición en zona rural, contado desde el reclamo.
+    norm_ref: "Regulación de alumbrado público general — ARCONEL"
+    article_ref: null
+    effective_from: 2026-01-01
+    verified: false
+    strict: false
+
+  - code: apg.max_restoration_hours
+    value: 96
+    unit: h
+    description: >-
+      Plazo por defecto cuando la OT no trae clasificación de zona. El más holgado de los
+      dos a propósito: la plataforma no debe reportar un incumplimiento por no saber si la
+      zona es urbana.
+    norm_ref: "Regulación de alumbrado público general — ARCONEL"
+    article_ref: null
+    effective_from: 2026-01-01
+    verified: false
+    strict: false
+
+  # --- Calidad del servicio técnico ------------------------------------------------
+  - code: interruption.non_computable_seconds
+    value: 180
+    unit: s
+    description: >-
+      Duración por debajo de la cual una interrupción no se computa para los índices de
+      calidad (FMIK / TTIK).
+    norm_ref: "Regulación de calidad del servicio de distribución y comercialización"
+    article_ref: null
+    effective_from: 2026-01-01
+    verified: false
+    strict: false
+
+  # --- Puesta a tierra ------------------------------------------------------------
+  # `strict: true`: una puesta a tierra fuera de norma es un riesgo para las personas, y un
+  # veredicto sobre eso apoyado en una cifra sin verificar no se emite.
+  - code: grounding.max_resistance_ohm.poste
+    value: 25
+    unit: ohm
+    description: Resistencia máxima admisible de puesta a tierra en estructura de distribución.
+    norm_ref: "Normas técnicas de distribución — puesta a tierra"
+    article_ref: null
+    effective_from: 2026-01-01
+    verified: false
+    strict: true
+
+  - code: grounding.max_resistance_ohm.subestacion
+    value: 5
+    unit: ohm
+    description: Resistencia máxima admisible de puesta a tierra en subestación.
+    norm_ref: "Normas técnicas de distribución — puesta a tierra"
+    article_ref: null
+    effective_from: 2026-01-01
+    verified: false
+    strict: true
+
+  - code: grounding.max_resistance_ohm
+    value: 25
+    unit: ohm
+    description: Valor por defecto cuando la medición no indica el punto.
+    norm_ref: "Normas técnicas de distribución — puesta a tierra"
+    article_ref: null
+    effective_from: 2026-01-01
+    verified: false
+    strict: true

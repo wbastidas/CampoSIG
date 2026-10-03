@@ -1,0 +1,15 @@
+# Materiales (bloque AP01 y las actividades).
+#
+# `source: integracion`: los mantiene el ERP (RF-034, RF-121), así que la plataforma **rechaza**
+# editarlos a mano. Un valor tecleado sobre uno que el ERP va a sobreescribir esta noche es un valor
+# que desaparece sin explicación.
+#
+# Vacío hasta que el conector del ERP entregue el primer lote. La pantalla de catálogos lo dice.
+catalog:
+  code: material
+  title: Material
+  source: integracion
+  note: >-
+    Vacío hasta el primer envío del ERP. No se edita a mano: el conector es el dueño de estos
+    valores y el siguiente envío sobreescribiría cualquier cosa tecleada aquí.
+entries: []

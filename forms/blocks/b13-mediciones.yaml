@@ -1,0 +1,41 @@
+# B13 Mediciones normativas (ADR-007, RF-350, RF-351).
+#
+# Estos campos existen para que las reglas de cumplimiento tengan algo que medir. Cada uno
+# declara con `x-regulatory-parameter` el límite contra el que se evalúa, y ese límite vive
+# en `regulatory_parameter` con su vigencia y su referencia a la norma — nunca en el código
+# y nunca en este archivo. El valor que aquí se anota es el **código** del parámetro, no su
+# valor.
+#
+# El bloque no es obligatorio: no toda OT mide una puesta a tierra. Pero un campo vacío no
+# es un cumplimiento, y la regla lo reporta como "no aplica" en vez de darlo por bueno.
+block:
+  code: B13
+  title: Mediciones normativas
+  required: false
+fields:
+  interruption_seconds:
+    type: number
+    title: Duración de la interrupción (s)
+    minimum: 0
+    x-voice: true
+    x-regulatory-parameter: interruption.non_computable_seconds
+  earth_resistance_ohm:
+    type: number
+    title: Resistencia de puesta a tierra (Ω)
+    minimum: 0
+    x-voice: true
+    x-regulatory-parameter: grounding.max_resistance_ohm
+  grounding_context:
+    type: string
+    title: Punto de medición
+    enum: [poste, subestacion, camara, cliente]
+    x-voice: true
+  measurement_instrument:
+    type: string
+    title: Instrumento utilizado
+    x-voice: true
+  measured_at:
+    type: string
+    format: date-time
+    title: Fecha-hora de la medición
+    x-voice: false

@@ -1,0 +1,67 @@
+# Written vocabulary for assisted schema matching (RF-301, RF-302).
+#
+# Part of the canonical layer, like `voice-es-EC.yaml`, and subject to the same rule: it
+# names no real class, field or domain of any utility. What it holds is how a *canonical*
+# concept tends to be written on a feature class or a column in a Spanish-language
+# electrical geodatabase — generic trade vocabulary, the kind that appears in the
+# regulator's own glossaries.
+#
+# Separate from the spoken vocabulary on purpose. A technician says "poste de hormigón";
+# a schema says `POSTE_HORM`, `TIPO_MAT` or `MATERIAL`. Written names are abbreviated,
+# truncated to ten characters by old geodatabase conventions, and often half English.
+# Feeding spoken phrases to a name matcher, or column abbreviations to a decoder, makes
+# both worse.
+#
+# This file only *proposes*. Nothing here becomes a binding without a person accepting
+# it, which is the whole design of the importer: a confident wrong guess that nobody
+# checked is the failure mode worth engineering against.
+
+version: 1
+locale: es-EC
+
+# Canonical asset type -> terms that tend to appear in the name or alias of its class.
+# Single words, so the matcher can score token overlap; it folds accents and case and
+# splits CamelCase and underscores before comparing.
+asset_terms:
+  support_structure:
+    strong: [poste, estructura, soporte, postes, pole, structure, support]
+    weak:   [apoyo, torre, columna, luminaria_poste, herraje]
+  distribution_transformer:
+    strong: [transformador, transformadores, trafo, transf, xfmr, transformer]
+    weak:   [puesto, distribucion, mva, kva, potencia]
+  street_light:
+    strong: [luminaria, luminarias, alumbrado, lampara, lamparas, light, lighting, lum]
+    weak:   [publico, publica, farol, apg]
+  fuse_switch:
+    strong: [seccionador, seccionadores, fusible, fusibles, cortacircuito, cutout, fuse]
+    weak:   [proteccion, tira, portafusible, switch]
+  line_segment:
+    strong: [tramo, tramos, red, conductor, conductores, linea, lineas, span, segment]
+    weak:   [aereo, subterraneo, primario, secundario, circuito, troncal, ramal]
+  service_point:
+    strong: [acometida, acometidas, suministro, servicio, cliente, consumidor, service]
+    weak:   [punto, carga, medidor, abonado, conexion]
+
+# Canonical attribute -> terms that tend to appear in the name or alias of its field.
+# Complements `attribute_cues` in the spoken vocabulary, which the matcher also reads:
+# together they cover the two ways the same concept gets written down.
+attribute_terms:
+  code:          [codigo, cod, id, identificador, numero, num, nro, placa, etiqueta, tag, name]
+  material:      [material, mat, tipo_material, composicion]
+  height_m:      [altura, alt, altura_m, alto, longitud_poste, height]
+  feeder_code:   [alimentador, alim, circuito, ckt, feeder, primario]
+  install_date:  [fecha, fecha_instalacion, instalacion, f_instal, install, date]
+  rated_kva:     [kva, capacidad, cap, potencia, pot, rating, nominal]
+  phases:        [fases, fase, num_fases, nfases, phases, fasico]
+  mounting:      [montaje, tipo_montaje, instalacion, mount, soporte]
+  technology:    [tecnologia, tec, tipo_lampara, tipo_luminaria, technology, lamp]
+  power_w:       [potencia, pot, vatios, watts, w, consumo]
+  fuse_rating:   [fusible, calibre, capacidad_fusible, amperaje, amp, rating]
+  voltage_level: [voltaje, tension, nivel_voltaje, nivel_tension, kv, voltage, nivel]
+
+# Terms that mean a field is bookkeeping, whatever its category says. A snapshot whose
+# fields were never categorised would otherwise offer these as candidates for `code`,
+# which is how an audit column ends up as an asset's business key.
+housekeeping_terms:
+  [objectid, globalid, shape, created_user, created_date, last_edited_user,
+   last_edited_date, se_anno_cad_data, fecha_creacion, usuario_creacion, gdb_archive_oid]

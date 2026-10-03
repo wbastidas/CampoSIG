@@ -55,3 +55,26 @@ Un tercer camino: **el móvil no conoce ArcGIS**.
 
 Ambas están arriba, en Contexto. La primera se descarta por licencia y costo por dispositivo; la
 segunda, por concentrar el mayor riesgo del proyecto en el componente más difícil de corregir.
+
+## Confirmación (2026-09-21)
+
+Ratificada expresamente por el cliente, con dos condiciones que refuerzan la decisión y la elevan de
+preferencia técnica a requisito:
+
+1. **Ningún componente de Esri en el móvil.** Queda descartado el ArcGIS Maps SDK for Kotlin, y con él
+   cualquier dependencia propietaria o licencia por dispositivo en el APK. El objetivo declarado es la
+   independencia de software.
+2. **El móvil se programa en Kotlin nativo con componentes open source.** MapLibre Native para el mapa,
+   Room + SQLCipher para la base local, ONNX Runtime y `llama.cpp` para la IA on-device: todo con
+   licencia permisiva, conforme a la regla 0.7 del SRS.
+
+En consecuencia, la verificación de licencias en CI debe **fallar el build** si aparece cualquier
+artefacto `com.esri.*` entre las dependencias del módulo Android.
+
+## Refinada por ADR-008 (2026-09-21)
+
+El principio se mantiene y se extiende: el móvil no conoce ArcGIS, **y el backend tampoco conoce ArcSDE**.
+La geodatabase la toca únicamente el agente arcpy de [ADR-008](ADR-008-agente-arcpy.md), al otro lado de
+un contrato HTTPS. El backend pasa de ser *el que habla ArcGIS* a ser *el que orquesta al que habla
+ArcGIS*, lo que refuerza la decisión: ahora hay dos fronteras estrechas en lugar de una, y ninguna
+atraviesa el móvil.

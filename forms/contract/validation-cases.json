@@ -1,0 +1,989 @@
+{
+  "version": 2,
+  "title": "Casos comunes de validación condicional (I5, SRS 7.2)",
+  "why": [
+    "Las reglas de los bloques son JSON Logic para que el backend, la web y el móvil las",
+    "evalúen igual. 'Igual' no se consigue escribiendo tres veces el mismo algoritmo: se",
+    "consigue con un corpus que las tres implementaciones ejecutan y que falla cuando una se",
+    "desvía.",
+    "",
+    "El fallo que esto impide es de los caros en campo: el teléfono acepta una captura que el",
+    "servidor rechaza después, así que el trabajo de la cuadrilla vuelve al día siguiente sin",
+    "que nadie entienda por qué. O al contrario, el teléfono exige un campo que el servidor no",
+    "pide y la cuadrilla no puede cerrar la OT con la red caída.",
+    "",
+    "Cada caso declara sus propias reglas y respuestas, así que el corpus no depende de ningún",
+    "formulario concreto ni nombra ningún campo real del modelo de datos (RF-305). 'expect' son",
+    "las claves de campo que deben reportarse como faltantes, no los mensajes: el mensaje es",
+    "presentación y cambia de idioma; el conjunto de campos es el contrato."
+  ],
+  "cases": [
+    {
+      "id": "sin-reglas-no-falta-nada",
+      "why": "El caso base. Una lista vacía no es una condición que se cumpla.",
+      "rules": [],
+      "answers": {
+        "final_state": "resuelto"
+      },
+      "expect": []
+    },
+    {
+      "id": "igualdad-que-no-se-cumple-no-exige-nada",
+      "why": "Una regla que no aplica no debe pedir nada; es la mitad silenciosa del contrato.",
+      "rules": [
+        {
+          "when": {
+            "==": [
+              {
+                "var": "final_state"
+              },
+              "no_resuelto"
+            ]
+          },
+          "require": [
+            "cause"
+          ]
+        }
+      ],
+      "answers": {
+        "final_state": "resuelto"
+      },
+      "expect": []
+    },
+    {
+      "id": "igualdad-que-se-cumple-exige-el-campo",
+      "why": "El caso de B12: sin resolver, hay que indicar la causa.",
+      "rules": [
+        {
+          "when": {
+            "==": [
+              {
+                "var": "final_state"
+              },
+              "no_resuelto"
+            ]
+          },
+          "require": [
+            "cause"
+          ]
+        }
+      ],
+      "answers": {
+        "final_state": "no_resuelto"
+      },
+      "expect": [
+        "cause"
+      ]
+    },
+    {
+      "id": "el-campo-exigido-y-respondido-no-falta",
+      "why": "Exigir algo que ya está respondido sería pedirle dos veces lo mismo a la cuadrilla.",
+      "rules": [
+        {
+          "when": {
+            "==": [
+              {
+                "var": "final_state"
+              },
+              "no_resuelto"
+            ]
+          },
+          "require": [
+            "cause"
+          ]
+        }
+      ],
+      "answers": {
+        "final_state": "no_resuelto",
+        "cause": "sin material en bodega"
+      },
+      "expect": []
+    },
+    {
+      "id": "cadena-vacia-no-es-respuesta",
+      "why": "Un campo de texto que se tocó y se dejó vacío está sin responder.",
+      "rules": [
+        {
+          "when": {
+            "==": [
+              {
+                "var": "final_state"
+              },
+              "no_resuelto"
+            ]
+          },
+          "require": [
+            "cause"
+          ]
+        }
+      ],
+      "answers": {
+        "final_state": "no_resuelto",
+        "cause": ""
+      },
+      "expect": [
+        "cause"
+      ]
+    },
+    {
+      "id": "lista-vacia-no-es-respuesta",
+      "why": "Cero fotos seleccionadas no es una selección de fotos.",
+      "rules": [
+        {
+          "when": {
+            "==": [
+              {
+                "var": "stage"
+              },
+              "cierre"
+            ]
+          },
+          "require": [
+            "photos"
+          ]
+        }
+      ],
+      "answers": {
+        "stage": "cierre",
+        "photos": []
+      },
+      "expect": [
+        "photos"
+      ]
+    },
+    {
+      "id": "el-cero-si-es-respuesta",
+      "why": "Una medición de 0 Ω es un resultado, y de los que importan. Tratar el cero como ausencia es el error clásico de las tres implementaciones a la vez.",
+      "rules": [
+        {
+          "when": {
+            "==": [
+              {
+                "var": "stage"
+              },
+              "medicion"
+            ]
+          },
+          "require": [
+            "measured_ohms"
+          ]
+        }
+      ],
+      "answers": {
+        "stage": "medicion",
+        "measured_ohms": 0
+      },
+      "expect": []
+    },
+    {
+      "id": "el-falso-si-es-respuesta",
+      "why": "«¿Quedó señalizado? No» es una respuesta. En JavaScript un `false` desprevenido se lee como vacío.",
+      "rules": [
+        {
+          "when": {
+            "==": [
+              {
+                "var": "stage"
+              },
+              "cierre"
+            ]
+          },
+          "require": [
+            "signposted"
+          ]
+        }
+      ],
+      "answers": {
+        "stage": "cierre",
+        "signposted": false
+      },
+      "expect": []
+    },
+    {
+      "id": "campo-ausente-del-todo-falta",
+      "why": "No estar en el objeto y estar en nulo son lo mismo para quien revisa.",
+      "rules": [
+        {
+          "when": {
+            "==": [
+              {
+                "var": "stage"
+              },
+              "cierre"
+            ]
+          },
+          "require": [
+            "signposted"
+          ]
+        }
+      ],
+      "answers": {
+        "stage": "cierre"
+      },
+      "expect": [
+        "signposted"
+      ]
+    },
+    {
+      "id": "nulo-explicito-falta",
+      "rules": [
+        {
+          "when": {
+            "==": [
+              {
+                "var": "stage"
+              },
+              "cierre"
+            ]
+          },
+          "require": [
+            "signposted"
+          ]
+        }
+      ],
+      "answers": {
+        "stage": "cierre",
+        "signposted": null
+      },
+      "expect": [
+        "signposted"
+      ]
+    },
+    {
+      "id": "distinto-de-con-campo-ausente-se-cumple",
+      "why": "Un campo que nadie respondió es distinto de cualquier valor. Si esto se evaluara al revés, la regla no se dispararía justo cuando hace falta.",
+      "rules": [
+        {
+          "when": {
+            "!=": [
+              {
+                "var": "final_state"
+              },
+              "resuelto"
+            ]
+          },
+          "require": [
+            "cause"
+          ]
+        }
+      ],
+      "answers": {},
+      "expect": [
+        "cause"
+      ]
+    },
+    {
+      "id": "in-sobre-una-lista-de-valores",
+      "why": "La forma que usa la biblioteca de bloques: varios estados finales piden causa.",
+      "rules": [
+        {
+          "when": {
+            "in": [
+              {
+                "var": "final_state"
+              },
+              [
+                "parcial",
+                "no_resuelto"
+              ]
+            ]
+          },
+          "require": [
+            "cause"
+          ]
+        }
+      ],
+      "answers": {
+        "final_state": "parcial"
+      },
+      "expect": [
+        "cause"
+      ]
+    },
+    {
+      "id": "in-sobre-una-lista-que-no-contiene",
+      "rules": [
+        {
+          "when": {
+            "in": [
+              {
+                "var": "final_state"
+              },
+              [
+                "parcial",
+                "no_resuelto"
+              ]
+            ]
+          },
+          "require": [
+            "cause"
+          ]
+        }
+      ],
+      "answers": {
+        "final_state": "resuelto"
+      },
+      "expect": []
+    },
+    {
+      "id": "in-sobre-una-cadena-es-subcadena",
+      "why": "JSON Logic define `in` sobre cadenas como subcadena. Se fija aquí porque las tres lo harían distinto si no estuviera escrito.",
+      "rules": [
+        {
+          "when": {
+            "in": [
+              "urgente",
+              {
+                "var": "notes"
+              }
+            ]
+          },
+          "require": [
+            "approved_by"
+          ]
+        }
+      ],
+      "answers": {
+        "notes": "trabajo urgente en la troncal"
+      },
+      "expect": [
+        "approved_by"
+      ]
+    },
+    {
+      "id": "in-sobre-un-numero-no-revienta",
+      "why": "Un operando que no es lista ni cadena da falso, no una excepción: una regla mal escrita no puede impedirle a la cuadrilla enviar el día de trabajo.",
+      "rules": [
+        {
+          "when": {
+            "in": [
+              "x",
+              {
+                "var": "count"
+              }
+            ]
+          },
+          "require": [
+            "cause"
+          ]
+        }
+      ],
+      "answers": {
+        "count": 3
+      },
+      "expect": []
+    },
+    {
+      "id": "in-sobre-un-campo-ausente-no-revienta",
+      "rules": [
+        {
+          "when": {
+            "in": [
+              "x",
+              {
+                "var": "notes"
+              }
+            ]
+          },
+          "require": [
+            "cause"
+          ]
+        }
+      ],
+      "answers": {},
+      "expect": []
+    },
+    {
+      "id": "and-exige-las-dos-condiciones",
+      "rules": [
+        {
+          "when": {
+            "and": [
+              {
+                "==": [
+                  {
+                    "var": "final_state"
+                  },
+                  "no_resuelto"
+                ]
+              },
+              {
+                "==": [
+                  {
+                    "var": "stage"
+                  },
+                  "cierre"
+                ]
+              }
+            ]
+          },
+          "require": [
+            "cause"
+          ]
+        }
+      ],
+      "answers": {
+        "final_state": "no_resuelto",
+        "stage": "cierre"
+      },
+      "expect": [
+        "cause"
+      ]
+    },
+    {
+      "id": "and-con-una-condicion-falsa-no-exige",
+      "rules": [
+        {
+          "when": {
+            "and": [
+              {
+                "==": [
+                  {
+                    "var": "final_state"
+                  },
+                  "no_resuelto"
+                ]
+              },
+              {
+                "==": [
+                  {
+                    "var": "stage"
+                  },
+                  "cierre"
+                ]
+              }
+            ]
+          },
+          "require": [
+            "cause"
+          ]
+        }
+      ],
+      "answers": {
+        "final_state": "no_resuelto",
+        "stage": "ejecucion"
+      },
+      "expect": []
+    },
+    {
+      "id": "or-basta-con-una",
+      "rules": [
+        {
+          "when": {
+            "or": [
+              {
+                "==": [
+                  {
+                    "var": "final_state"
+                  },
+                  "parcial"
+                ]
+              },
+              {
+                "==": [
+                  {
+                    "var": "final_state"
+                  },
+                  "no_resuelto"
+                ]
+              }
+            ]
+          },
+          "require": [
+            "cause"
+          ]
+        }
+      ],
+      "answers": {
+        "final_state": "no_resuelto"
+      },
+      "expect": [
+        "cause"
+      ]
+    },
+    {
+      "id": "or-sin-ninguna-no-exige",
+      "rules": [
+        {
+          "when": {
+            "or": [
+              {
+                "==": [
+                  {
+                    "var": "final_state"
+                  },
+                  "parcial"
+                ]
+              },
+              {
+                "==": [
+                  {
+                    "var": "final_state"
+                  },
+                  "no_resuelto"
+                ]
+              }
+            ]
+          },
+          "require": [
+            "cause"
+          ]
+        }
+      ],
+      "answers": {
+        "final_state": "resuelto"
+      },
+      "expect": []
+    },
+    {
+      "id": "and-anidado-dentro-de-or",
+      "why": "La biblioteca de bloques no anida hoy, y el contrato tiene que aguantar cuando lo haga.",
+      "rules": [
+        {
+          "when": {
+            "or": [
+              {
+                "==": [
+                  {
+                    "var": "priority"
+                  },
+                  "critica"
+                ]
+              },
+              {
+                "and": [
+                  {
+                    "==": [
+                      {
+                        "var": "final_state"
+                      },
+                      "parcial"
+                    ]
+                  },
+                  {
+                    "!=": [
+                      {
+                        "var": "stage"
+                      },
+                      "ats"
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "require": [
+            "cause"
+          ]
+        }
+      ],
+      "answers": {
+        "final_state": "parcial",
+        "stage": "cierre",
+        "priority": "media"
+      },
+      "expect": [
+        "cause"
+      ]
+    },
+    {
+      "id": "operador-desconocido-no-exige-nada",
+      "why": "Falso, no excepción. Un operador que la biblioteca no soporta se detecta al validar el catálogo, antes de que el formulario llegue a un teléfono; en campo no puede bloquear un envío.",
+      "rules": [
+        {
+          "when": {
+            ">": [
+              {
+                "var": "measured_ohms"
+              },
+              25
+            ]
+          },
+          "require": [
+            "cause"
+          ]
+        }
+      ],
+      "answers": {
+        "measured_ohms": 40
+      },
+      "expect": []
+    },
+    {
+      "id": "condicion-vacia-no-exige-nada",
+      "rules": [
+        {
+          "when": {},
+          "require": [
+            "cause"
+          ]
+        }
+      ],
+      "answers": {},
+      "expect": []
+    },
+    {
+      "id": "regla-sin-require-no-exige-nada",
+      "why": "Una regla que se cumple y no pide nada es una regla incompleta, no una que pida todo.",
+      "rules": [
+        {
+          "when": {
+            "==": [
+              {
+                "var": "final_state"
+              },
+              "no_resuelto"
+            ]
+          },
+          "require": []
+        }
+      ],
+      "answers": {
+        "final_state": "no_resuelto"
+      },
+      "expect": []
+    },
+    {
+      "id": "varias-reglas-se-acumulan-en-orden",
+      "why": "El orden es el de las reglas, para que la lista que ve la cuadrilla no baile entre plataformas.",
+      "rules": [
+        {
+          "when": {
+            "==": [
+              {
+                "var": "stage"
+              },
+              "cierre"
+            ]
+          },
+          "require": [
+            "signposted"
+          ]
+        },
+        {
+          "when": {
+            "==": [
+              {
+                "var": "final_state"
+              },
+              "no_resuelto"
+            ]
+          },
+          "require": [
+            "cause",
+            "photos"
+          ]
+        }
+      ],
+      "answers": {
+        "stage": "cierre",
+        "final_state": "no_resuelto"
+      },
+      "expect": [
+        "signposted",
+        "cause",
+        "photos"
+      ]
+    },
+    {
+      "id": "un-mismo-campo-exigido-dos-veces-se-reporta-una",
+      "why": "Dos reglas pueden pedir lo mismo. Decírselo dos veces a la cuadrilla es un error de la plataforma, no un dato.",
+      "rules": [
+        {
+          "when": {
+            "==": [
+              {
+                "var": "stage"
+              },
+              "cierre"
+            ]
+          },
+          "require": [
+            "cause"
+          ]
+        },
+        {
+          "when": {
+            "==": [
+              {
+                "var": "final_state"
+              },
+              "no_resuelto"
+            ]
+          },
+          "require": [
+            "cause"
+          ]
+        }
+      ],
+      "answers": {
+        "stage": "cierre",
+        "final_state": "no_resuelto"
+      },
+      "expect": [
+        "cause"
+      ]
+    },
+    {
+      "id": "literal-contra-literal-sin-variables",
+      "why": "Una condición sin `var` se evalúa igual; se fija porque una implementación podría exigir que hubiera una.",
+      "rules": [
+        {
+          "when": {
+            "==": [
+              "a",
+              "a"
+            ]
+          },
+          "require": [
+            "cause"
+          ]
+        }
+      ],
+      "answers": {},
+      "expect": [
+        "cause"
+      ]
+    },
+    {
+      "id": "comparacion-entre-dos-campos",
+      "rules": [
+        {
+          "when": {
+            "==": [
+              {
+                "var": "found"
+              },
+              {
+                "var": "performed"
+              }
+            ]
+          },
+          "require": [
+            "cause"
+          ]
+        }
+      ],
+      "answers": {
+        "found": "igual",
+        "performed": "igual"
+      },
+      "expect": [
+        "cause"
+      ]
+    },
+    {
+      "id": "numero-y-cadena-no-son-el-mismo-valor",
+      "why": "`11` y `\"11\"` distintos: sin esto, una plataforma con comparación laxa dispararía reglas que las otras no.",
+      "rules": [
+        {
+          "when": {
+            "==": [
+              {
+                "var": "height_m"
+              },
+              "11"
+            ]
+          },
+          "require": [
+            "cause"
+          ]
+        }
+      ],
+      "answers": {
+        "height_m": 11
+      },
+      "expect": []
+    },
+    {
+      "id": "espacios-en-blanco-no-son-respuesta",
+      "why": "Un campo con un espacio se ve vacío en el papel y en la pantalla.",
+      "rules": [
+        {
+          "when": {
+            "==": [
+              {
+                "var": "stage"
+              },
+              "cierre"
+            ]
+          },
+          "require": [
+            "cause"
+          ]
+        }
+      ],
+      "answers": {
+        "stage": "cierre",
+        "cause": "   "
+      },
+      "expect": [
+        "cause"
+      ]
+    },
+    {
+      "id": "campo-contestado-exige-el-otro",
+      "why": "El caso de B04: si hay permiso de trabajo, tiene que haber referencia del ATS. «Si este campo está contestado, exige aquel» es la condición más común que existe en un formulario, y hasta ahora el lenguaje no la sabía escribir.",
+      "rules": [
+        {
+          "when": {
+            "!!": {
+              "var": "permit"
+            }
+          },
+          "require": [
+            "analysis"
+          ]
+        }
+      ],
+      "answers": {
+        "permit": "PT-2026-77"
+      },
+      "expect": [
+        "analysis"
+      ]
+    },
+    {
+      "id": "campo-vacio-no-exige-nada",
+      "why": "La mitad silenciosa: sin permiso no se pide el análisis.",
+      "rules": [
+        {
+          "when": {
+            "!!": {
+              "var": "permit"
+            }
+          },
+          "require": [
+            "analysis"
+          ]
+        }
+      ],
+      "answers": {},
+      "expect": []
+    },
+    {
+      "id": "cadena-de-espacios-no-cuenta-como-contestado",
+      "why": "Un campo con un espacio se ve vacío en la pantalla y en el papel; tratarlo como contestado dispararía exigencias que el técnico no entiende.",
+      "rules": [
+        {
+          "when": {
+            "!!": {
+              "var": "permit"
+            }
+          },
+          "require": [
+            "analysis"
+          ]
+        }
+      ],
+      "answers": {
+        "permit": "   "
+      },
+      "expect": []
+    },
+    {
+      "id": "el-cero-si-cuenta-como-contestado",
+      "why": "Un 0 medido es un resultado, y de los que importan. La misma regla que `is_answered` aplica al lado de la condición.",
+      "rules": [
+        {
+          "when": {
+            "!!": {
+              "var": "measured"
+            }
+          },
+          "require": [
+            "note"
+          ]
+        }
+      ],
+      "answers": {
+        "measured": 0
+      },
+      "expect": [
+        "note"
+      ]
+    },
+    {
+      "id": "el-falso-si-cuenta-como-contestado",
+      "why": "«¿Estaba señalizado? No» es una respuesta, no un blanco.",
+      "rules": [
+        {
+          "when": {
+            "!!": {
+              "var": "signposted"
+            }
+          },
+          "require": [
+            "note"
+          ]
+        }
+      ],
+      "answers": {
+        "signposted": false
+      },
+      "expect": [
+        "note"
+      ]
+    },
+    {
+      "id": "negacion-exige-cuando-el-campo-esta-vacio",
+      "why": "`!` es el complemento y hace falta para lo contrario: si no hay número de reclamo, exige la referencia interna.",
+      "rules": [
+        {
+          "when": {
+            "!": {
+              "var": "claim"
+            }
+          },
+          "require": [
+            "internal_reference"
+          ]
+        }
+      ],
+      "answers": {},
+      "expect": [
+        "internal_reference"
+      ]
+    },
+    {
+      "id": "negacion-no-exige-cuando-el-campo-tiene-valor",
+      "why": "La mitad silenciosa de la negación.",
+      "rules": [
+        {
+          "when": {
+            "!": {
+              "var": "claim"
+            }
+          },
+          "require": [
+            "internal_reference"
+          ]
+        }
+      ],
+      "answers": {
+        "claim": "R-9"
+      },
+      "expect": []
+    },
+    {
+      "id": "una-lista-vacia-no-esta-contestada",
+      "why": "Una tabla repetible sin filas no es una respuesta, y es el caso que más se parece a un valor.",
+      "rules": [
+        {
+          "when": {
+            "!!": {
+              "var": "rows"
+            }
+          },
+          "require": [
+            "note"
+          ]
+        }
+      ],
+      "answers": {
+        "rows": []
+      },
+      "expect": []
+    }
+  ]
+}

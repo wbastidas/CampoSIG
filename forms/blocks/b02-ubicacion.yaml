@@ -1,0 +1,55 @@
+# B2 Ubicación (SRS 4.2). El GPS es obligatorio; la referencia se puede dictar.
+block:
+  code: B02
+  title: Ubicación
+  required: true
+fields:
+  gps:
+    type: object
+    title: Coordenadas
+    properties:
+      latitude: {type: number, minimum: -5.5, maximum: 2.0}
+      longitude: {type: number, minimum: -81.5, maximum: -75.0}
+      accuracy_m: {type: number, minimum: 0}
+    required: [latitude, longitude, accuracy_m]
+    x-voice: false
+    x-auto-capture: true
+  province:
+    type: string
+    title: Provincia
+    x-catalog-ref: administrative.province
+    x-voice: true
+  canton:
+    type: string
+    title: Cantón
+    x-catalog-ref: administrative.canton
+    x-voice: true
+  parish:
+    type: string
+    title: Parroquia
+    x-catalog-ref: administrative.parish
+    x-voice: true
+  address_reference:
+    type: string
+    title: Dirección o referencia
+    maxLength: 500
+    x-voice: true
+  # El alimentador y la subestación salen de dominios que varían por Unidad de Negocio,
+  # así que se refrescan del GIS en cada sync y nunca se embeben (RF-304).
+  feeder_code:
+    type: string
+    title: Alimentador
+    x-catalog-ref: feeder
+    x-volatile-catalog: true
+    x-voice: true
+  substation_code:
+    type: string
+    title: Subestación
+    x-catalog-ref: substation
+    x-volatile-catalog: true
+    x-voice: true
+  asset_code:
+    type: string
+    title: Código del activo
+    x-voice: true
+    x-vision-source: asset_plate_ocr

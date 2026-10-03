@@ -1,0 +1,137 @@
+# Registro de datasets de visión, con licencia verificada (addendum 6.2, guía §14).
+#
+# Esto no es una bibliografía. Es la lista que la compuerta de CI lee para decidir si un
+# paquete de modelos puede publicarse: si un dataset cuya licencia no permite uso comercial
+# —o que impone copyleft a lo derivado— participó en el entrenamiento del modelo que se
+# despliega, la publicación falla. La verificación de licencia es parte del pipeline, no un
+# trámite previo.
+#
+# `allowed_uses` es lo que la licencia permite, no lo que nos gustaría:
+#   benchmark    — medir contra él y publicarlo en un informe
+#   pretraining  — preentrenar un modelo que NO se despliega tal cual
+#   deployed     — entrenar el modelo que va en el APK
+#
+# `verified_on` es la fecha en que alguien leyó la licencia en la fuente. Una licencia sin
+# verificar no es una licencia permisiva: es una licencia desconocida, y se trata como
+# prohibida.
+
+version: 1
+verified_by: "equipo SIGEC-Campo"
+
+# Licencias aceptables para el modelo que se despliega. Alineadas con la regla 10 de
+# CLAUDE.md: nada de AGPL/GPL, nada de NonCommercial, nada sin licencia declarada.
+deployable_licenses:
+  - MIT
+  - BSD-2-Clause
+  - BSD-3-Clause
+  - Apache-2.0
+  - CC0-1.0
+  - CC-BY-4.0
+  - proprietary-owned   # datos de la propia distribuidora
+
+datasets:
+  - id: insplad
+    name: InsPLAD
+    url: https://github.com/andreluizbvs/InsPLAD
+    content: 10607 imágenes de dron, 17 tipos de activo, 6 defectos
+    domain: aerial_transmission
+    license: CC-BY-NC-3.0
+    license_verified_on: 2026-09-21
+    allowed_uses: [benchmark]
+    notes: >-
+      NonCommercial. Sirve para comparar y para el informe de línea base; no puede
+      entrenar el modelo que se entrega a una empresa.
+
+  - id: idid
+    name: IDID (Insulator Defect Image Dataset)
+    url: https://github.com/heitorcfelix/public-insulator-datasets
+    content: Defectos en aisladores
+    domain: aerial_transmission
+    license: restricted
+    license_verified_on: 2026-09-21
+    allowed_uses: []
+    notes: Acceso restringido; los términos no permiten redistribución ni uso derivado.
+
+  - id: cplid
+    name: CPLID (Chinese Power Line Insulator Dataset)
+    url: https://github.com/InsulatorData/InsulatorDataSet
+    content: Aisladores normales y con defecto, imagen aérea
+    domain: aerial_transmission
+    license: undeclared
+    license_verified_on: 2026-09-21
+    allowed_uses: []
+    notes: >-
+      Sin licencia declarada en el repositorio. Sin licencia no hay permiso: se trata
+      como prohibido, no como "probablemente esté bien".
+
+  - id: stn-plad
+    name: STN PLAD
+    url: https://github.com/andreluizbvs/PLAD
+    content: Inspección de líneas de transmisión con dron
+    domain: aerial_transmission
+    license: GPL-3.0
+    license_verified_on: 2026-09-21
+    allowed_uses: []
+    notes: >-
+      Copyleft fuerte. Entrenar con él el modelo del APK arrastraría la GPL al móvil,
+      que es justo lo que la regla 10 prohíbe.
+
+  - id: ttpla
+    name: TTPLA
+    url: https://github.com/R3ab/ttpla_dataset
+    content: Torres y líneas de transmisión, detección y segmentación
+    domain: aerial_transmission
+    license: unverified
+    license_verified_on: null
+    allowed_uses: []
+    notes: >-
+      Pendiente de verificar en el repositorio. Mientras tanto cuenta como desconocida.
+      Aun con licencia permisiva su dominio es aéreo de transmisión, no distribución
+      desde el suelo.
+
+  - id: plamd
+    name: PLAMD
+    url: https://zenodo.org/records/8041195
+    content: Degradaciones múltiples en imágenes aéreas de línea
+    domain: aerial_transmission
+    license: unverified
+    license_verified_on: null
+    allowed_uses: []
+    notes: Pendiente de verificar en el registro Zenodo. Candidato para aumentos de robustez.
+
+  - id: kaggle-utility-pole-condition
+    name: Kaggle — Utility Power Pole Condition
+    url: https://www.kaggle.com/datasets
+    content: Condición de postes
+    domain: ground_distribution
+    license: unverified
+    license_verified_on: null
+    allowed_uses: []
+    notes: >-
+      Dominio correcto —poste visto desde el suelo— y por eso vale la pena verificarlo.
+      Hay que revisar los términos de Kaggle y los del autor, que no siempre coinciden.
+
+  - id: cnel-historico
+    name: Histórico fotográfico de la distribuidora
+    url: interno
+    content: Fotografías de inspecciones previas, sin encuadre guiado
+    domain: ground_distribution
+    license: proprietary-owned
+    license_verified_on: 2026-09-21
+    allowed_uses: [benchmark, pretraining, deployed]
+    notes: >-
+      Propiedad de la empresa. Requiere el proceso de anonimización de la guía §5 antes
+      de entrar al pipeline: placas de vehículos y rostros.
+
+  - id: piloto-encuadres-guiados
+    name: Piloto con encuadres guiados
+    url: interno
+    content: Capturas del piloto con las guías de encuadre de la app
+    domain: ground_distribution
+    license: proprietary-owned
+    license_verified_on: 2026-09-21
+    allowed_uses: [benchmark, pretraining, deployed]
+    notes: >-
+      El insumo real del modelo desplegado. Es la razón por la que la app pide encuadres
+      concretos desde el primer día del piloto, aunque el modelo todavía no exista: sin
+      esas fotos no hay dataset, y sin dataset no hay visión.

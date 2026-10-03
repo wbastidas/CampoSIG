@@ -2,10 +2,17 @@
 
 | Campo | Valor |
 |---|---|
-| Estado | Aceptada |
+| Estado | **Sustituida por [ADR-006](ADR-006-postgresql-servidor-aparte.md)** |
 | Fecha | 2026-09-21 |
 | Decide | Motor y ubicación de la base de datos operativa |
 | Corrige | SRS sección 7.2 (PostgreSQL 16 + PostGIS + pgvector) |
+
+> **Nota de sustitución (2026-09-21).** Esta decisión se tomó asumiendo un Oracle moderno con la opción
+> Spatial disponible. Al confirmarse que el motor es **Oracle 11g R2 sin Spatial**, sus dos premisas
+> resultaron falsas: `SDO_GEOMETRY` no está garantizado y 11g R2 no tiene soporte JSON ni recibe parches
+> de seguridad desde 2020. Se revierte en **ADR-006**. Se conserva este registro porque el razonamiento
+> —aprovechar licencias, DBA y respaldos existentes— sigue siendo válido y es el que habría que retomar
+> si la distribuidora migra la geodatabase a 19c o posterior.
 
 ## Contexto
 

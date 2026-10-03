@@ -1,0 +1,24 @@
+# B10 Resumen (SRS 4.2). La IA propone y el técnico dispone: se guardan ambas versiones.
+block:
+  code: B10
+  title: Resumen
+  required: true
+fields:
+  found:
+    type: string
+    title: Encontrado
+    maxLength: 2000
+    x-ai-generated: true
+    x-voice: true
+  performed:
+    type: string
+    title: Realizado
+    maxLength: 2000
+    x-ai-generated: true
+    x-voice: true
+  pending:
+    type: string
+    title: Pendiente
+    maxLength: 2000
+    x-ai-generated: true
+    x-voice: true

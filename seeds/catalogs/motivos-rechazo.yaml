@@ -1,0 +1,48 @@
+# Motivos por los que un supervisor rechaza una OT propuesta por IA (RF-013, RF-114).
+#
+# El criterio de RF-114 dice que «el motivo de rechazo se usa como señal negativa en el
+# entrenamiento», y de ahí sale la forma de este catálogo: `attributes.signal` dice **qué** enseña
+# cada motivo, porque no todos enseñan lo mismo. «No es un defecto» dice que la detección se
+# equivocó; «ya está resuelto» dice que la detección acertó y el mundo cambió — usar el segundo como
+# ejemplo negativo enseñaría al modelo a no ver un defecto que estaba ahí.
+#
+# Esa distinción es la razón de que el motivo sea de catálogo y no texto libre.
+catalog:
+  code: proposal_reject_reason
+  title: Motivo de rechazo de una OT propuesta
+  source: manual
+entries:
+  - code: no_es_defecto
+    label: No es un defecto
+    synonyms: [está bien, no tiene nada, falso positivo]
+    sort_order: 1
+    attributes: {signal: falso_positivo}
+  - code: defecto_equivocado
+    label: Es un defecto, pero no el que dice
+    sort_order: 2
+    attributes: {signal: clase_equivocada}
+  - code: ya_resuelto
+    label: Ya está resuelto
+    sort_order: 3
+    attributes: {signal: ninguna}
+  - code: duplicado
+    label: Duplica otra OT
+    sort_order: 4
+    attributes: {signal: ninguna}
+  - code: no_corresponde
+    label: No corresponde a la distribuidora
+    synonyms: [es del cliente, no es nuestro]
+    sort_order: 5
+    attributes: {signal: fuera_de_alcance}
+  - code: prioridad_mal_calculada
+    label: La prioridad está mal calculada
+    sort_order: 6
+    attributes: {signal: prioridad}
+  - code: activo_equivocado
+    label: El activo no es ese
+    sort_order: 7
+    attributes: {signal: activo}
+  - code: se_atiende_en_plan
+    label: Entra en el plan de mantenimiento
+    sort_order: 8
+    attributes: {signal: ninguna}

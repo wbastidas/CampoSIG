@@ -1,0 +1,58 @@
+# Bloque específico del Análisis de Trabajo Seguro (F-TR-01, SRS 4.3).
+block:
+  code: TR01
+  title: Análisis de Trabajo Seguro
+  required: true
+fields:
+  task_description: {type: string, title: Descripción de la tarea, maxLength: 1000, x-voice: true}
+  work_mode:
+    type: string
+    title: Tipo de trabajo
+    enum: [sin_tension, con_tension, en_proximidad]
+    x-voice: true
+  voltage_level:
+    type: string
+    title: Nivel de voltaje
+    x-catalog-ref: voltage_level
+    x-voice: true
+  hazards:
+    type: array
+    title: Peligros identificados
+    minItems: 1
+    x-voice: true
+    items:
+      type: string
+      enum: [electrico, altura, transito, clima, animales, vegetacion, espacio_confinado, terceros]
+  controls:
+    type: array
+    title: Medidas de control por peligro
+    x-repeatable-table: true
+    x-voice: true
+    items:
+      type: object
+      properties:
+        hazard: {type: string, title: Peligro}
+        control: {type: string, title: Medida de control, x-voice: true}
+      required: [hazard, control]
+  weather:
+    type: string
+    title: Condiciones climáticas
+    enum: [despejado, lluvia, tormenta_electrica, viento_fuerte]
+    x-voice: true
+  area_delimited: {type: boolean, title: Señalización y delimitación, x-voice: true}
+  member_signatures:
+    type: array
+    title: Firmas de los integrantes
+    minItems: 1
+    items:
+      type: object
+      properties:
+        member: {type: string}
+        signature: {type: string, format: uri}
+      required: [member, signature]
+rules:
+  # Regla bloqueante del SRS 4.3: tormenta eléctrica exige autorización del supervisor.
+  - when: {"==": [{"var": "weather"}, "tormenta_electrica"]}
+    blocks_execution: true
+    requires_role: supervisor
+    message: "Tormenta eléctrica: se requiere autorización del supervisor para iniciar"

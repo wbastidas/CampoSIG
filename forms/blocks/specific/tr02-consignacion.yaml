@@ -1,0 +1,100 @@
+# Bloque específico del permiso de trabajo y las 5 reglas de oro (F-TR-02, SRS 4.3).
+#
+# Las cinco reglas son cinco confirmaciones **con foto**, y en este orden, porque es el orden en que
+# se ejecutan: cortar, bloquear, verificar ausencia de tensión, poner a tierra, delimitar. Un
+# formulario que las aceptara en cualquier orden sería un formulario que se puede llenar al final,
+# de memoria, sentado en la camioneta.
+#
+# El número de consignación **no se teclea aquí**: viene de la solicitud que otorgó el Centro de
+# Control y la plataforma lo exige antes de habilitar este formulario (RF-024). Un número escrito a
+# mano en el permiso sería un número que nadie otorgó, y es exactamente el papel que este bloque no
+# puede jugar.
+#
+# `x-computed` en el número: lo llena el servidor desde la consignación vinculada. Está en el
+# formulario para que la cuadrilla lo vea y lo repita por radio, no para que lo invente.
+block:
+  code: TR02
+  title: Permiso de trabajo y 5 reglas de oro
+  required: true
+fields:
+  outage_number:
+    type: string
+    title: N.º de consignación otorgada
+    readOnly: true
+    x-computed: true
+    x-voice: false
+  consigned_equipment:
+    type: string
+    title: Equipo o tramo consignado
+    maxLength: 255
+    x-voice: true
+  # 1) Corte efectivo de todas las fuentes. «Todas» es la palabra que importa: un alimentador con
+  # dos fuentes y un corte es un alimentador con tensión.
+  sources_opened_at:
+    type: string
+    format: date-time
+    title: Hora del corte efectivo de todas las fuentes
+    x-voice: true
+  sources_operated:
+    type: string
+    title: Equipos operados para el corte
+    maxLength: 255
+    x-voice: true
+  # 2) Bloqueo y señalización.
+  locked_out:
+    type: boolean
+    title: Bloqueo y señalización colocados (tarjeta y candado)
+    x-voice: true
+  # 3) Verificación de ausencia de tensión, con el detector que se usó: un detector sin identificar
+  # es una verificación que nadie puede repetir.
+  absence_verified:
+    type: boolean
+    title: Ausencia de tensión verificada
+    x-voice: true
+  detector_used:
+    type: string
+    title: Detector utilizado (marca y serie)
+    maxLength: 128
+    x-voice: true
+  # 4) Puesta a tierra y en cortocircuito, con dónde se puso.
+  grounded:
+    type: boolean
+    title: Puesta a tierra y en cortocircuito instalada
+    x-voice: true
+  grounding_location:
+    type: string
+    title: Ubicación de la puesta a tierra
+    maxLength: 255
+    x-voice: true
+  # 5) Delimitación de la zona de trabajo.
+  area_delimited:
+    type: boolean
+    title: Zona de trabajo delimitada y señalizada
+    x-voice: true
+  # Devolución: la consignación se devuelve con hora y responsable, y hasta que eso pasa el equipo
+  # sigue consignado. El estado de la solicitud lo lleva la plataforma (RF-024); esto es lo que la
+  # cuadrilla anota en el sitio.
+  returned_at:
+    type: string
+    format: date-time
+    title: Hora de devolución de la consignación
+    x-voice: true
+  returned_to:
+    type: string
+    title: Responsable que recibe la devolución
+    maxLength: 255
+    x-voice: true
+rules:
+  # Las cinco reglas de oro son condiciones entre sí: no se verifica ausencia de tensión sin haber
+  # bloqueado, ni se pone a tierra sin haber verificado. Escritas como reglas y no como un orden
+  # implícito en la pantalla, porque la pantalla se puede saltar y la regla la evalúan los tres
+  # (servidor, web y móvil).
+  - when: {"!!": {"var": "absence_verified"}}
+    require: [locked_out, sources_opened_at]
+    message: No se verifica ausencia de tensión sin corte efectivo y bloqueo
+  - when: {"!!": {"var": "grounded"}}
+    require: [absence_verified, detector_used]
+    message: No se pone a tierra sin haber verificado la ausencia de tensión, y con qué detector
+  - when: {"!!": {"var": "returned_at"}}
+    require: [returned_to]
+    message: La devolución de la consignación necesita el responsable que la recibe

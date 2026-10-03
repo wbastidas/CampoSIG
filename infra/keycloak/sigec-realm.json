@@ -1,0 +1,104 @@
+{
+  "realm": "sigec",
+  "enabled": true,
+  "displayName": "SIGEC-Campo",
+  "loginTheme": "keycloak",
+  "internationalizationEnabled": true,
+  "supportedLocales": ["es"],
+  "defaultLocale": "es",
+  "accessTokenLifespan": 900,
+  "ssoSessionIdleTimeout": 3600,
+  "roles": {
+    "realm": [
+      {"name": "tecnico", "description": "Técnico / liniero (móvil)"},
+      {"name": "jefe_cuadrilla", "description": "Jefe de cuadrilla"},
+      {"name": "inspector", "description": "Inspector / fiscalizador"},
+      {"name": "supervisor", "description": "Supervisor de área"},
+      {"name": "planificador", "description": "Planificador / despachador"},
+      {"name": "editor_gis", "description": "Editor GIS: aplica lotes as-built (ADR-001)"},
+      {"name": "analista_ml", "description": "Analista de datos / ML"},
+      {"name": "admin_funcional", "description": "Administrador funcional"},
+      {"name": "admin_ti", "description": "Administrador de TI"},
+      {"name": "auditor", "description": "Auditor (solo lectura)"},
+      {"name": "agente_gis", "description": "Cuenta de servicio del agente arcpy (ADR-008)"}
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "sigec-backend",
+      "name": "SIGEC Backend API",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "bearerOnly": true,
+      "publicClient": false,
+      "secret": "dev-only-not-for-production"
+    },
+    {
+      "clientId": "sigec-web",
+      "name": "SIGEC Web (planificadores, supervisores, editor GIS)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["http://localhost:5173/*"],
+      "webOrigins": ["http://localhost:5173"],
+      "attributes": {"pkce.code.challenge.method": "S256"}
+    },
+    {
+      "clientId": "sigec-mobile",
+      "name": "SIGEC Android (técnicos)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["ec.sigec.campo://oauth/callback"],
+      "attributes": {"pkce.code.challenge.method": "S256"}
+    },
+    {
+      "clientId": "sigec-gis-agent",
+      "name": "Agente arcpy (servicio, ADR-008)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "secret": "dev-only-not-for-production"
+    }
+  ],
+  "users": [
+    {
+      "username": "tecnico.demo",
+      "enabled": true,
+      "firstName": "Técnico",
+      "lastName": "Demo",
+      "credentials": [{"type": "password", "value": "demo", "temporary": false}],
+      "realmRoles": ["tecnico"]
+    },
+    {
+      "username": "planificador.demo",
+      "enabled": true,
+      "firstName": "Planificador",
+      "lastName": "Demo",
+      "credentials": [{"type": "password", "value": "demo", "temporary": false}],
+      "realmRoles": ["planificador"]
+    },
+    {
+      "username": "supervisor.demo",
+      "enabled": true,
+      "firstName": "Supervisor",
+      "lastName": "Demo",
+      "credentials": [{"type": "password", "value": "demo", "temporary": false}],
+      "realmRoles": ["supervisor"]
+    },
+    {
+      "username": "editorgis.demo",
+      "enabled": true,
+      "firstName": "Editor",
+      "lastName": "GIS",
+      "credentials": [{"type": "password", "value": "demo", "temporary": false}],
+      "realmRoles": ["editor_gis"]
+    }
+  ]
+}

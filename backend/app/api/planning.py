@@ -1,0 +1,586 @@
+"""Planner endpoints: the map, the board and assignment (RF-310..RF-324).
+
+Assignment is graphical: the planner sees work on a map, lassos a selection and assigns it
+to a crew. So the read endpoint speaks GeoJSON, which MapLibre consumes directly, and the
+assign endpoint takes a list of ids because a lasso is inherently plural.
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import datetime
+from typing import Annotated, Any
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.assignment.suggest import TOP_N, suggest_crews
+from app.auth.dependencies import require_roles, unit_scope_query
+from app.auth.principal import Role
+from app.auth.scope import may_see_crew, may_see_order
+from app.infra.database import get_session
+from app.org.service import UnknownBusinessUnitError, get_business_unit_by_code
+from app.workorders import fronts
+from app.workorders.models import Crew, WorkOrder, WorkOrderState
+from app.workorders.service import (
+    ConcurrentEditError,
+    CrossUnitError,
+    MilestoneError,
+    NotAssignableError,
+    OwnershipError,
+    as_milestone_dict,
+    assign,
+    assign_many,
+    correct_milestone,
+    crew_workload,
+    custody_history,
+    in_bounding_box,
+    milestones_of,
+    ownership_history,
+    transfer_ownership,
+)
+
+# El ámbito se comprueba en la puerta del router (ADR-009). `/states` no lleva unidad y por eso
+# se declara aparte, más abajo: es un catálogo de constantes, no datos de nadie.
+router = APIRouter(
+    prefix="/api/v1/planning", tags=["planning"], dependencies=[Depends(unit_scope_query)]
+)
+
+SessionDep = Annotated[Session, Depends(get_session)]
+
+#: Cap on a single map query. A planner zoomed out to the whole country must not pull every
+#: work order ever created into the browser.
+MAX_MAP_FEATURES = 2000
+
+
+def _unit(session: Session, code: str):  # type: ignore[no-untyped-def]
+    try:
+        return get_business_unit_by_code(session, code)
+    except UnknownBusinessUnitError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+
+
+class BoundingBox(BaseModel):
+    """A map viewport in WGS84 degrees, as MapLibre reports it."""
+
+    west: float = Field(ge=-180, le=180)
+    south: float = Field(ge=-90, le=90)
+    east: float = Field(ge=-180, le=180)
+    north: float = Field(ge=-90, le=90)
+
+
+class AssignSelectionIn(BaseModel):
+    """Assign a map selection to one crew."""
+
+    work_order_ids: list[uuid.UUID] = Field(min_length=1, max_length=500)
+    crew_id: uuid.UUID
+    reason: str | None = None
+
+
+class AssignFailure(BaseModel):
+    work_order_id: uuid.UUID
+    message: str
+
+
+class AssignSelectionOut(BaseModel):
+    assigned: list[uuid.UUID]
+    #: Partial success is normal: one refused pin must not lose the planner the others.
+    failures: list[AssignFailure]
+
+
+class AssignOneIn(BaseModel):
+    crew_id: uuid.UUID
+    device_id: str | None = None
+    user_sub: str | None = None
+    reason: str | None = None
+    #: The version the planner was looking at. Sent so two planners never silently
+    #: overwrite each other (RF-311).
+    expected_version: int | None = None
+
+
+class CustodyEntry(BaseModel):
+    device_id: str | None
+    user_sub: str | None
+    since: str
+    until: str | None
+    reason: str | None
+    had_unsynced_data: bool
+    granted_by: str | None
+
+
+@router.get(
+    "/work-orders.geojson",
+    summary="OT dentro del viewport, como GeoJSON para el mapa",
+)
+def work_orders_geojson(
+    session: SessionDep,
+    business_unit: str,
+    west: float,
+    south: float,
+    east: float,
+    north: float,
+    unassigned_only: bool = False,
+    states: Annotated[list[str] | None, Query()] = None,
+    priorities: Annotated[list[str] | None, Query()] = None,
+    area: Annotated[str | None, Query()] = None,
+    zone: Annotated[str | None, Query()] = None,
+    limit: int = MAX_MAP_FEATURES,
+    principal: Annotated[Any, Depends(unit_scope_query)] = None,
+) -> dict[str, Any]:
+    """A FeatureCollection MapLibre can render without transformation.
+
+    GeoJSON rather than a bespoke shape so the map layer needs no adapter, and so the same
+    response can drive clustering, styling and hit-testing straight from the library.
+    """
+    unit = _unit(session, business_unit)
+    bounds = BoundingBox(west=west, south=south, east=east, north=north)
+    orders = in_bounding_box(
+        session,
+        unit,
+        west=bounds.west,
+        south=bounds.south,
+        east=bounds.east,
+        north=bounds.north,
+        states=states,
+        unassigned_only=unassigned_only,
+        # Los tres filtros que pide RF-020 para el tablero de despacho con mapa.
+        priorities=priorities,
+        area=area,
+        zone=zone,
+        # El ámbito de RF-002: lo que un planificador o supervisor con área, zona, agencia o
+        # contratista en su token puede ver, no lo que pidió — eso es lo que hacen `area`/`zone`
+        # arriba, y narrowing nada que un ámbito restringido ya no deje ver.
+        principal=principal,
+        limit=min(limit, MAX_MAP_FEATURES),
+    )
+
+    # Read coordinates back as lon/lat. Done in one query rather than per feature, because
+    # a hundred round trips would make the map feel broken.
+    from geoalchemy2.functions import ST_X, ST_Y
+
+    coordinates = {
+        row[0]: (row[1], row[2])
+        for row in session.execute(
+            select(WorkOrder.id, ST_X(WorkOrder.location), ST_Y(WorkOrder.location)).where(
+                WorkOrder.id.in_([o.id for o in orders])
+            )
+        ).all()
+    }
+
+    features = []
+    for order in orders:
+        lon_lat = coordinates.get(order.id)
+        if lon_lat is None or lon_lat[0] is None:
+            continue
+        features.append(
+            {
+                "type": "Feature",
+                "id": str(order.id),
+                "geometry": {"type": "Point", "coordinates": [lon_lat[0], lon_lat[1]]},
+                "properties": {
+                    "code": order.code or order.external_ref,
+                    "work_type": order.work_type,
+                    "form_code": order.form_code,
+                    "state": order.state,
+                    "priority": order.priority,
+                    "assigned": order.assigned_crew_id is not None,
+                    "crew_id": str(order.assigned_crew_id) if order.assigned_crew_id else None,
+                    "asset_code": order.asset_code,
+                    "feeder_code": order.feeder_code,
+                    "sla_due_at": order.sla_due_at.isoformat() if order.sla_due_at else None,
+                    "zone": order.zone,
+                    "version": order.version,
+                },
+            }
+        )
+    return {
+        "type": "FeatureCollection",
+        "features": features,
+        # Told plainly so the UI can warn instead of silently showing a partial map.
+        "truncated": len(orders) >= min(limit, MAX_MAP_FEATURES),
+    }
+
+
+@router.get("/crews", summary="Cuadrillas de la unidad con su carga abierta")
+def crews_with_workload(
+    session: SessionDep,
+    business_unit: str,
+    principal: Annotated[Any, Depends(unit_scope_query)] = None,
+) -> list[dict[str, Any]]:
+    """The shared board several planners work against (RF-313), within the ámbito (RF-002)."""
+    return crew_workload(session, _unit(session, business_unit), principal=principal)
+
+
+@router.get(
+    "/work-orders/{order_id}/suggested-crews",
+    dependencies=[Depends(require_roles(Role.PLANNER, Role.SUPERVISOR))],
+    summary="Top 3 de cuadrillas con puntaje explicable (RF-021)",
+)
+def suggested_crews(
+    session: SessionDep,
+    order_id: uuid.UUID,
+    business_unit: str,
+    top: Annotated[int, Query(ge=1, le=10)] = TOP_N,
+    principal: Annotated[Any, Depends(unit_scope_query)] = None,
+) -> dict[str, Any]:
+    """A suggestion, not an assignment: the planner still clicks.
+
+    The reasons travel with the score because a number a planner cannot argue with is one they will
+    either follow blindly or ignore, and both are worse than no suggestion at all.
+    """
+    unit = _unit(session, business_unit)
+    order = _order(session, unit.id, order_id, principal)
+    return suggest_crews(session, unit, order, top=top, principal=principal).as_dict()
+
+
+@router.post(
+    "/assign-selection",
+    dependencies=[Depends(require_roles(Role.PLANNER, Role.SUPERVISOR))],
+    response_model=AssignSelectionOut,
+    summary="Asignar una selección del mapa a una cuadrilla",
+)
+def assign_selection(
+    payload: AssignSelectionIn,
+    session: SessionDep,
+    business_unit: str,
+    principal: Annotated[Any, Depends(unit_scope_query)] = None,
+) -> AssignSelectionOut:
+    """«No se asigna lo que no se ve» (RF-002): the crew must be inside the planner's ámbito, and
+    an order outside it fails as «no existe», the same as an id from another unit."""
+    unit = _unit(session, business_unit)
+    crew = _crew(session, unit.id, payload.crew_id, principal)
+    try:
+        assigned, failures = assign_many(
+            session,
+            unit,
+            payload.work_order_ids,
+            crew=crew,
+            reason=payload.reason,
+            principal=principal,
+        )
+    except CrossUnitError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+
+    session.commit()
+    return AssignSelectionOut(
+        assigned=[order.id for order in assigned],
+        failures=[AssignFailure(work_order_id=oid, message=msg) for oid, msg in failures],
+    )
+
+
+@router.post(
+    "/work-orders/{work_order_id}/assign",
+    summary="Asignar o reasignar una OT",
+    dependencies=[Depends(require_roles(Role.PLANNER, Role.SUPERVISOR))],
+)
+def assign_one(
+    work_order_id: uuid.UUID,
+    payload: AssignOneIn,
+    session: SessionDep,
+    business_unit: str,
+    principal: Annotated[Any, Depends(unit_scope_query)] = None,
+) -> dict[str, Any]:
+    unit = _unit(session, business_unit)
+    order = _order(session, unit.id, work_order_id, principal)
+    crew = _crew(session, unit.id, payload.crew_id, principal)
+    try:
+        assign(
+            session,
+            order,
+            crew=crew,
+            user_sub=payload.user_sub,
+            device_id=payload.device_id,
+            expected_version=payload.expected_version,
+            reason=payload.reason,
+        )
+    except ConcurrentEditError as exc:
+        # 409 so the UI can offer "reload and retry" rather than a generic failure.
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    except (NotAssignableError, CrossUnitError) as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+
+    session.commit()
+    return {"work_order_id": str(order.id), "state": order.state, "version": order.version}
+
+
+@router.get(
+    "/work-orders/{work_order_id}/custody",
+    response_model=list[CustodyEntry],
+    summary="Historial de custodia de una OT",
+)
+def get_custody(
+    work_order_id: uuid.UUID,
+    session: SessionDep,
+    business_unit: str,
+    principal: Annotated[Any, Depends(unit_scope_query)] = None,
+) -> list[CustodyEntry]:
+    """RF-324: who held it, on which device, since when and why."""
+    unit = _unit(session, business_unit)
+    order = _order(session, unit.id, work_order_id, principal)
+    return [
+        CustodyEntry(
+            device_id=entry.device_id,
+            user_sub=entry.user_sub,
+            since=entry.since.isoformat(),
+            until=entry.until.isoformat() if entry.until else None,
+            reason=entry.reason,
+            had_unsynced_data=entry.had_unsynced_data,
+            granted_by=entry.granted_by,
+        )
+        for entry in custody_history(session, order)
+    ]
+
+
+@router.get("/states", summary="Estados de OT disponibles para filtrar el mapa")
+def list_states() -> list[str]:
+    return [state.value for state in WorkOrderState]
+
+
+# --- obras con varios frentes (RF-015) ------------------------------------------------------
+
+
+class AttachFrontIn(BaseModel):
+    """The order that becomes a front of this work."""
+
+    work_order_id: uuid.UUID
+
+
+def _order(
+    session: Session, unit_id: uuid.UUID, work_order_id: uuid.UUID, principal: Any
+) -> WorkOrder:
+    """The order by id, or 404 — also when it is outside the principal's ámbito (RF-002): an id
+    typed by hand is not a way around what the map and the lists no longer show."""
+    order = session.get(WorkOrder, work_order_id)
+    if order is None or order.business_unit_id != unit_id or not may_see_order(principal, order):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "la OT no existe en esta unidad")
+    return order
+
+
+def _crew(session: Session, unit_id: uuid.UUID, crew_id: uuid.UUID, principal: Any) -> Crew:
+    """The crew by id, or 404 on the same terms as `_order`."""
+    crew = session.get(Crew, crew_id)
+    if crew is None or crew.business_unit_id != unit_id or not may_see_crew(principal, crew):
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, "la cuadrilla no existe en esta unidad de negocio"
+        )
+    return crew
+
+
+@router.get(
+    "/work-orders/{work_order_id}/fronts",
+    summary="Los frentes de una obra y su avance agregado (RF-015)",
+)
+def fronts_of(
+    work_order_id: uuid.UUID,
+    session: SessionDep,
+    business_unit: str,
+    principal: Annotated[Any, Depends(unit_scope_query)] = None,
+) -> dict[str, Any]:
+    """«Una OT padre muestra el avance agregado de sus hijas», con su denominador.
+
+    The aggregate counts every front, in ámbito or not: it is the work's progress, and a percentage
+    that changed with who was looking would be two different works. The list only names the fronts
+    the principal may see (RF-002)."""
+    unit = _unit(session, business_unit)
+    parent = _order(session, unit.id, work_order_id, principal)
+    children = fronts.children_of(session, parent)
+    return {
+        "work_order_id": str(parent.id),
+        "code": parent.code,
+        "progress": fronts.progress_of(session, parent).as_dict(),
+        "fronts": [
+            {
+                "work_order_id": str(child.id),
+                "code": child.code,
+                "work_type": child.work_type,
+                "state": child.state,
+                "priority": child.priority,
+                "asset_code": child.asset_code,
+                "assigned_crew_id": str(child.assigned_crew_id) if child.assigned_crew_id else None,
+            }
+            for child in children
+            if may_see_order(principal, child)
+        ],
+    }
+
+
+@router.get("/works", summary="Las obras de la unidad con su avance (RF-015)")
+def works_with_fronts(
+    session: SessionDep,
+    business_unit: str,
+    principal: Annotated[Any, Depends(unit_scope_query)] = None,
+) -> list[dict[str, Any]]:
+    unit = _unit(session, business_unit)
+    return [
+        {
+            "work_order_id": str(parent.id),
+            "code": parent.code,
+            "description": parent.description,
+            "state": parent.state,
+            "progress": progress.as_dict(),
+        }
+        for parent, progress in fronts.parents_with_fronts(session, unit, principal=principal)
+    ]
+
+
+@router.post(
+    "/work-orders/{work_order_id}/fronts",
+    summary="Colgar una OT como frente de una obra (RF-015)",
+    dependencies=[Depends(require_roles(Role.PLANNER, Role.SUPERVISOR))],
+)
+def attach_front(
+    work_order_id: uuid.UUID,
+    payload: AttachFrontIn,
+    session: SessionDep,
+    business_unit: str,
+    principal: Annotated[Any, Depends(require_roles(Role.PLANNER, Role.SUPERVISOR))] = None,
+) -> dict[str, Any]:
+    unit = _unit(session, business_unit)
+    parent = _order(session, unit.id, work_order_id, principal)
+    child = _order(session, unit.id, payload.work_order_id, principal)
+    try:
+        fronts.attach(session, unit, parent, child, actor=principal.subject)
+    except fronts.FrontError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    session.commit()
+    return {
+        "work_order_id": str(parent.id),
+        "progress": fronts.progress_of(session, parent).as_dict(),
+    }
+
+
+@router.delete(
+    "/work-orders/{work_order_id}/fronts/{front_id}",
+    summary="Separar un frente de su obra (RF-015)",
+    dependencies=[Depends(require_roles(Role.PLANNER, Role.SUPERVISOR))],
+)
+def detach_front(
+    work_order_id: uuid.UUID,
+    front_id: uuid.UUID,
+    session: SessionDep,
+    business_unit: str,
+    principal: Annotated[Any, Depends(require_roles(Role.PLANNER, Role.SUPERVISOR))] = None,
+) -> dict[str, Any]:
+    """Separar, no anular: el frente sigue siendo trabajo y conserva lo que ya capturó."""
+    unit = _unit(session, business_unit)
+    parent = _order(session, unit.id, work_order_id, principal)
+    child = _order(session, unit.id, front_id, principal)
+    if child.parent_id != parent.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "esa OT no es frente de esta obra")
+    try:
+        fronts.detach(session, unit, child, actor=principal.subject)
+    except fronts.FrontError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    session.commit()
+    return {
+        "work_order_id": str(parent.id),
+        "progress": fronts.progress_of(session, parent).as_dict(),
+    }
+
+
+# --- tiempos por hito (RF-047) y dueño de la OT (RF-312) -----------------------------------
+
+
+@router.get(
+    "/work-orders/{work_order_id}/milestones",
+    summary="Los tiempos de la OT por hito, con su corrección si la hubo (RF-047)",
+)
+def get_milestones(
+    work_order_id: uuid.UUID,
+    session: SessionDep,
+    business_unit: str,
+    principal: Annotated[Any, Depends(unit_scope_query)] = None,
+) -> list[dict[str, Any]]:
+    unit = _unit(session, business_unit)
+    order = _order(session, unit.id, work_order_id, principal)
+    return [as_milestone_dict(row) for row in milestones_of(session, order)]
+
+
+class MilestoneCorrectionIn(BaseModel):
+    """Una hora corregida, con su motivo. El original no se toca: queda al lado."""
+
+    corrected_time: datetime
+    reason: str = Field(min_length=1, max_length=500)
+
+
+@router.put(
+    "/work-orders/{work_order_id}/milestones/{milestone}",
+    dependencies=[Depends(require_roles(Role.SUPERVISOR, Role.PLANNER))],
+    summary="Corregir el tiempo de un hito, con motivo (RF-047)",
+)
+def put_milestone(
+    work_order_id: uuid.UUID,
+    milestone: str,
+    payload: MilestoneCorrectionIn,
+    session: SessionDep,
+    business_unit: str,
+    principal: Annotated[Any, Depends(require_roles(Role.SUPERVISOR, Role.PLANNER))] = None,
+) -> dict[str, Any]:
+    unit = _unit(session, business_unit)
+    order = _order(session, unit.id, work_order_id, principal)
+    try:
+        row = correct_milestone(
+            session,
+            order,
+            milestone,
+            corrected_time=payload.corrected_time,
+            reason=payload.reason,
+            actor=principal.subject,
+        )
+    except MilestoneError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    session.commit()
+    return as_milestone_dict(row)
+
+
+class OwnerIn(BaseModel):
+    """A quién pasa la OT y por qué. El motivo es obligatorio: un traspaso sin él es una OT que
+    cambió de manos sin que nadie pueda explicar cuándo dejó de ser de quien era."""
+
+    planner_id: str = Field(min_length=1, max_length=255)
+    reason: str = Field(min_length=1, max_length=500)
+
+
+@router.post(
+    "/work-orders/{work_order_id}/owner",
+    dependencies=[Depends(require_roles(Role.PLANNER, Role.SUPERVISOR))],
+    summary="Traspasar la OT a otro planificador (RF-312)",
+)
+def post_owner(
+    work_order_id: uuid.UUID,
+    payload: OwnerIn,
+    session: SessionDep,
+    business_unit: str,
+    principal: Annotated[Any, Depends(require_roles(Role.PLANNER, Role.SUPERVISOR))] = None,
+) -> dict[str, Any]:
+    unit = _unit(session, business_unit)
+    order = _order(session, unit.id, work_order_id, principal)
+    try:
+        transfer_ownership(
+            session, order, to=payload.planner_id, reason=payload.reason, actor=principal.subject
+        )
+    except OwnershipError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    session.commit()
+    return {"work_order_id": str(order.id), "planner_id": order.planner_id}
+
+
+@router.get(
+    "/work-orders/{work_order_id}/owner/history",
+    summary="La bitácora de traspasos de la OT (RF-312)",
+)
+def get_owner_history(
+    work_order_id: uuid.UUID,
+    session: SessionDep,
+    business_unit: str,
+    principal: Annotated[Any, Depends(unit_scope_query)] = None,
+) -> dict[str, Any]:
+    unit = _unit(session, business_unit)
+    order = _order(session, unit.id, work_order_id, principal)
+    return {
+        "work_order_id": str(order.id),
+        "planner_id": order.planner_id,
+        "transfers": ownership_history(session, order),
+    }

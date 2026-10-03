@@ -1,0 +1,77 @@
+# Asset Model Descriptor — canonical vocabulary (ADR-004, RF-300).
+#
+# Deliberately small. It describes what the platform needs in order to dispatch work,
+# fill forms and run the AI models — nothing more. Every asset type here must be
+# mappable to any distribution utility's data model, so it names no real class or field.
+#
+# Roles, not field names: code asks for "the business key of this asset", never for
+# "the CODIGO field". That indirection is the whole point (ADR-004).
+
+version: 1
+
+asset_types:
+  - key: support_structure
+    label_key: asset.support_structure
+    geometry: point
+    capabilities: [inspectable, photographable, work_target, ai_vision]
+    attributes:
+      - {key: code,         type: string, required: true, role: business_key}
+      - {key: material,     type: enum,   enum_ref: material.support}
+      - {key: height_m,     type: number, unit: m}
+      - {key: feeder_code,  type: string, role: network_grouping}
+      - {key: install_date, type: date}
+
+  - key: distribution_transformer
+    label_key: asset.distribution_transformer
+    geometry: point
+    capabilities: [inspectable, photographable, work_target, ai_vision, has_units]
+    attributes:
+      - {key: code,        type: string, required: true, role: business_key}
+      - {key: rated_kva,   type: number, unit: kVA}
+      - {key: phases,      type: enum,   enum_ref: phases}
+      - {key: mounting,    type: enum,   enum_ref: mounting.transformer}
+      - {key: feeder_code, type: string, role: network_grouping}
+
+  - key: street_light
+    label_key: asset.street_light
+    geometry: point
+    capabilities: [inspectable, photographable, work_target, ai_vision]
+    attributes:
+      - {key: code,        type: string, required: true, role: business_key}
+      - {key: technology,  type: enum,   enum_ref: technology.lamp}
+      - {key: power_w,     type: number, unit: W}
+      - {key: feeder_code, type: string, role: network_grouping}
+
+  - key: fuse_switch
+    label_key: asset.fuse_switch
+    geometry: point
+    capabilities: [inspectable, photographable, work_target, ai_vision]
+    attributes:
+      - {key: code,        type: string, required: true, role: business_key}
+      - {key: fuse_rating, type: string}
+      - {key: feeder_code, type: string, role: network_grouping}
+
+  - key: line_segment
+    label_key: asset.line_segment
+    geometry: polyline
+    capabilities: [inspectable, work_target]
+    attributes:
+      - {key: code,          type: string, required: true, role: business_key}
+      - {key: voltage_level, type: enum,   enum_ref: voltage_level, role: voltage_level}
+      - {key: feeder_code,   type: string, role: network_grouping}
+
+  - key: service_point
+    label_key: asset.service_point
+    geometry: point
+    capabilities: [inspectable, work_target]
+    attributes:
+      - {key: code,        type: string, required: true, role: business_key}
+      - {key: feeder_code, type: string, role: network_grouping}
+
+# Canonical enumerations. A profile maps these to whatever codes its domains use.
+enums:
+  material.support:      [concrete, wood, steel, fiberglass, other]
+  phases:                [single, two, three, bank]
+  mounting.transformer:  [pole, vault, pad, cabinet]
+  technology.lamp:       [led, sodium_hp, mercury, metal_halide, other]
+  voltage_level:         [low, medium, sub_transmission]

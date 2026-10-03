@@ -1,0 +1,35 @@
+# B1 Cabecera (SRS 4.2). Presente en todos los formularios.
+block:
+  code: B01
+  title: Cabecera
+  required: true
+fields:
+  work_order_code:
+    type: string
+    title: N.º de OT
+    readOnly: true
+    x-voice: false
+  work_type:
+    type: string
+    title: Tipo de trabajo
+    readOnly: true
+    x-voice: false
+  priority:
+    type: string
+    title: Prioridad
+    enum: [baja, media, alta, critica]
+    x-catalog-ref: priority
+    x-voice: true
+  crew_code:
+    type: string
+    title: Cuadrilla
+    x-voice: false
+  crew_members:
+    type: array
+    title: Integrantes
+    items: {type: string}
+    x-voice: false
+  vehicle:
+    type: string
+    title: Vehículo
+    x-voice: true
