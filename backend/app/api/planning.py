@@ -8,6 +8,7 @@ assign endpoint takes a list of ids because a lasso is inherently plural.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -26,12 +27,19 @@ from app.workorders.models import Crew, WorkOrder, WorkOrderState
 from app.workorders.service import (
     ConcurrentEditError,
     CrossUnitError,
+    MilestoneError,
     NotAssignableError,
+    OwnershipError,
+    as_milestone_dict,
     assign,
     assign_many,
+    correct_milestone,
     crew_workload,
     custody_history,
     in_bounding_box,
+    milestones_of,
+    ownership_history,
+    transfer_ownership,
 )
 
 # El ámbito se comprueba en la puerta del router (ADR-009). `/states` no lleva unidad y por eso
@@ -469,4 +477,110 @@ def detach_front(
     return {
         "work_order_id": str(parent.id),
         "progress": fronts.progress_of(session, parent).as_dict(),
+    }
+
+
+# --- tiempos por hito (RF-047) y dueño de la OT (RF-312) -----------------------------------
+
+
+@router.get(
+    "/work-orders/{work_order_id}/milestones",
+    summary="Los tiempos de la OT por hito, con su corrección si la hubo (RF-047)",
+)
+def get_milestones(
+    work_order_id: uuid.UUID,
+    session: SessionDep,
+    business_unit: str,
+    principal: Annotated[Any, Depends(unit_scope_query)] = None,
+) -> list[dict[str, Any]]:
+    unit = _unit(session, business_unit)
+    order = _order(session, unit.id, work_order_id, principal)
+    return [as_milestone_dict(row) for row in milestones_of(session, order)]
+
+
+class MilestoneCorrectionIn(BaseModel):
+    """Una hora corregida, con su motivo. El original no se toca: queda al lado."""
+
+    corrected_time: datetime
+    reason: str = Field(min_length=1, max_length=500)
+
+
+@router.put(
+    "/work-orders/{work_order_id}/milestones/{milestone}",
+    dependencies=[Depends(require_roles(Role.SUPERVISOR, Role.PLANNER))],
+    summary="Corregir el tiempo de un hito, con motivo (RF-047)",
+)
+def put_milestone(
+    work_order_id: uuid.UUID,
+    milestone: str,
+    payload: MilestoneCorrectionIn,
+    session: SessionDep,
+    business_unit: str,
+    principal: Annotated[Any, Depends(require_roles(Role.SUPERVISOR, Role.PLANNER))] = None,
+) -> dict[str, Any]:
+    unit = _unit(session, business_unit)
+    order = _order(session, unit.id, work_order_id, principal)
+    try:
+        row = correct_milestone(
+            session,
+            order,
+            milestone,
+            corrected_time=payload.corrected_time,
+            reason=payload.reason,
+            actor=principal.subject,
+        )
+    except MilestoneError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    session.commit()
+    return as_milestone_dict(row)
+
+
+class OwnerIn(BaseModel):
+    """A quién pasa la OT y por qué. El motivo es obligatorio: un traspaso sin él es una OT que
+    cambió de manos sin que nadie pueda explicar cuándo dejó de ser de quien era."""
+
+    planner_id: str = Field(min_length=1, max_length=255)
+    reason: str = Field(min_length=1, max_length=500)
+
+
+@router.post(
+    "/work-orders/{work_order_id}/owner",
+    dependencies=[Depends(require_roles(Role.PLANNER, Role.SUPERVISOR))],
+    summary="Traspasar la OT a otro planificador (RF-312)",
+)
+def post_owner(
+    work_order_id: uuid.UUID,
+    payload: OwnerIn,
+    session: SessionDep,
+    business_unit: str,
+    principal: Annotated[Any, Depends(require_roles(Role.PLANNER, Role.SUPERVISOR))] = None,
+) -> dict[str, Any]:
+    unit = _unit(session, business_unit)
+    order = _order(session, unit.id, work_order_id, principal)
+    try:
+        transfer_ownership(
+            session, order, to=payload.planner_id, reason=payload.reason, actor=principal.subject
+        )
+    except OwnershipError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    session.commit()
+    return {"work_order_id": str(order.id), "planner_id": order.planner_id}
+
+
+@router.get(
+    "/work-orders/{work_order_id}/owner/history",
+    summary="La bitácora de traspasos de la OT (RF-312)",
+)
+def get_owner_history(
+    work_order_id: uuid.UUID,
+    session: SessionDep,
+    business_unit: str,
+    principal: Annotated[Any, Depends(unit_scope_query)] = None,
+) -> dict[str, Any]:
+    unit = _unit(session, business_unit)
+    order = _order(session, unit.id, work_order_id, principal)
+    return {
+        "work_order_id": str(order.id),
+        "planner_id": order.planner_id,
+        "transfers": ownership_history(session, order),
     }

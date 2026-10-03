@@ -61,6 +61,8 @@ import {
   sortFindings,
   sortObservations,
   sortQueue,
+  galleryEvidence,
+  pendingEvidence,
   tamperedEvidence,
   unconfirmedAiValues,
 } from './decision';
@@ -797,6 +799,8 @@ function BeforeAfter({ detail }: { detail: ReviewDetail }) {
   const { before, after } = evidenceByStage(detail);
   const reused = reusedEvidence(detail);
   const tampered = tamperedEvidence(detail);
+  const pending = pendingEvidence(detail);
+  const gallery = galleryEvidence(detail);
   return (
     <section>
       <h3>Antes y después</h3>
@@ -810,6 +814,19 @@ function BeforeAfter({ detail }: { detail: ReviewDetail }) {
         <p role="alert">
           Hay evidencia cuyo hash no coincide con lo que registró el dispositivo:{' '}
           {tampered.map((item) => item.storage_key).join(', ')}
+        </p>
+      )}
+      {pending.length > 0 && (
+        <p className="evidence-pending">
+          {pending.length === 1
+            ? 'Una evidencia todavía no termina de subir; su integridad se verifica al llegar.'
+            : `${pending.length} evidencias todavía no terminan de subir; su integridad se verifica al llegar.`}
+        </p>
+      )}
+      {gallery.length > 0 && (
+        <p role="note">
+          Fotos de la galería, adjuntas pero no verificadas: no cuentan como antes ni como después
+          ({gallery.map((item) => item.storage_key).join(', ')}).
         </p>
       )}
       {detail.missing_photos.map((problem) => (

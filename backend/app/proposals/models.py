@@ -58,6 +58,9 @@ class ProposalOrigin(StrEnum):
 
     FIELD_FINDING = "hallazgo_campo"
     VISION = "deteccion_visual"
+    #: Raised from the field with no work order behind it (RF-049): the technician saw something
+    #: on the way and reported it with its position and photographs.
+    SPONTANEOUS = "hallazgo_espontaneo"
 
 
 class WorkOrderProposal(Base):

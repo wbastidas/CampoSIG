@@ -150,9 +150,27 @@ export function reusedEvidence(detail: ReviewDetail): string[] {
   return after.filter((item) => beforeHashes.has(item.content_hash)).map((item) => item.storage_key);
 }
 
-/** Evidence whose hash did not match what the device recorded. Never a rounding error. */
+/**
+ * Evidence whose hash did not match what the device recorded. Never a rounding error.
+ *
+ * Only «alterada»: a photograph still uploading over a rural link is «pendiente», and calling it
+ * tampered would teach reviewers to ignore the one warning that matters. A server that does not
+ * send the status yet falls back to the old boolean.
+ */
 export function tamperedEvidence(detail: ReviewDetail): ReviewDetail['evidence'] {
-  return detail.evidence.filter((item) => !item.integrity_verified);
+  return detail.evidence.filter((item) =>
+    item.integrity_status ? item.integrity_status === 'alterada' : !item.integrity_verified,
+  );
+}
+
+/** Evidence whose file has not been uploaded and checked yet (RF-073). */
+export function pendingEvidence(detail: ReviewDetail): ReviewDetail['evidence'] {
+  return detail.evidence.filter((item) => item.integrity_status === 'pendiente');
+}
+
+/** Photos from the gallery: attached, shown, and not counted as BEFORE/AFTER (RF-074). */
+export function galleryEvidence(detail: ReviewDetail): ReviewDetail['evidence'] {
+  return detail.evidence.filter((item) => item.source === 'galeria');
 }
 
 const PRIORITY_RANK: Record<string, number> = {

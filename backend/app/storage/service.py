@@ -94,6 +94,30 @@ def _client() -> Any:
     )
 
 
+def read_object(storage_key: str) -> bytes:
+    """Los bytes de un objeto, para verificar su hash (RF-073).
+
+    Por el endpoint interno, no el público: el servidor habla con SeaweedFS dentro de su propia red.
+
+    :raises StorageError: si el objeto no está, que es lo normal mientras la subida no termina.
+    """
+    settings = get_settings()
+    client = boto3.client(
+        "s3",
+        endpoint_url=settings.s3_endpoint_url,
+        aws_access_key_id=settings.s3_access_key,
+        aws_secret_access_key=settings.s3_secret_key,
+        config=BotoConfig(signature_version="s3v4", s3={"addressing_style": "path"}),
+        region_name="us-east-1",
+    )
+    try:
+        response = client.get_object(Bucket=settings.s3_bucket, Key=storage_key)
+    except Exception as exc:  # botocore lanza varias clases; todas significan «no se pudo leer»
+        raise StorageError(f"el archivo «{storage_key}» no está en el almacenamiento") from exc
+    body: bytes = response["Body"].read()
+    return body
+
+
 def _safe_filename(filename: str) -> str:
     cleaned = _UNSAFE_FILENAME.sub("-", filename.strip()).strip("-")
     return cleaned or "archivo"

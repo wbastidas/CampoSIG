@@ -46,6 +46,8 @@ import {
   sortFindings,
   sortObservations,
   sortQueue,
+  galleryEvidence,
+  pendingEvidence,
   tamperedEvidence,
   unconfirmedAiValues,
 } from './decision';
@@ -253,6 +255,24 @@ describe('evidencias', () => {
   it('una evidencia cuyo hash no cuadra se destaca', () => {
     const rows = detail({ evidence: [evidence('antes', 'a', false), evidence('despues', 'b')] });
     expect(tamperedEvidence(rows).map((e) => e.content_hash)).toEqual(['a']);
+  });
+
+  it('RF-073: una evidencia que todavía sube no es una evidencia alterada', () => {
+    const rows = detail({
+      evidence: [
+        { ...evidence('antes', 'a', false), integrity_status: 'pendiente' },
+        { ...evidence('despues', 'b', false), integrity_status: 'alterada' },
+      ],
+    });
+    expect(tamperedEvidence(rows).map((e) => e.content_hash)).toEqual(['b']);
+    expect(pendingEvidence(rows).map((e) => e.content_hash)).toEqual(['a']);
+  });
+
+  it('RF-074: las fotos de galería se señalan aparte', () => {
+    const rows = detail({
+      evidence: [evidence('antes', 'a'), { ...evidence('despues', 'b'), source: 'galeria' }],
+    });
+    expect(galleryEvidence(rows).map((e) => e.content_hash)).toEqual(['b']);
   });
 });
 

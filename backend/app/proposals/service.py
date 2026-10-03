@@ -282,6 +282,145 @@ def _raise(
     return proposal
 
 
+class SpontaneousFindingError(ProposalError):
+    """A field finding the platform cannot turn into a proposal as described (RF-049)."""
+
+
+def raise_spontaneous(
+    session: Session,
+    unit: BusinessUnit,
+    *,
+    defect_code: str,
+    latitude: float,
+    longitude: float,
+    photos: list[dict[str, Any]],
+    actor: str,
+    accuracy_m: float | None = None,
+    asset_code: str | None = None,
+    asset_type_key: str | None = None,
+    feeder_code: str | None = None,
+    description: str | None = None,
+    observed_at: datetime | None = None,
+) -> tuple[WorkOrderProposal, bool]:
+    """A finding reported from the field with no work order behind it (RF-049).
+
+    «Genera una propuesta de OT con GPS y fotos (RF-013).» So the position and at least one
+    photograph are required, each photograph with the hash its phone computed: a finding nobody can
+    locate or look at is a rumour, and the supervisor deciding on it has nothing to decide with.
+
+    The same asset and defect already proposed and open is the same work, not a second proposal:
+    the finding joins it, the way the RF-013 tray already refuses one row per photograph.
+
+    :returns: (proposal, created). `created` is False when the finding joined an open proposal.
+    :raises SpontaneousFindingError: no defect, no position, or no photograph with its hash.
+    """
+    if not defect_code.strip():
+        raise SpontaneousFindingError("el hallazgo no dice qué defecto es")
+    if not (-90 <= latitude <= 90 and -180 <= longitude <= 180) or (latitude, longitude) == (0, 0):
+        raise SpontaneousFindingError("el hallazgo necesita una posición GPS válida")
+    usable = [
+        {
+            "storage_key": str(photo["storage_key"]),
+            "content_hash": str(photo["content_hash"]),
+            "captured_at": photo.get("captured_at"),
+        }
+        for photo in photos
+        if isinstance(photo, dict) and photo.get("storage_key") and photo.get("content_hash")
+    ]
+    if not usable:
+        raise SpontaneousFindingError(
+            "el hallazgo necesita al menos una foto, con su clave de almacenamiento y su hash"
+        )
+
+    from app.zones.service import zones_at
+
+    zones = zones_at(session, unit, longitude, latitude)
+    zone_code = zones[0] if zones else None
+    finding = {
+        "defect_code": defect_code,
+        "asset_code": asset_code,
+        "asset_type_key": asset_type_key,
+        "feeder_code": feeder_code,
+        "description": description,
+        "latitude": latitude,
+        "longitude": longitude,
+        "accuracy_m": accuracy_m,
+        "observed_at": observed_at.isoformat() if observed_at else None,
+        "reported_by": actor,
+        "photos": usable,
+    }
+
+    if asset_code:
+        existing = session.scalars(
+            select(WorkOrderProposal).where(
+                WorkOrderProposal.business_unit_id == unit.id,
+                WorkOrderProposal.state == ProposalState.OPEN,
+                WorkOrderProposal.asset_code == asset_code,
+                WorkOrderProposal.defect_code == defect_code,
+            )
+        ).first()
+        if existing is not None:
+            existing.findings = [*existing.findings, finding]
+            session.flush()
+            record(
+                session,
+                unit.id,
+                kind=EventKind.FIELD_CHANGED,
+                subject_type="work_order_proposal",
+                subject_id=str(existing.id),
+                asset_code=asset_code,
+                actor=actor,
+                payload={"field": "findings", "added": "hallazgo_espontaneo"},
+            )
+            return existing, False
+
+    critical = criticality_of(
+        session, unit, defect_code=defect_code, asset_type_key=asset_type_key, zone_code=zone_code
+    )
+    deadline = suggested_deadline_hours(_attributes(session, PRIORITY_CATALOG, critical.priority))
+    label = _defect_label(session, defect_code)
+    where = asset_code or f"({latitude:.5f}, {longitude:.5f})"
+    proposal = WorkOrderProposal(
+        business_unit_id=unit.id,
+        source_work_order_id=None,
+        origin=ProposalOrigin.SPONTANEOUS,
+        state=ProposalState.OPEN,
+        asset_code=asset_code,
+        asset_type_key=asset_type_key,
+        feeder_code=feeder_code,
+        zone=zone_code,
+        defect_code=defect_code,
+        work_type=PROPOSED_WORK_TYPE,
+        form_code=_form_for(asset_type_key),
+        priority=critical.priority,
+        criticality=critical.as_dict(),
+        suggested_deadline_hours=deadline,
+        justification=(
+            f"{label} en {where}, reportado desde el campo sin OT previa. {critical.explain()}."
+        ),
+        findings=[finding],
+    )
+    proposal.location = func.ST_SetSRID(func.ST_MakePoint(longitude, latitude), STORAGE_SRID)
+    session.add(proposal)
+    session.flush()
+    record(
+        session,
+        unit.id,
+        kind=EventKind.CREATED,
+        subject_type="work_order_proposal",
+        subject_id=str(proposal.id),
+        asset_code=asset_code,
+        actor=actor,
+        payload={
+            "origin": ProposalOrigin.SPONTANEOUS.value,
+            "defect_code": defect_code,
+            "priority": critical.priority,
+            "photos": [photo["content_hash"] for photo in usable],
+        },
+    )
+    return proposal, True
+
+
 def _coordinates(session: Session, order_id: uuid.UUID) -> tuple[float, float]:
     row = session.execute(
         select(func.ST_X(WorkOrder.location), func.ST_Y(WorkOrder.location)).where(

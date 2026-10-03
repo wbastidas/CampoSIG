@@ -279,3 +279,64 @@ class DeviceCustody(Base):
             postgresql_where="until IS NULL",
         ),
     )
+
+
+class Milestone(StrEnum):
+    """The four times RF-047 names: «EnCamino, EnSitio, inicio, fin»."""
+
+    EN_ROUTE = "en_camino"
+    ON_SITE = "en_sitio"
+    STARTED = "inicio"
+    FINISHED = "fin"
+
+
+#: Which state marks which milestone. The first time the order enters it; a resumed job does not
+#: restart its clock, the same rule the operational board already applies to the trail.
+MILESTONE_OF_STATE: dict[str, Milestone] = {
+    WorkOrderState.EN_ROUTE: Milestone.EN_ROUTE,
+    WorkOrderState.ON_SITE: Milestone.ON_SITE,
+    WorkOrderState.IN_EXECUTION: Milestone.STARTED,
+    WorkOrderState.CLOSED_FIELD: Milestone.FINISHED,
+}
+
+
+class WorkOrderMilestone(Base):
+    """When a work order reached one of RF-047's milestones, and any correction of it.
+
+    Three clocks, kept apart on purpose. The phone's (`device_time`) is when it happened, as the
+    technician lived it — offline, so it can arrive hours later. The server's (`recorded_at`) is
+    when the platform learned it. A correction (`corrected_time`) never overwrites either: «una
+    edición manual del tiempo guarda el original y el motivo».
+    """
+
+    __tablename__ = "work_order_milestone"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    business_unit_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("business_unit.id", ondelete="CASCADE"), nullable=False
+    )
+    work_order_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("work_order.id", ondelete="CASCADE"), nullable=False
+    )
+    milestone: Mapped[str] = mapped_column(String(16), nullable=False)
+    device_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    recorded_by: Mapped[str | None] = mapped_column(String(255))
+
+    corrected_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    correction_reason: Mapped[str | None] = mapped_column(String(500))
+    corrected_by: Mapped[str | None] = mapped_column(String(255))
+    corrected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        UniqueConstraint("work_order_id", "milestone", name="uq_work_order_milestone"),
+        Index("ix_work_order_milestone_unit", "business_unit_id"),
+    )
+
+    @property
+    def effective_time(self) -> datetime:
+        """The time to report: the correction if there is one, else the phone's, else the
+        server's."""
+        return self.corrected_time or self.device_time or self.recorded_at

@@ -32,7 +32,12 @@ from app.infra.database import get_session
 from app.org.service import UnknownBusinessUnitError, get_business_unit_by_code
 from app.prereview.service import latest_report, latest_run, risk_levels_for
 from app.responses.models import FormResponse, ValueOrigin
-from app.responses.service import compose_for, missing_photos, photo_counts
+from app.responses.service import (
+    compose_for,
+    counts_as_evidence,
+    missing_photos,
+    photo_counts,
+)
 from app.review import blind
 from app.review.batch import approve_batch, orders_for_batch, sample_size
 from app.review.models import Decision
@@ -235,6 +240,19 @@ def detail(
                 "storage_key": item.storage_key,
                 "content_hash": item.content_hash,
                 "integrity_verified": item.integrity_verified,
+                # «pendiente» (todavía no subida), «verificada» o «alterada» (RF-073).
+                "integrity_status": item.integrity_status,
+                # «galeria» se adjunta pero no cuenta como ANTES/DESPUÉS (RF-074).
+                "source": item.source,
+                "counts_as_evidence": counts_as_evidence(item),
+                "watermarked_storage_key": item.watermarked_storage_key,
+                "captured_at": item.captured_at.isoformat() if item.captured_at else None,
+                "captured_by": item.captured_by,
+                "device_model": item.device_model,
+                "latitude": item.latitude,
+                "longitude": item.longitude,
+                "altitude_m": item.altitude_m,
+                "heading_deg": item.heading_deg,
                 "vision_result": item.vision_result,
             }
             for item in evidence

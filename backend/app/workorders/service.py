@@ -10,7 +10,7 @@ Two properties every function here protects:
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from geoalchemy2.functions import ST_MakeEnvelope, ST_Within
@@ -26,11 +26,14 @@ from app.forms import registry as form_registry
 from app.forms.catalog import codes_for_area, get_definition
 from app.org.models import BusinessUnit
 from app.workorders.models import (
+    MILESTONE_OF_STATE,
     STORAGE_SRID,
     Crew,
     DeviceCustody,
+    Milestone,
     Priority,
     WorkOrder,
+    WorkOrderMilestone,
     WorkOrderSource,
     WorkOrderState,
 )
@@ -137,6 +140,14 @@ class CrossUnitError(Exception):
     """Raised when an operation would move work between business units."""
 
 
+class MilestoneError(Exception):
+    """A time correction the platform cannot accept as given (RF-047)."""
+
+
+class OwnershipError(Exception):
+    """An ownership transfer the platform cannot accept as given (RF-312)."""
+
+
 class UnknownCrewError(Exception):
     """Raised when a crew code does not exist in this business unit (RF-005)."""
 
@@ -240,8 +251,14 @@ def transition(
     *,
     reason: str | None = None,
     actor: str | None = None,
+    occurred_at: datetime | None = None,
 ) -> WorkOrder:
-    """Move a work order to a new state, validating the transition (SRS 3.3)."""
+    """Move a work order to a new state, validating the transition (SRS 3.3).
+
+    :param occurred_at: when it happened on the phone, for a transition a device delivers. Kept as
+        the milestone's device time (RF-047): the server learns of a «en sitio» hours after it,
+        and the hours between are exactly what the operational board measures.
+    """
     allowed = TRANSITIONS.get(order.state, set())
     if target not in allowed:
         readable = ", ".join(sorted(allowed)) or "ninguno"
@@ -283,10 +300,195 @@ def transition(
         asset_code=order.asset_code,
         actor=actor or "sistema:transicion",
         actor_kind=ActorKind.PERSON if actor else ActorKind.SYSTEM,
-        payload={"from": was, "to": target, "version": order.version},
+        payload={
+            "from": was,
+            "to": target,
+            "version": order.version,
+            "device_time": occurred_at.isoformat() if occurred_at else None,
+        },
         reason=reason,
     )
+    milestone = MILESTONE_OF_STATE.get(target)
+    if milestone is not None:
+        _record_milestone(session, order, milestone, device_time=occurred_at, actor=actor)
     return order
+
+
+def _record_milestone(
+    session: Session,
+    order: WorkOrder,
+    milestone: Milestone,
+    *,
+    device_time: datetime | None,
+    actor: str | None,
+) -> None:
+    """The first time only: a resumed job does not restart its clock (RF-047)."""
+    exists = session.scalar(
+        select(WorkOrderMilestone.id).where(
+            WorkOrderMilestone.work_order_id == order.id,
+            WorkOrderMilestone.milestone == milestone,
+        )
+    )
+    if exists is not None:
+        return
+    session.add(
+        WorkOrderMilestone(
+            business_unit_id=order.business_unit_id,
+            work_order_id=order.id,
+            milestone=milestone,
+            device_time=device_time,
+            recorded_by=actor,
+        )
+    )
+    session.flush()
+
+
+def milestones_of(session: Session, order: WorkOrder) -> list[WorkOrderMilestone]:
+    """The order's milestones in the order RF-047 lists them."""
+    rank = {item.value: index for index, item in enumerate(Milestone)}
+    rows = session.scalars(
+        select(WorkOrderMilestone).where(WorkOrderMilestone.work_order_id == order.id)
+    ).all()
+    return sorted(rows, key=lambda row: rank.get(row.milestone, len(rank)))
+
+
+#: A correction cannot be later than this past the moment it is made. A few minutes of slack for a
+#: phone's clock; a «fin» set tomorrow is a typo or a lie, and either way not a time.
+FUTURE_SLACK = timedelta(minutes=5)
+
+
+def correct_milestone(
+    session: Session,
+    order: WorkOrder,
+    milestone: str,
+    *,
+    corrected_time: datetime,
+    reason: str | None,
+    actor: str,
+) -> WorkOrderMilestone:
+    """Correct a milestone's time, keeping the original and the reason (RF-047).
+
+    «Una edición manual del tiempo guarda el original y el motivo»: `device_time` and `recorded_at`
+    are never touched, the correction sits beside them, and the trail records from what to what,
+    by whom and why. Correcting again replaces the correction and records that too.
+
+    :raises MilestoneError: no reason, an unknown or not-yet-reached milestone, or a future time.
+    """
+    if not reason or not reason.strip():
+        raise MilestoneError("corregir un tiempo exige el motivo")
+    if milestone not in {item.value for item in Milestone}:
+        raise MilestoneError(
+            f"«{milestone}» no es un hito; admitidos: {', '.join(item.value for item in Milestone)}"
+        )
+    if corrected_time.tzinfo is None:
+        raise MilestoneError("la hora corregida tiene que llevar zona horaria")
+    if corrected_time > datetime.now(UTC) + FUTURE_SLACK:
+        raise MilestoneError("la hora corregida no puede estar en el futuro")
+    row = session.scalars(
+        select(WorkOrderMilestone).where(
+            WorkOrderMilestone.work_order_id == order.id,
+            WorkOrderMilestone.milestone == milestone,
+        )
+    ).first()
+    if row is None:
+        raise MilestoneError(f"la OT todavía no pasó por «{milestone}»: no hay tiempo que corregir")
+    before = row.effective_time
+    row.corrected_time = corrected_time
+    row.correction_reason = reason.strip()[:500]
+    row.corrected_by = actor
+    row.corrected_at = datetime.now(UTC)
+    session.flush()
+    audit.record(
+        session,
+        order.business_unit_id,
+        kind=EventKind.FIELD_CHANGED,
+        subject_type="orden_trabajo",
+        subject_id=str(order.id),
+        work_order_id=order.id,
+        asset_code=order.asset_code,
+        actor=actor,
+        payload={
+            "field": f"hito:{milestone}",
+            "from": before.isoformat(),
+            "to": corrected_time.isoformat(),
+            "device_time": row.device_time.isoformat() if row.device_time else None,
+        },
+        reason=row.correction_reason,
+    )
+    return row
+
+
+def as_milestone_dict(row: WorkOrderMilestone) -> dict[str, Any]:
+    return {
+        "milestone": row.milestone,
+        "effective_time": row.effective_time.isoformat(),
+        "device_time": row.device_time.isoformat() if row.device_time else None,
+        "recorded_at": row.recorded_at.isoformat() if row.recorded_at else None,
+        "recorded_by": row.recorded_by,
+        "corrected_time": row.corrected_time.isoformat() if row.corrected_time else None,
+        "correction_reason": row.correction_reason,
+        "corrected_by": row.corrected_by,
+        "corrected_at": row.corrected_at.isoformat() if row.corrected_at else None,
+    }
+
+
+def transfer_ownership(
+    session: Session, order: WorkOrder, *, to: str, reason: str | None, actor: str
+) -> WorkOrder:
+    """Hand the order to another planner, on the record (RF-312).
+
+    Overlapping ámbitos are allowed, so two planners can see the same order; what keeps that from
+    becoming «everybody thought somebody else had it» is one explicit owner. Changing it is a
+    traspaso with a reason, and the trail is its bitácora.
+
+    :raises OwnershipError: no target, no reason, or a transfer to the current owner.
+    """
+    target = to.strip()
+    if not target:
+        raise OwnershipError("hay que decir a quién se traspasa la OT")
+    if not reason or not reason.strip():
+        raise OwnershipError("un traspaso exige el motivo")
+    if target == order.planner_id:
+        raise OwnershipError("la OT ya es de esa persona")
+    previous = order.planner_id
+    order.planner_id = target
+    order.version += 1
+    session.flush()
+    audit.record(
+        session,
+        order.business_unit_id,
+        kind=EventKind.FIELD_CHANGED,
+        subject_type="orden_trabajo",
+        subject_id=str(order.id),
+        work_order_id=order.id,
+        asset_code=order.asset_code,
+        actor=actor,
+        payload={"field": "planner_id", "from": previous, "to": target},
+        reason=reason.strip(),
+    )
+    return order
+
+
+def ownership_history(session: Session, order: WorkOrder) -> list[dict[str, Any]]:
+    """The bitácora de traspasos: every change of owner, oldest first (RF-312)."""
+    events = audit.trail(
+        session,
+        order.business_unit_id,
+        work_order_id=order.id,
+        subject_type="orden_trabajo",
+        subject_id=str(order.id),
+    )
+    return [
+        {
+            "from": event.payload.get("from"),
+            "to": event.payload.get("to"),
+            "by": event.actor,
+            "reason": event.reason,
+            "at": event.occurred_at.isoformat(),
+        }
+        for event in events
+        if event.payload.get("field") == "planner_id"
+    ]
 
 
 # --- assignment -------------------------------------------------------------------

@@ -62,6 +62,24 @@ class EvidenceKind(StrEnum):
     DOCUMENT = "documento"
 
 
+class EvidenceSource(StrEnum):
+    """Where a photograph came from (RF-074). Only the live camera makes evidence; a picture from
+    the gallery may be attached, but it was not taken there and then, and nothing proves it was."""
+
+    CAMERA = "camara"
+    GALLERY = "galeria"
+
+
+class IntegrityStatus(StrEnum):
+    """What the server found when it hashed the uploaded file (RF-073)."""
+
+    #: Registered, not uploaded yet, or uploaded and not checked yet.
+    PENDING = "pendiente"
+    VERIFIED = "verificada"
+    #: The file in storage is not the one the device hashed at capture.
+    ALTERED = "alterada"
+
+
 class EvidenceStage(StrEnum):
     BEFORE = "antes"
     AFTER = "despues"
@@ -204,13 +222,31 @@ class Evidence(Base):
     longitude: Mapped[float | None] = mapped_column(Float)
     gps_accuracy_m: Mapped[float | None] = mapped_column(Float)
     captured_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    #: The rest of RF-071's metadata. Altitude and heading come from the phone with the fix; the
+    #: person and the model are taken from the enrolled device on the server, never from the payload
+    #: — a capture cannot be signed with somebody else's name by writing it in a field.
+    altitude_m: Mapped[float | None] = mapped_column(Float)
+    heading_deg: Mapped[float | None] = mapped_column(Float)
+    captured_by: Mapped[str | None] = mapped_column(String(255))
+    device_model: Mapped[str | None] = mapped_column(String(128))
+
+    #: Live camera or gallery (RF-074). Null for captures from before the field existed, read as
+    #: camera: those phones had no gallery option.
+    source: Mapped[str | None] = mapped_column(String(16))
+    #: The copy with the visible watermark (RF-072). The original, without it, is `storage_key` and
+    #: is the one hashed: the watermark is for people, the hash is for evidence.
+    watermarked_storage_key: Mapped[str | None] = mapped_column(String(512))
 
     #: The guided framing this photograph was taken for, so a reviewer knows what it should
     #: show and the before/after comparison can pair them (RF-070).
     framing: Mapped[str | None] = mapped_column(String(64))
 
-    #: Verified on arrival. False means the file does not match what the device recorded.
+    #: Verified on arrival. False means not verified: not uploaded yet, or altered — which of the
+    #: two is `integrity_status`.
     integrity_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    integrity_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=IntegrityStatus.PENDING, server_default="pendiente"
+    )
 
     #: Detections the on-device vision model produced, kept as proposals until confirmed.
     vision_result: Mapped[dict[str, Any] | None] = mapped_column(JSONB)

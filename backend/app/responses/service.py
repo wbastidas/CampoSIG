@@ -28,9 +28,11 @@ from app.policy import service as policy
 from app.responses.models import (
     Evidence,
     EvidenceKind,
+    EvidenceSource,
     EvidenceStage,
     FieldProvenance,
     FormResponse,
+    IntegrityStatus,
     ResponseState,
     ValueOrigin,
 )
@@ -64,6 +66,10 @@ class NotEditableError(Exception):
 
 class OutagePermitError(Exception):
     """Raised when the permit form is filled without a granted consignación (RF-024)."""
+
+
+class EvidenceError(Exception):
+    """An evidence the platform cannot register as described."""
 
 
 class IntegrityError(Exception):
@@ -398,11 +404,28 @@ def register_evidence(
     captured_at: datetime | None = None,
     framing: str | None = None,
     vision_result: dict[str, Any] | None = None,
+    altitude_m: float | None = None,
+    heading_deg: float | None = None,
+    captured_by: str | None = None,
+    device_model: str | None = None,
+    source: str | None = None,
+    watermarked_storage_key: str | None = None,
+    actor: str | None = None,
 ) -> Evidence:
     """Register a piece of evidence against a response.
 
+    The hash the device computed at capture goes onto the audit trail here, in the same transaction
+    (RF-073): from this moment a different file under the same key is provably not the one that was
+    taken, whatever happens to the storage bucket or to this row.
+
     :raises AudioNotAllowedError: for audio when the area's policy does not keep it (RF-151).
+    :raises EvidenceError: for a source that is neither the camera nor the gallery.
     """
+    if source is not None and source not in {item.value for item in EvidenceSource}:
+        raise EvidenceError(
+            f"«{source}» no es un origen de evidencia; admitidos: "
+            f"{', '.join(item.value for item in EvidenceSource)}"
+        )
     if kind == EvidenceKind.AUDIO:
         zone = session.execute(
             select(WorkOrder.zone).where(WorkOrder.id == response.work_order_id)
@@ -427,9 +450,76 @@ def register_evidence(
         captured_at=captured_at,
         framing=framing,
         vision_result=vision_result,
+        altitude_m=altitude_m,
+        heading_deg=heading_deg,
+        captured_by=captured_by,
+        device_model=device_model,
+        source=source,
+        watermarked_storage_key=watermarked_storage_key,
     )
     session.add(evidence)
     session.flush()
+    audit.record(
+        session,
+        response.business_unit_id,
+        kind=EventKind.CREATED,
+        subject_type="evidencia",
+        subject_id=str(evidence.id),
+        work_order_id=response.work_order_id,
+        actor=actor or captured_by or "sistema:evidencia",
+        actor_kind=ActorKind.PERSON if (actor or captured_by) else ActorKind.SYSTEM,
+        payload={
+            "content_hash": content_hash,
+            "kind": kind,
+            "stage": stage,
+            "source": source,
+            "storage_key": storage_key,
+        },
+    )
+    return evidence
+
+
+def confirm_upload(
+    session: Session,
+    evidence: Evidence,
+    content: bytes,
+    *,
+    actor: str,
+) -> Evidence:
+    """The file reached storage: hash it and say whether it is the one that was taken (RF-073).
+
+    «Alterada» is recorded, not refused: the reviewer has to see that the photograph in storage is
+    not the one the phone hashed, and a rejection would make it vanish instead. Recorded on the
+    trail with both hashes, because «it was altered» without the two values is an accusation.
+    """
+    actual = hashlib.sha256(content).hexdigest()
+    verified = actual == evidence.content_hash
+    evidence.integrity_verified = verified
+    evidence.integrity_status = (
+        IntegrityStatus.VERIFIED.value if verified else IntegrityStatus.ALTERED.value
+    )
+    evidence.uploaded_at = datetime.now(UTC)
+    session.flush()
+    business_unit_id = session.execute(
+        select(FormResponse.business_unit_id, FormResponse.work_order_id).where(
+            FormResponse.id == evidence.response_id
+        )
+    ).one()
+    audit.record(
+        session,
+        business_unit_id[0],
+        kind=EventKind.FIELD_CHANGED,
+        subject_type="evidencia",
+        subject_id=str(evidence.id),
+        work_order_id=business_unit_id[1],
+        actor=actor,
+        payload={
+            "field": "integrity_status",
+            "to": evidence.integrity_status,
+            "expected_hash": evidence.content_hash,
+            "actual_hash": actual,
+        },
+    )
     return evidence
 
 
@@ -437,18 +527,34 @@ def verify_integrity(evidence: Evidence, content: bytes) -> bool:
     """Confirm an uploaded file is the one the device recorded.
 
     A photograph whose hash does not match is not the photograph that was taken, and marking
-    it verified would turn a picture into evidence it is not.
+    it verified would turn a picture into evidence it is not. `confirm_upload` is the recorded
+    version of this check; this one only answers.
     """
     digest = hashlib.sha256(content).hexdigest()
     evidence.integrity_verified = digest == evidence.content_hash
+    evidence.integrity_status = (
+        IntegrityStatus.VERIFIED.value if evidence.integrity_verified else IntegrityStatus.ALTERED
+    )
     return evidence.integrity_verified
+
+
+def counts_as_evidence(item: Evidence) -> bool:
+    """Whether a photograph counts towards the BEFORE/AFTER minimums.
+
+    Not from the gallery (RF-074: «una foto de galería no cuenta como evidencia ANTES/DESPUÉS») and
+    not altered (RF-073). Pending does count: the upload comes after the capture, often hours later
+    on a rural link, and a form must not be unclosable because the network is slow.
+    """
+    return (
+        item.source != EvidenceSource.GALLERY and item.integrity_status != IntegrityStatus.ALTERED
+    )
 
 
 def photo_counts(response: FormResponse) -> dict[str, int]:
     """Photographs per stage, for checking a form's minimums (SRS 4.8)."""
     counts = {EvidenceStage.BEFORE.value: 0, EvidenceStage.AFTER.value: 0}
     for item in response.evidence:
-        if item.kind == "foto" and item.stage in counts:
+        if item.kind == "foto" and item.stage in counts and counts_as_evidence(item):
             counts[item.stage] += 1
     return counts
 

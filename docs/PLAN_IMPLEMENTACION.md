@@ -1227,6 +1227,54 @@ borrado al retirar), las diecisiete atrapadas.
 última posición, así que reportar más seguido no deja rastro, solo gasta batería. La pantalla de
 consentimiento y el temporizador viven en la app Android, que este entorno no puede compilar.
 
+### RF-071 a RF-074: el hash que nadie verificaba
+
+El hash de cada foto viajaba con ella desde el teléfono y nadie lo revisaba: `verify_integrity`
+existía y ningún código la llamaba, así que `integrity_verified` era falso para toda foto capturada
+— y el aviso de la revisión «el hash no coincide» era permanente, es decir, inútil.
+
+- **RF-073.** El hash queda en la bitácora al registrar la evidencia, en la misma transacción. Cuando
+  el archivo termina de subir, el teléfono manda por su bandeja una operación `evidence_uploaded`
+  (ordenada, reintentable, idempotente como las demás); el servidor lee el objeto del almacenamiento
+  por el endpoint interno, recalcula el SHA-256 y marca la evidencia `verificada` o **`alterada`**,
+  con los dos hashes en la bitácora. Alterada se registra y no se rechaza: el revisor tiene que verla.
+  Una confirmación que llega antes que el archivo se aparca con el motivo y la evidencia sigue
+  `pendiente`. La revisión distingue ahora «pendiente» (todavía sube) de «alterada».
+- **RF-074.** `source` = `camara` o `galeria`. Una foto de galería se adjunta, se muestra como «no
+  verificada» y **no cuenta** para los mínimos ANTES/DESPUÉS; tampoco cuenta una alterada. Una
+  pendiente sí cuenta: la subida llega horas después en un enlace rural, y un formulario no puede
+  quedar sin poder cerrarse por la red. Sin `source` (teléfonos anteriores al campo) se lee cámara.
+- **RF-071.** Altitud y rumbo llegan con la captura; la persona y el modelo del teléfono se toman del
+  dispositivo enrolado, **nunca del payload**.
+- **RF-072.** `watermarked_storage_key` guarda la copia con marca de agua al lado del original, que es
+  el que se hashea.
+
+Catorce mutaciones; las dos que sobrevivieron la primera vez (una mal dirigida y el filtro por hash
+con una sola evidencia en la OT) quedaron atrapadas con una prueba de dos fotos en la misma OT.
+
+### RF-047, RF-049 y RF-312: lo que el teléfono necesitaba decir y no tenía cómo
+
+- **RF-047, tiempos por hito.** La única hora era la del servidor, registrada cuando el teléfono
+  sincronizaba — horas después de un «en sitio» en una parroquia sin cobertura. Ahora la transición
+  que entrega el teléfono lleva `occurred_at` (su reloj) y cada hito (en camino, en sitio, inicio,
+  fin) queda en `work_order_milestone` con **tres relojes separados**: el del teléfono, el del
+  servidor y, si la hubo, la corrección. Solo la primera vez: un trabajo reanudado no reinicia su
+  reloj. La corrección exige motivo, hora con zona horaria, no en el futuro y un hito ya alcanzado;
+  **nunca sobrescribe el original** y queda en la bitácora de qué a qué, quién y por qué. Se corrige
+  desde el teléfono (operación `time_correction`) o desde la oficina (supervisor o planificador).
+- **RF-049, hallazgo espontáneo.** Toda operación del push exigía una OT. `field_finding` es la única
+  que no: crea una propuesta (origen `hallazgo_espontaneo`) en la bandeja de RF-013 con la posición
+  y al menos una foto con su hash — sin GPS o sin foto se aparca con el motivo, porque un hallazgo
+  que nadie puede ubicar ni mirar no le da al supervisor nada con qué decidir. La zona sale del
+  polígono (RF-152) y la prioridad del anexo C. El mismo activo y defecto ya propuesto se suma a esa
+  propuesta en vez de duplicarla.
+- **RF-312, dueño de la OT.** El dueño (`planner_id`) existía; cambiarlo no. `transfer_ownership`
+  exige destinatario y motivo, y la bitácora de traspasos sale del rastro de auditoría
+  (`/work-orders/{id}/owner/history`).
+
+Diecisiete mutaciones; dieciséis atrapadas y una equivalente (quitar el rol del decorador, cuando el
+parámetro del manejador exige el mismo rol).
+
 ### RF-005: la gestión de cuadrillas que el modelo ya prometía y la API no tenía
 
 El modelo `Crew` decía en su propio docstring «sus integrantes, su jefe...», y no tenía columna de

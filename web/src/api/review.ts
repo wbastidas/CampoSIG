@@ -50,6 +50,12 @@ export interface Evidence {
   storage_key: string;
   content_hash: string;
   integrity_verified: boolean;
+  /** «pendiente» (todavía no subida), «verificada» o «alterada» (RF-073). Older servers omit it. */
+  integrity_status?: 'pendiente' | 'verificada' | 'alterada';
+  /** «camara» or «galeria» (RF-074); null for captures from before the field existed. */
+  source?: string | null;
+  /** False for a gallery photo or an altered one: attached, but not counted as BEFORE/AFTER. */
+  counts_as_evidence?: boolean;
   vision_result: Record<string, unknown> | null;
 }
 

@@ -30,20 +30,28 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.org.models import BusinessUnit
-from app.responses.models import EvidenceStage, FormResponse
+from app.proposals.service import SpontaneousFindingError, raise_spontaneous
+from app.responses.models import Evidence, EvidenceStage, FormResponse
 from app.responses.service import (
     AnswerValidationError,
     AudioNotAllowedError,
+    EvidenceError,
     NotEditableError,
     OutagePermitError,
+    confirm_upload,
+    counts_as_evidence,
     register_evidence,
     save_answers,
 )
+from app.storage import service as storage
 from app.sync.models import Device
 from app.workorders.models import WorkOrder, WorkOrderState
 from app.workorders.service import (
     InvalidTransitionError,
+    MilestoneError,
     ReasonRequiredError,
+    as_milestone_dict,
+    correct_milestone,
     transition,
 )
 
@@ -53,8 +61,23 @@ from app.workorders.service import (
 KIND_TRANSITION = "transition"
 KIND_FORM_RESPONSE = "form_response"
 KIND_EVIDENCE = "evidence"
+#: The file of an evidence finished uploading: hash it on the server (RF-073). An operation and not
+#: a separate endpoint so it rides the outbox — ordered after its evidence, retried, idempotent.
+KIND_EVIDENCE_UPLOADED = "evidence_uploaded"
 
-APPLICABLE_KINDS = (KIND_TRANSITION, KIND_FORM_RESPONSE, KIND_EVIDENCE)
+#: A milestone's time corrected on the phone, with its reason (RF-047).
+KIND_TIME_CORRECTION = "time_correction"
+#: A finding reported with no work order behind it (RF-049). The one kind that needs no order.
+KIND_FIELD_FINDING = "field_finding"
+
+APPLICABLE_KINDS = (
+    KIND_TRANSITION,
+    KIND_FORM_RESPONSE,
+    KIND_EVIDENCE,
+    KIND_EVIDENCE_UPLOADED,
+    KIND_TIME_CORRECTION,
+    KIND_FIELD_FINDING,
+)
 
 #: States a device may ask for. The field ones, and nothing else: `aprobada`, `cerrada` and
 #: `anulada` are decisions of the office and `en_revision` is the reviewer's queue.
@@ -97,14 +120,20 @@ def apply_operation(
             f"la plataforma no conoce operaciones de tipo «{kind}»; admitidos: "
             f"{', '.join(APPLICABLE_KINDS)}"
         )
+    if kind == KIND_FIELD_FINDING:
+        return _apply_field_finding(session, unit, device, payload)
     if order is None:
         raise OperationRejectedError(f"una operación «{kind}» necesita la OT a la que pertenece")
+    if kind == KIND_TIME_CORRECTION:
+        return _apply_time_correction(session, device, order, payload)
 
     if kind == KIND_TRANSITION:
         return _apply_transition(session, device, order, payload)
     if kind == KIND_FORM_RESPONSE:
         return _apply_form_response(session, unit, device, order, payload)
-    return _apply_evidence(session, order, payload)
+    if kind == KIND_EVIDENCE_UPLOADED:
+        return _apply_evidence_uploaded(session, device, order, payload)
+    return _apply_evidence(session, device, order, payload)
 
 
 def _apply_transition(
@@ -126,10 +155,60 @@ def _apply_transition(
             target,
             reason=str(reason) if reason else None,
             actor=device.user_sub or device.device_key,
+            # RF-047: the phone's clock, kept as the milestone's device time.
+            occurred_at=_time(payload.get("occurred_at")),
         )
     except (InvalidTransitionError, ReasonRequiredError) as exc:
         raise OperationRejectedError(str(exc)) from exc
     return {"from": previous, "to": order.state}
+
+
+def _apply_time_correction(
+    session: Session, device: Device, order: WorkOrder, payload: dict[str, Any]
+) -> dict[str, Any]:
+    corrected = _time(payload.get("corrected_time"))
+    if corrected is None:
+        raise OperationRejectedError("la corrección no trae una hora válida")
+    try:
+        row = correct_milestone(
+            session,
+            order,
+            str(payload.get("milestone") or ""),
+            corrected_time=corrected,
+            reason=payload.get("reason"),
+            actor=device.user_sub or device.device_key,
+        )
+    except MilestoneError as exc:
+        raise OperationRejectedError(str(exc)) from exc
+    return as_milestone_dict(row)
+
+
+def _apply_field_finding(
+    session: Session, unit: BusinessUnit, device: Device, payload: dict[str, Any]
+) -> dict[str, Any]:
+    latitude, longitude = _number(payload.get("latitude")), _number(payload.get("longitude"))
+    if latitude is None or longitude is None:
+        raise OperationRejectedError("el hallazgo necesita una posición GPS válida")
+    photos = payload.get("photos")
+    try:
+        proposal, created = raise_spontaneous(
+            session,
+            unit,
+            defect_code=str(payload.get("defect_code") or ""),
+            latitude=latitude,
+            longitude=longitude,
+            accuracy_m=_number(payload.get("accuracy_m")),
+            photos=photos if isinstance(photos, list) else [],
+            asset_code=payload.get("asset_code") or None,
+            asset_type_key=payload.get("asset_type_key") or None,
+            feeder_code=payload.get("feeder_code") or None,
+            description=payload.get("description") or None,
+            observed_at=_time(payload.get("observed_at")),
+            actor=device.user_sub or device.device_key,
+        )
+    except SpontaneousFindingError as exc:
+        raise OperationRejectedError(str(exc)) from exc
+    return {"proposal_id": str(proposal.id), "created": created, "priority": proposal.priority}
 
 
 def _apply_form_response(
@@ -164,7 +243,9 @@ def _apply_form_response(
     }
 
 
-def _apply_evidence(session: Session, order: WorkOrder, payload: dict[str, Any]) -> dict[str, Any]:
+def _apply_evidence(
+    session: Session, device: Device, order: WorkOrder, payload: dict[str, Any]
+) -> dict[str, Any]:
     response = session.scalars(
         select(FormResponse).where(
             FormResponse.work_order_id == order.id,
@@ -198,7 +279,17 @@ def _apply_evidence(session: Session, order: WorkOrder, payload: dict[str, Any])
             gps_accuracy_m=_number(payload.get("gps_accuracy_m")),
             captured_at=_time(payload.get("captured_at")),
             framing=payload.get("framing"),
+            altitude_m=_number(payload.get("altitude_m")),
+            heading_deg=_number(payload.get("heading_deg")),
+            # RF-071: who and with what, from the enrolled device — never from the payload.
+            captured_by=device.user_sub,
+            device_model=device.model,
+            source=payload.get("source"),
+            watermarked_storage_key=payload.get("watermarked_storage_key"),
+            actor=device.user_sub or device.device_key,
         )
+    except EvidenceError as exc:
+        raise OperationRejectedError(str(exc)) from exc
     except AudioNotAllowedError as exc:
         # The area's policy says this audio is not kept (RF-151). A rejection and not an error:
         # the phone has to stop offering to send it, and the technician has to know why.
@@ -208,6 +299,36 @@ def _apply_evidence(session: Session, order: WorkOrder, payload: dict[str, Any])
         "kind": evidence.kind,
         "stage": evidence.stage,
         "content_hash": evidence.content_hash,
+        # Said back so the phone can show it: a gallery photo is attached but does not count.
+        "counts_as_evidence": counts_as_evidence(evidence),
+    }
+
+
+def _apply_evidence_uploaded(
+    session: Session, device: Device, order: WorkOrder, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """Hash the uploaded file and record whether it is the one that was taken (RF-073)."""
+    content_hash = str(payload.get("content_hash") or "").strip()
+    if not content_hash:
+        raise OperationRejectedError("la confirmación de subida no dice qué evidencia")
+    evidence = session.scalars(
+        select(Evidence)
+        .join(FormResponse, FormResponse.id == Evidence.response_id)
+        .where(FormResponse.work_order_id == order.id, Evidence.content_hash == content_hash)
+    ).first()
+    if evidence is None:
+        raise OperationRejectedError(
+            "hay que registrar la evidencia antes de confirmar que su archivo se subió"
+        )
+    try:
+        content = storage.read_object(evidence.storage_key)
+    except storage.StorageError as exc:
+        raise OperationRejectedError(str(exc)) from exc
+    confirm_upload(session, evidence, content, actor=device.user_sub or device.device_key)
+    return {
+        "evidence_id": str(evidence.id),
+        "integrity_status": evidence.integrity_status,
+        "integrity_verified": evidence.integrity_verified,
     }
 
 
